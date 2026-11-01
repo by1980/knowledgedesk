@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KnowledgeDesk</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="banner" class="banner hidden"></div>
+
+  <!-- Login -->
+  <section id="login-view" class="login hidden">
+    <form id="login-form" class="card login-card">
+      <h1 class="brand-title">KnowledgeDesk</h1>
+      <p class="muted" id="login-company"></p>
+      <label>Email <input name="email" type="email" required autocomplete="username"></label>
+      <label>Password <input name="password" type="password" required autocomplete="current-password"></label>
+      <button type="submit" class="primary">Log in</button>
+      <p class="error" id="login-error"></p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <section id="app-view" class="hidden">
+    <header class="topbar">
+      <div class="brand"><strong>KnowledgeDesk</strong> <span class="muted" id="company-name"></span></div>
+      <nav id="nav">
+        <button data-view="chat" class="tab active">Ask</button>
+        <button data-view="library" class="tab">Library</button>
+        <button data-view="admin" class="tab admin-only">Admin</button>
+      </nav>
+      <div class="user"><span id="user-name"></span> <button id="logout" class="link">Log out</button></div>
+    </header>
+
+    <!-- Chat -->
+    <main id="chat" class="view">
+      <div class="chat-toolbar">
+        <label>Search in
+          <select id="dept-filter"><option value="">All my departments</option></select>
+        </label>
+        <button id="new-chat" class="secondary">New conversation</button>
+      </div>
+      <div id="messages" class="messages">
+        <div class="empty" id="chat-empty">
+          <h2>Ask anything about how the business works</h2>
+          <p class="muted">Answers come only from your company's documents and interviews, with sources.</p>
+        </div>
+      </div>
+      <form id="ask-form" class="ask">
+        <textarea id="question" rows="1" dir="auto" placeholder="Type your question…" required></textarea>
+        <button type="submit" class="primary" id="ask-btn">Ask</button>
+      </form>
+    </main>
+
+    <!-- Library -->
+    <main id="library" class="view hidden">
+      <div class="card">
+        <h2>Documents you can access</h2>
+        <input id="lib-search" placeholder="Filter by name…" dir="auto">
+        <table class="table"><thead><tr><th>Title</th><th>Type</th><th>Departments</th><th>Updated</th></tr></thead>
+          <tbody id="lib-rows"></tbody></table>
+      </div>
+    </main>
+
+    <!-- Admin -->
+    <main id="admin" class="view hidden">
+      <nav class="subtabs">
+        <button data-sub="docs" class="subtab active">Documents</button>
+        <button data-sub="depts" class="subtab">Departments</button>
+        <button data-sub="users" class="subtab">Users</button>
+        <button data-sub="questions" class="subtab">Questions</button>
+        <button data-sub="system" class="subtab">System</button>
+      </nav>
+
+      <div id="sub-docs" class="sub">
+        <form id="upload-form" class="card">
+          <h2>Add knowledge</h2>
+          <div class="row">
+            <label class="radio"><input type="radio" name="kind" value="file" checked> Documents</label>
+            <label class="radio"><input type="radio" name="kind" value="interview"> Employee interview (audio, video or transcript)</label>
+          </div>
+          <div id="interview-fields" class="grid3 hidden">
+            <label>Interviewee name <input name="interviewee" dir="auto"></label>
+            <label>Role <input name="role" dir="auto"></label>
+            <label>Interview date <input name="interview_date" type="date"></label>
+          </div>
+          <label>Files <input type="file" name="files" multiple required></label>
+          <div>
+            <span class="label">Who can see it</span>
+            <div class="checks" id="upload-depts"></div>
+            <label class="radio"><input type="checkbox" name="company_wide"> Everyone in the company</label>
+          </div>
+          <button class="primary" type="submit">Upload and index</button>
+          <p class="muted small">Supported: PDF, Word, Excel, PowerPoint, CSV, text, HTML, email (.eml), subtitles,
+            and audio/video recordings (transcribed automatically).</p>
+          <p class="error" id="upload-error"></p>
+        </form>
+        <div class="card">
+          <div class="row spread"><h2>All documents</h2>
+            <span><button id="rescan" class="secondary">Rescan folders now</button>
+            <button id="refresh-docs" class="secondary">Refresh</button></span></div>
+          <table class="table"><thead><tr><th>Title</th><th>Type</th><th>Visible to</th><th>Status</th><th></th></tr></thead>
+            <tbody id="doc-rows"></tbody></table>
+        </div>
+      </div>
+
+      <div id="sub-depts" class="sub hidden">
+        <div class="card">
+          <h2>Departments</h2>
+          <form id="dept-form" class="row"><input name="name" placeholder="New department name" dir="auto" required>
+            <button class="primary">Add</button></form>
+          <table class="table"><thead><tr><th>Name</th><th>Users</th><th>Documents</th><th></th></tr></thead>
+            <tbody id="dept-rows"></tbody></table>
+        </div>
+      </div>
+
+      <div id="sub-users" class="sub hidden">
+        <form id="user-form" class="card">
+          <h2 id="user-form-title">Add user</h2>
+          <input type="hidden" name="id">
+          <div class="grid3">
+            <label>Name <input name="name" dir="auto"></label>
+            <label>Email <input name="email" type="email" required></label>
+            <label>Password <input name="password" type="password" placeholder="min. 8 characters"></label>
+          </div>
+          <div class="row">
+            <label>Role <select name="role"><option value="member">Member</option><option value="admin">Admin (sees everything)</option></select></label>
+            <label class="radio"><input type="checkbox" name="active" checked> Active</label>
+          </div>
+          <span class="label">Departments</span>
+          <div class="checks" id="user-depts"></div>
+          <div class="row"><button class="primary">Save user</button>
+            <button type="button" id="user-cancel" class="secondary hidden">Cancel</button></div>
+          <p class="error" id="user-error"></p>
+        </form>
+        <div class="card">
+          <table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Departments</th><th></th></tr></thead>
+            <tbody id="user-rows"></tbody></table>
+        </div>
+      </div>
+
+      <div id="sub-questions" class="sub hidden">
+        <div class="stats" id="q-stats"></div>
+        <div class="card">
+          <h2>Recent questions</h2>
+          <p class="muted small">Questions with no sources or a 👎 show where documentation is missing.</p>
+          <label class="radio"><input type="checkbox" id="q-gaps"> Show only gaps (no sources or 👎)</label>
+          <table class="table"><thead><tr><th>When</th><th>Who</th><th>Question</th><th>Result</th></tr></thead>
+            <tbody id="q-rows"></tbody></table>
+        </div>
+      </div>
+
+      <div id="sub-system" class="sub hidden">
+        <div class="card">
+          <h2>Subscription</h2>
+          <div id="license-info"></div>
+          <form id="license-form" class="row"><input type="file" name="file" required>
+            <button class="primary">Install license file</button></form>
+          <p class="error" id="license-error"></p>
+        </div>
+        <div class="card">
+          <h2>My password</h2>
+          <form id="pw-form" class="grid3">
+            <label>Current <input name="current_password" type="password" required></label>
+            <label>New <input name="new_password" type="password" required></label>
+            <div><button class="primary">Change</button></div>
+          </form>
+          <p class="error" id="pw-error"></p>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

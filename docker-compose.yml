@@ -1,0 +1,30 @@
+# Start everything with:  docker compose up -d --build
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kd
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-kd}
+      POSTGRES_DB: kd
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kd"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://kd:${DB_PASSWORD:-kd}@db:5432/kd
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data            # uploads, synced folders (data/sources), AI models, license
+    ports:
+      - "${PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
