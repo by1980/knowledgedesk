@@ -2,6 +2,7 @@
 import json
 import logging
 import secrets
+import threading
 from contextlib import asynccontextmanager
 import re
 import shutil
@@ -15,6 +16,9 @@ from pydantic import BaseModel
 
 from . import auth, embeddings, license, llm, retrieval, worker
 from .config import settings
+from .connectors import base as connector_base
+from .connectors import calendar_ics, email_imap
+from .connectors import runner as connector_runner
 from .db import conn, init_schema
 from .ingest.extract import SUPPORTED_EXT, is_audio_video
 
@@ -361,6 +365,9 @@ def upload_documents(
                 shutil.copyfileobj(f.file, out)
             doc_kind = "interview" if kind == "interview" or is_audio_video(dest) else "file"
             title = Path(name).stem
+            if doc_kind == "file" and (name.lower().startswith("whatsapp") or Path(name).suffix.lower() == ".zip"):
+                doc_kind = "whatsapp"
+                title = "WhatsApp: " + re.sub(r"(?i)^whatsapp\s*(chat)?\s*(with|-)?\s*", "", title).strip()
             if doc_kind == "interview" and interviewee:
                 title = f"Interview - {interviewee}" + (f" ({role})" if role else "")
             doc_id = c.execute(
@@ -418,6 +425,142 @@ def download_document(doc_id: int, user: dict = Depends(auth.current_user)):
     if not row or not Path(row["path"]).exists():
         raise HTTPException(404, "File no longer exists")
     return FileResponse(row["path"], filename=row["filename"])
+
+
+# ---------------------------------------------------------------- connections (email, calendar, website)
+
+class ConnectorIn(BaseModel):
+    type: str
+    name: str
+    config: dict = {}
+    department_ids: list[int] = []
+    company_wide: bool = False
+    enabled: bool = True
+
+
+def _check_connector(body: ConnectorIn, old_config: dict | None = None) -> dict:
+    """Validate, merge with saved secrets, test the connection, and return the config to store."""
+    if body.type not in connector_runner.TYPES:
+        raise HTTPException(400, "Unknown connection type")
+    if not body.name.strip():
+        raise HTTPException(400, "Please give the connection a name")
+    if not body.department_ids and not body.company_wide:
+        raise HTTPException(400, "Choose at least one department, or make it visible to everyone")
+    secrets_ = connector_runner.SECRETS[body.type]
+    cfg = {k: (str(v).strip() if isinstance(v, str) else v) for k, v in body.config.items()}
+    for key in secrets_:
+        if not cfg.get(key) and old_config and old_config.get(key):
+            cfg[key] = old_config[key]  # left empty while editing = keep the saved one
+        elif cfg.get(key):
+            cfg[key] = connector_base.encrypt(cfg[key])
+    try:
+        if body.type == "imap":
+            for field in ("host", "username", "password"):
+                if not cfg.get(field):
+                    raise HTTPException(400, f"Missing {field}")
+            email_imap.test_connection(cfg)
+        elif body.type == "ics":
+            if not cfg.get("url"):
+                raise HTTPException(400, "Missing calendar link")
+            calendar_ics.events_by_month(calendar_ics.fetch(connector_base.decrypt(cfg["url"])))
+        elif body.type == "website":
+            if not cfg.get("url"):
+                raise HTTPException(400, "Missing website address")
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 - show the admin why the connection failed
+        raise HTTPException(400, str(e) or "Could not connect")
+    return cfg
+
+
+def _public_config(type_: str, cfg: dict) -> dict:
+    return {k: ("" if k in connector_runner.SECRETS.get(type_, set()) else v) for k, v in cfg.items()}
+
+
+@app.get("/api/connectors")
+def list_connectors(_: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        rows = c.execute(
+            "SELECT k.id, k.type, k.name, k.config, k.company_wide, k.enabled, k.last_sync, k.last_error, "
+            " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
+            " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status IN ('pending','processing')) AS indexing, "
+            " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) FROM connector_departments cd "
+            "   JOIN departments dp ON dp.id=cd.department_id WHERE cd.connector_id=k.id), '[]') AS departments "
+            "FROM connectors k ORDER BY k.name"
+        ).fetchall()
+    for r in rows:
+        r["config"] = _public_config(r["type"], r["config"])
+    return rows
+
+
+@app.post("/api/connectors/test")
+def test_connector(body: ConnectorIn, _: dict = Depends(auth.admin_user)):
+    body.company_wide = True  # visibility isn't needed to test
+    cfg = _check_connector(body)
+    folders = email_imap.test_connection(cfg) if body.type == "imap" else []
+    return {"ok": True, "folders": folders}
+
+
+def _save_connector_departments(c, cid: int, dept_ids: list[int]) -> None:
+    c.execute("DELETE FROM connector_departments WHERE connector_id=%s", (cid,))
+    for d in set(dept_ids):
+        c.execute("INSERT INTO connector_departments VALUES (%s, %s)", (cid, d))
+
+
+def _sync_in_background(cid: int) -> None:
+    def run():
+        connector_runner.sync_connector(cid)
+        worker.wake()
+    threading.Thread(target=run, daemon=True).start()
+
+
+@app.post("/api/connectors")
+def create_connector(body: ConnectorIn, _: dict = Depends(auth.admin_user)):
+    cfg = _check_connector(body)
+    with conn() as c:
+        cid = c.execute(
+            "INSERT INTO connectors(type, name, config, company_wide, enabled) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (body.type, body.name.strip(), json.dumps(cfg), body.company_wide, body.enabled),
+        ).fetchone()["id"]
+        _save_connector_departments(c, cid, body.department_ids)
+    _sync_in_background(cid)
+    return {"id": cid}
+
+
+@app.put("/api/connectors/{cid}")
+def update_connector(cid: int, body: ConnectorIn, _: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        old = c.execute("SELECT type, config FROM connectors WHERE id=%s", (cid,)).fetchone()
+    if not old:
+        raise HTTPException(404, "Not found")
+    body.type = old["type"]
+    cfg = _check_connector(body, old["config"])
+    with conn() as c:
+        c.execute("UPDATE connectors SET name=%s, config=%s, company_wide=%s, enabled=%s WHERE id=%s",
+                  (body.name.strip(), json.dumps(cfg), body.company_wide, body.enabled, cid))
+        _save_connector_departments(c, cid, body.department_ids)
+    _sync_in_background(cid)
+    return {"ok": True}
+
+
+@app.post("/api/connectors/{cid}/sync")
+def sync_connector_now(cid: int, _: dict = Depends(auth.admin_user)):
+    _sync_in_background(cid)
+    return {"ok": True}
+
+
+@app.delete("/api/connectors/{cid}")
+def delete_connector(cid: int, _: dict = Depends(auth.admin_user)):
+    lock = connector_runner.lock_for(cid)
+    if not lock.acquire(timeout=300):
+        raise HTTPException(409, "This source is still importing. Try again in a few minutes.")
+    try:
+        with conn() as c:
+            c.execute("DELETE FROM connectors WHERE id=%s", (cid,))  # its documents are deleted too
+    finally:
+        lock.release()
+    shutil.rmtree(settings.data_dir / "connectors" / str(cid), ignore_errors=True)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- admin

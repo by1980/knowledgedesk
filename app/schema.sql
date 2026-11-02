@@ -65,3 +65,29 @@ CREATE TABLE IF NOT EXISTS questions (
     feedback    SMALLINT,   -- 1 = helpful, -1 = not helpful
     created_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- Connections to outside sources (email, calendar, website...). Added in v0.2.
+-- type: imap | ics | website
+CREATE TABLE IF NOT EXISTS connectors (
+    id            SERIAL PRIMARY KEY,
+    type          TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    config        JSONB NOT NULL DEFAULT '{}'::jsonb,   -- secrets inside are encrypted
+    state         JSONB NOT NULL DEFAULT '{}'::jsonb,   -- sync progress (e.g. last email id)
+    company_wide  BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    last_sync     TIMESTAMPTZ,
+    last_error    TEXT,
+    created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS connector_departments (
+    connector_id  INT REFERENCES connectors(id) ON DELETE CASCADE,
+    department_id INT REFERENCES departments(id) ON DELETE CASCADE,
+    PRIMARY KEY (connector_id, department_id)
+);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS connector_id INT REFERENCES connectors(id) ON DELETE CASCADE;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS external_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS documents_connector_ext ON documents(connector_id, external_id)
+    WHERE connector_id IS NOT NULL;

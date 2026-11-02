@@ -68,7 +68,7 @@ $$(".subtab").forEach((b) => b.addEventListener("click", () => openSub(b.dataset
 function openSub(name) {
   $$(".subtab").forEach((x) => x.classList.toggle("active", x.dataset.sub === name));
   $$(".sub").forEach((s) => s.classList.toggle("hidden", s.id !== `sub-${name}`));
-  ({ docs: loadDocs, depts: loadDepts, users: loadUsers, questions: loadQuestions, system: loadSystem })[name]();
+  ({ docs: loadDocs, conns: loadConns, depts: loadDepts, users: loadUsers, questions: loadQuestions, system: loadSystem })[name]();
 }
 
 // ------------------------------------------------------------------ chat
@@ -160,11 +160,12 @@ async function loadLibrary() { libDocs = await getJSON("/api/documents"); drawLi
 function drawLibrary() {
   const f = $("#lib-search").value.toLowerCase();
   $("#lib-rows").innerHTML = libDocs.filter((d) => d.status === "ready" && d.title.toLowerCase().includes(f)).map((d) => `
-    <tr><td dir="auto"><a href="#" data-doc="${d.id}">${esc(d.title)}</a></td><td>${d.kind === "interview" ? "Interview" : "Document"}</td>
+    <tr><td dir="auto"><a href="#" data-doc="${d.id}">${esc(d.title)}</a></td><td>${KIND[d.kind] || "Document"}</td>
     <td>${deptPills(d)}</td><td>${new Date(d.updated_at).toLocaleDateString()}</td></tr>`).join("") ||
     `<tr><td colspan="4" class="muted">No documents yet.</td></tr>`;
 }
 $("#lib-search").addEventListener("input", drawLibrary);
+const KIND = { file: "Document", interview: "Interview", email: "Email", whatsapp: "WhatsApp", calendar: "Calendar", web: "Website" };
 const deptPills = (d) => (d.company_wide ? `<span class="pill">Everyone</span>` : "") + d.departments.map((x) => `<span class="pill">${esc(x.name)}</span>`).join("");
 
 // ------------------------------------------------------------------ admin: documents
@@ -180,8 +181,8 @@ async function loadDocs() {
   deptChecks("#upload-depts", "dept");
   const docs = await getJSON("/api/documents");
   $("#doc-rows").innerHTML = docs.map((d) => `
-    <tr><td dir="auto"><a href="#" data-doc="${d.id}">${esc(d.title)}</a><div class="muted small">${esc(d.filename)}${d.source === "folder" ? " · synced folder" : ""}</div></td>
-    <td>${d.kind === "interview" ? "Interview" : "Document"}</td><td>${deptPills(d)}</td>
+    <tr><td dir="auto"><a href="#" data-doc="${d.id}">${esc(d.title)}</a><div class="muted small">${esc(d.filename)}${d.source === "folder" ? " · synced folder" : d.source === "connector" ? " · connected source" : ""}</div></td>
+    <td>${KIND[d.kind] || "Document"}</td><td>${deptPills(d)}</td>
     <td class="status-${d.status}" title="${esc(d.error || "")}">${d.status}${d.status === "ready" ? ` <span class="muted small">(${d.chunks} parts)</span>` : ""}${d.error ? `<div class="small">${esc(d.error)}</div>` : ""}</td>
     <td><button class="link" data-reindex="${d.id}">Re-index</button> <button class="danger" data-del="${d.id}">Delete</button></td></tr>`).join("") ||
     `<tr><td colspan="5" class="muted">Nothing uploaded yet.</td></tr>`;
@@ -211,6 +212,107 @@ $("#upload-form").addEventListener("submit", async (e) => {
   try { await api("/api/documents", { method: "POST", body }); form.reset(); $("#interview-fields").classList.add("hidden"); loadDocs(); }
   catch (err) { $("#upload-error").textContent = err.message; }
   btn.disabled = false; btn.textContent = "Upload and index";
+});
+
+// ------------------------------------------------------------------ admin: connections
+const connForm = $("#conn-form");
+const TYPE_LABEL = { imap: "📧 Email", ics: "📅 Calendar", website: "🌐 Website" };
+let conns = [];
+function connType() { return $("input[name=type]:checked", connForm).value; }
+function showConnFields() {
+  const t = connType();
+  $$(".conn-fields", connForm).forEach((el) => {
+    const on = el.dataset.for === t;
+    el.classList.toggle("hidden", !on);
+    $$("input", el).forEach((i) => (i.disabled = !on));
+  });
+  const isWa = t === "whatsapp";
+  $(".conn-visibility", connForm).classList.toggle("hidden", isWa);
+  $(".conn-actions", connForm).classList.toggle("hidden", isWa);
+  $("input[name=name]", connForm).closest("label").classList.toggle("hidden", isWa);
+}
+$$("input[name=type]", connForm).forEach((r) => r.addEventListener("change", () => {
+  $("#conn-error").textContent = ""; $("#conn-ok").textContent = ""; $("#imap-folders").textContent = ""; showConnFields();
+}));
+function setSecretHints(editing) {
+  $("input[name=password]", connForm).placeholder = editing ? "leave empty to keep the saved one" : "";
+  $(".conn-fields[data-for=ics] input[name=url]", connForm).placeholder = editing
+    ? "leave empty to keep the saved link" : "https://calendar.google.com/calendar/ical/…/basic.ics";
+}
+
+function connBody() {
+  const t = connType(); const config = {};
+  $$(`.conn-fields[data-for=${t}] input`, connForm).forEach((i) => (config[i.name] = i.value));
+  return { type: t, name: connForm.name.value, config, company_wide: connForm.company_wide.checked, enabled: connForm.enabled.checked,
+    department_ids: $$("input[name=cdept]:checked", connForm).map((x) => Number(x.value)) };
+}
+function resetConnForm() {
+  connForm.reset(); connForm.id.value = "";
+  $$("input[name=type]", connForm).forEach((r) => (r.disabled = false));
+  $("#conn-form-title").textContent = "Connect a source"; $("#conn-cancel").classList.add("hidden");
+  $("#conn-error").textContent = ""; $("#conn-ok").textContent = ""; $("#imap-folders").textContent = "";
+  deptChecks("#conn-depts", "cdept"); setSecretHints(false); showConnFields();
+}
+async function loadConns() {
+  await refreshDepartments();
+  if (!connForm.id.value) resetConnForm();
+  conns = await getJSON("/api/connectors");
+  $("#conn-rows").innerHTML = conns.map((k) => `
+    <tr><td dir="auto"><b>${esc(k.name)}</b><div class="muted small">${TYPE_LABEL[k.type]}${k.config.username ? " · " + esc(k.config.username) : ""}${k.config.url && k.type === "website" ? " · " + esc(k.config.url) : ""}${k.enabled ? "" : " · paused"}</div></td>
+    <td>${deptPills(k)}</td>
+    <td>${k.documents}${k.indexing ? ` <span class="status-pending small">(${k.indexing} indexing)</span>` : ""}</td>
+    <td class="small">${k.last_sync ? new Date(k.last_sync).toLocaleString() : '<span class="status-pending">syncing…</span>'}
+      ${k.last_error ? `<div class="status-error">${esc(k.last_error)}</div>` : ""}</td>
+    <td><button class="link" data-csync="${k.id}">Sync now</button> <button class="link" data-cedit="${k.id}">Edit</button>
+      <button class="danger" data-cdel="${k.id}">Remove</button></td></tr>`).join("") ||
+    `<tr><td colspan="5" class="muted">Nothing connected yet.</td></tr>`;
+  $$("[data-csync]").forEach((b) => b.onclick = async () => { await api(`/api/connectors/${b.dataset.csync}/sync`, { method: "POST" }); b.textContent = "Syncing…"; setTimeout(loadConns, 5000); });
+  $$("[data-cedit]").forEach((b) => b.onclick = () => editConn(conns.find((k) => k.id === Number(b.dataset.cedit))));
+  $$("[data-cdel]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Disconnect this source? Everything imported from it will be removed from the knowledge base.")) return;
+    await api(`/api/connectors/${b.dataset.cdel}`, { method: "DELETE" }); loadConns();
+  });
+  if (conns.some((k) => !k.last_sync || k.indexing)) setTimeout(() => { if (!$("#sub-conns").classList.contains("hidden")) loadConns(); }, 5000);
+}
+function editConn(k) {
+  resetConnForm();
+  connForm.id.value = k.id; setSecretHints(true);
+  $(`input[name=type][value=${k.type}]`, connForm).checked = true;
+  $$("input[name=type]", connForm).forEach((r) => (r.disabled = true));
+  showConnFields();
+  connForm.name.value = k.name;
+  for (const [key, val] of Object.entries(k.config)) {
+    const input = $(`.conn-fields[data-for=${k.type}] input[name=${key}]`, connForm);
+    if (input) input.value = val;
+  }
+  connForm.company_wide.checked = k.company_wide; connForm.enabled.checked = k.enabled;
+  deptChecks("#conn-depts", "cdept", k.departments.map((d) => d.id));
+  $("#conn-form-title").textContent = `Edit ${k.name}`; $("#conn-cancel").classList.remove("hidden");
+  connForm.scrollIntoView({ behavior: "smooth" });
+}
+$("#conn-cancel").addEventListener("click", resetConnForm);
+$("#refresh-conns").addEventListener("click", loadConns);
+$("#conn-test").addEventListener("click", async () => {
+  $("#conn-error").textContent = ""; $("#conn-ok").textContent = "Testing…";
+  try {
+    const body = connBody();
+    if (connForm.id.value && !body.config.password && !body.config.url) { $("#conn-ok").textContent = "Saved password is kept; press Save to re-check it."; return; }
+    const r = await (await api("/api/connectors/test", { method: "POST", json: body })).json();
+    $("#conn-ok").textContent = "✓ Connected successfully.";
+    if (r.folders.length) $("#imap-folders").textContent = "Folders in this mailbox: " + r.folders.join(", ");
+  } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
+});
+connForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#conn-error").textContent = ""; $("#conn-ok").textContent = "Connecting…";
+  const btn = $("button[type=submit]", connForm); btn.disabled = true;
+  try {
+    const id = connForm.id.value;
+    await api(id ? `/api/connectors/${id}` : "/api/connectors", { method: id ? "PUT" : "POST", json: connBody() });
+    resetConnForm(); $("#conn-ok").textContent = "✓ Saved. Importing now – this can take a few minutes for a big mailbox.";
+    loadConns();
+  } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
+  btn.disabled = false;
 });
 
 // ------------------------------------------------------------------ admin: departments

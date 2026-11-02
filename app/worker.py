@@ -5,6 +5,7 @@ import time
 
 from .config import settings
 from .db import conn
+from .connectors import runner
 from .ingest import folders
 from .ingest.pipeline import process_document
 
@@ -45,8 +46,18 @@ def _loop() -> None:
         _wake.clear()
 
 
+def _connector_loop() -> None:
+    while True:
+        try:
+            runner.sync_due()
+        except Exception:  # noqa: BLE001
+            log.exception("Connector sync error")
+        time.sleep(60)
+
+
 def start() -> None:
     threading.Thread(target=_loop, name="indexer", daemon=True).start()
+    threading.Thread(target=_connector_loop, name="connectors", daemon=True).start()
 
 
 def rescan_now() -> int:

@@ -9,7 +9,7 @@ TEXT_EXT = {".txt", ".md", ".markdown", ".log", ".json", ".xml", ".yaml", ".yml"
 AUDIO_VIDEO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".wma", ".opus",
                    ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 SUPPORTED_EXT = TEXT_EXT | AUDIO_VIDEO_EXT | {
-    ".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".tsv", ".pptx", ".html", ".htm", ".eml", ".vtt", ".srt",
+    ".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".tsv", ".pptx", ".html", ".htm", ".eml", ".vtt", ".srt", ".zip",
 }
 
 Section = tuple[str, str]
@@ -36,8 +36,24 @@ def _read_text(path: Path) -> str:
 def extract(path: Path) -> list[Section]:
     ext = path.suffix.lower()
 
+    if ext == ".txt":
+        from . import whatsapp
+
+        text = _read_text(path)
+        if whatsapp.looks_like_whatsapp(text):
+            return whatsapp.parse(text)
+        return [(text, "")]
+
     if ext in TEXT_EXT or ext in {".vtt", ".srt"}:
         return [(_read_text(path), "")]
+
+    if ext == ".zip":
+        from . import whatsapp
+
+        sections = whatsapp.extract_zip(path)
+        if sections is None:
+            raise ValueError("Only WhatsApp chat exports are supported inside .zip files. Unzip other archives first.")
+        return sections
 
     if ext == ".pdf":
         from pypdf import PdfReader

@@ -67,6 +67,7 @@
     <main id="admin" class="view hidden">
       <nav class="subtabs">
         <button data-sub="docs" class="subtab active">Documents</button>
+        <button data-sub="conns" class="subtab">Connections</button>
         <button data-sub="depts" class="subtab">Departments</button>
         <button data-sub="users" class="subtab">Users</button>
         <button data-sub="questions" class="subtab">Questions</button>
@@ -93,7 +94,8 @@
           </div>
           <button class="primary" type="submit">Upload and index</button>
           <p class="muted small">Supported: PDF, Word, Excel, PowerPoint, CSV, text, HTML, email (.eml), subtitles,
-            and audio/video recordings (transcribed automatically).</p>
+            audio/video recordings (transcribed automatically), and WhatsApp chat exports (.txt or .zip, voice notes are transcribed).
+            To connect a mailbox, calendar or website, use the <b>Connections</b> tab.</p>
           <p class="error" id="upload-error"></p>
         </form>
         <div class="card">
@@ -102,6 +104,87 @@
             <button id="refresh-docs" class="secondary">Refresh</button></span></div>
           <table class="table"><thead><tr><th>Title</th><th>Type</th><th>Visible to</th><th>Status</th><th></th></tr></thead>
             <tbody id="doc-rows"></tbody></table>
+        </div>
+      </div>
+
+      <div id="sub-conns" class="sub hidden">
+        <form id="conn-form" class="card">
+          <h2 id="conn-form-title">Connect a source</h2>
+          <input type="hidden" name="id">
+          <div class="row" id="conn-types">
+            <label class="radio"><input type="radio" name="type" value="imap" checked> 📧 Email inbox</label>
+            <label class="radio"><input type="radio" name="type" value="ics"> 📅 Calendar</label>
+            <label class="radio"><input type="radio" name="type" value="website"> 🌐 Website</label>
+            <label class="radio"><input type="radio" name="type" value="whatsapp"> 💬 WhatsApp</label>
+          </div>
+          <label>Name <input name="name" dir="auto" placeholder="e.g. Sales inbox, Office calendar"></label>
+
+          <div class="conn-fields" data-for="imap">
+            <details class="help"><summary>How do I connect Gmail / Google Workspace?</summary>
+              <ol>
+                <li>The mailbox needs 2-Step Verification turned on: <a href="https://myaccount.google.com/signinoptions/two-step-verification" target="_blank">open this page</a> while signed in to that mailbox.</li>
+                <li>Create an app password: <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a> → name it "KnowledgeDesk" → copy the 16-letter password.</li>
+                <li>Here, use server <b>imap.gmail.com</b>, port <b>993</b>, the full email address, and the app password.</li>
+                <li>Folders: <b>INBOX</b>, and for sent mail add <b>[Gmail]/Sent Mail</b>. Use "Test connection" to see all folder names.</li>
+              </ol>
+              <p class="muted small">Other providers: use their IMAP settings (server, port 993). Microsoft 365 / Outlook.com mailboxes need a different
+                sign-in method that is coming in the next version.</p>
+            </details>
+            <div class="grid3">
+              <label>Email address <input name="username" autocomplete="off"></label>
+              <label>Password / app password <input name="password" type="password" autocomplete="new-password"></label>
+              <label>IMAP server <input name="host" placeholder="imap.gmail.com"></label>
+              <label>Port <input name="port" value="993"></label>
+              <label>Folders (comma separated) <input name="folders" value="INBOX"></label>
+              <label>Import emails from the last … days <input name="days" value="365"></label>
+            </div>
+            <p class="muted small" id="imap-folders"></p>
+          </div>
+
+          <div class="conn-fields hidden" data-for="ics">
+            <details class="help" open><summary>Where do I find the calendar link?</summary>
+              <p><b>Google Calendar:</b> on a computer, open Google Calendar → ⚙️ Settings → click the calendar on the left under
+                "Settings for my calendars" → scroll to <b>Integrate calendar</b> → copy <b>Secret address in iCal format</b>.</p>
+              <p><b>Outlook / Microsoft 365:</b> Outlook on the web → ⚙️ Settings → Calendar → <b>Shared calendars</b> → Publish a calendar →
+                choose "Can view all details" → Publish → copy the <b>ICS</b> link.</p>
+            </details>
+            <label>Calendar link (iCal / ICS) <input name="url" type="password" autocomplete="off"></label>
+          </div>
+
+          <div class="conn-fields hidden" data-for="website">
+            <div class="grid3">
+              <label>Website address <input name="url" placeholder="https://www.yourcompany.co.il"></label>
+              <label>Max pages <input name="max_pages" value="200"></label>
+            </div>
+          </div>
+
+          <div class="conn-fields hidden" data-for="whatsapp">
+            <p>WhatsApp doesn't allow other apps to read chats directly, so chats are added by <b>exporting</b> them:</p>
+            <ol>
+              <li>On the phone, open the chat or group → tap its name (iPhone) or ⋮ menu → More (Android) → <b>Export chat</b>.</li>
+              <li>Choose <b>Attach media</b> to include voice notes (they will be transcribed), or Without media for text only.</li>
+              <li>Send the file to yourself (email, or save to Files / Drive) and upload it in <b>Documents → Add knowledge</b>.</li>
+            </ol>
+            <p class="muted small">Re-export and upload the same chat later to update it.</p>
+          </div>
+
+          <div class="conn-visibility">
+            <span class="label">Who can see what comes from this source</span>
+            <div class="checks" id="conn-depts"></div>
+            <label class="radio"><input type="checkbox" name="company_wide"> Everyone in the company</label>
+            <label class="radio"><input type="checkbox" name="enabled" checked> Keep syncing automatically (every 30 minutes)</label>
+          </div>
+          <div class="row conn-actions">
+            <button type="button" id="conn-test" class="secondary">Test connection</button>
+            <button class="primary" type="submit">Save and sync</button>
+            <button type="button" id="conn-cancel" class="secondary hidden">Cancel</button>
+          </div>
+          <p class="error" id="conn-error"></p><p class="ok-msg" id="conn-ok"></p>
+        </form>
+        <div class="card">
+          <div class="row spread"><h2>Connected sources</h2><button id="refresh-conns" class="secondary">Refresh</button></div>
+          <table class="table"><thead><tr><th>Source</th><th>Visible to</th><th>Items</th><th>Last sync</th><th></th></tr></thead>
+            <tbody id="conn-rows"></tbody></table>
         </div>
       </div>
 

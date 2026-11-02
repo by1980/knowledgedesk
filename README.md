@@ -17,6 +17,13 @@ to see.
 - **Employee interviews:** upload a recording of an interview with an experienced employee. It
   is transcribed and turned into structured knowledge notes (processes, contacts, tips, and
   questions it answers). Answers say "according to Moshe…".
+- **Connected sources** (Admin → Connections), synced automatically every 30 minutes:
+  - 📧 **Email inboxes** (Gmail / Google Workspace, and any IMAP mailbox): emails and their
+    attachments (PDF, Word, Excel…).
+  - 📅 **Calendars** (Google Calendar or Outlook, via the calendar's private iCal link).
+  - 🌐 **Websites** (company site, help pages, price pages).
+  - 💬 **WhatsApp chats and groups**, imported from the phone's "Export chat" file. Voice notes
+    are transcribed.
 - **Files from anywhere:** upload in the browser, or drop files into `data/sources/<Department>/`
   on the server. That folder can be kept in sync with Google Drive, OneDrive/SharePoint,
   Dropbox, or a network share (see below).
@@ -93,6 +100,26 @@ customer's account (`rclone config`), and sync on a schedule (crontab):
 */15 * * * * rclone sync "onedrive:HR Policies" /opt/knowledgedesk/data/sources/HR
 ```
 
+### Connecting email, calendar, website and WhatsApp
+
+Go to **Admin → Connections**. Each source gets a name and the departments allowed to see what
+comes from it. For example, the Sales inbox can be visible to Sales only.
+
+- **Gmail / Google Workspace:** turn on 2-Step Verification for the mailbox, create an
+  [app password](https://myaccount.google.com/apppasswords), then connect with server
+  `imap.gmail.com`, port `993`. The app password is stored encrypted. Use "Test connection" to see
+  the folder names, for example `INBOX, [Gmail]/Sent Mail`. The first sync imports the last 365
+  days (up to 500 emails per folder per run), then only new mail.
+- **Google Calendar:** Settings → the calendar → Integrate calendar → *Secret address in iCal
+  format*. **Outlook:** Settings → Calendar → Shared calendars → Publish → ICS link. Events from the
+  last 4 months to the next 12 months are imported.
+- **Website:** enter the address. Up to 200 pages of that site are read.
+- **WhatsApp:** WhatsApp doesn't let other apps read chats. On the phone, use *Export chat* (with
+  media, to include voice notes) and upload the file in Documents. Upload a new export of the same
+  chat later to update it.
+- **Not yet supported:** Microsoft 365 / Outlook.com mailboxes, which need Microsoft sign-in
+  (OAuth), and live WhatsApp Business connection.
+
 ### Interviews with employees
 
 The best knowledge in a small business is in people's heads. Record a 20–40 minute conversation
@@ -164,12 +191,15 @@ uvicorn app.main:app --reload
 | `WHISPER_MODEL` | `small` | Speech-to-text size: `tiny`…`large-v3` |
 | `SUMMARIZE_INTERVIEWS` | `true` | Create knowledge notes from interviews |
 | `SCAN_INTERVAL_SECONDS` | `300` | How often `data/sources` is checked |
+| `CONNECTOR_SYNC_MINUTES` | `30` | How often connected email/calendar/website sources are synced |
 | `TOP_K` | `8` | Passages given to the assistant per question |
 
 ## Roadmap ideas
 
+- Microsoft 365 / Outlook mail and calendar with Microsoft sign-in
 - Direct Google Drive / SharePoint connectors with per-file permissions
-- WhatsApp, Slack or Teams bot for asking questions
+- WhatsApp Business number for asking questions and capturing new messages live
+- Slack or Teams bot for asking questions
 - Department managers who can upload for their own department
 - Scanned-PDF OCR
 - Answer quality test set per customer

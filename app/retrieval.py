@@ -91,7 +91,8 @@ def format_sources(hits: list[dict]) -> str:
     blocks = []
     for i, h in enumerate(hits, 1):
         where = f", {h['location']}" if h["location"] else ""
-        kind = " (employee interview)" if h["kind"] == "interview" else ""
+        kind = {"interview": " (employee interview)", "email": " (email)", "whatsapp": " (WhatsApp chat)",
+                "calendar": " (calendar)", "web": " (website)"}.get(h["kind"], "")
         date = h["updated_at"].date().isoformat() if h.get("updated_at") else ""
         blocks.append(
             f'<source id="{i}" title="{h["title"]}{where}{kind}" updated="{date}">\n{h["content"]}\n</source>'

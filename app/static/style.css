@@ -81,3 +81,8 @@ button:disabled { opacity: .6; cursor: default; }
   .msg.user { margin-left: 0; } .msg.bot { margin-right: 0; }
   .table { display: block; overflow-x: auto; }
 }
+
+.help { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 14px; }
+.help summary { cursor: pointer; color: var(--accent); }
+.help a { color: var(--accent); }
+.ok-msg { color: var(--ok); margin: 6px 0 0; }

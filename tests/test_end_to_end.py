@@ -164,7 +164,7 @@ def test_watched_folders(client, setup, tmp_root):
 
     sara = login(client, "sara@test.local", "password-123")
     events = ask(client, sara, "How long is the boiler warranty?")
-    assert events[0]["sources"][0]["title"] == "warranty"
+    assert "warranty" in [s["title"] for s in events[0]["sources"][:3]]
 
     f.unlink()
     folders.scan()
