@@ -80,7 +80,7 @@ const emptyState = $("#chat-empty");
 
 function renderAnswer(text, sources) {
   // Turn [1] into hoverable citation markers.
-  return esc(text).replace(/\[(\d+)\]/g, (m, n) => {
+  return esc(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^#{1,4} (.+)$/gm, "<b>$1</b>").replace(/\[(\d+)\]/g, (m, n) => {
     const s = sources[Number(n) - 1];
     return s ? `<span class="cite" title="${esc(s.title + (s.location ? " – " + s.location : ""))}">[${n}]</span>` : m;
   });
