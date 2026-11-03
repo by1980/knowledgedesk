@@ -86,7 +86,29 @@ def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: i
         "k": k or settings.top_k,
     }
     with conn() as c:
-        return c.execute(_SQL, params).fetchall()
+        hits = c.execute(_SQL, params).fetchall()
+        if _SOCIAL.search(question) and (not kinds or "social" in kinds):
+            # Questions about posts, likes or followers: always include the account summaries,
+            # which hold the latest post and week-by-week numbers.
+            named = [name for word, name in _PLATFORMS.items() if re.search(word, question, re.I)]
+            summaries = c.execute(_SUMMARIES.format(access=_ACCESS), {**params, "named": named}).fetchall()
+            have = {h["id"] for h in summaries}
+            hits = (summaries + [h for h in hits if h["id"] not in have])[:params["k"]]
+        return hits
+
+
+_SOCIAL = re.compile(r"\b(instagram|insta|facebook|fb|youtube|linkedin|social|posts?|likes?|followers?|subscribers?|views|"
+                     r"reels?|videos?|engagement)\b|אינסטגרם|פייסבוק|יוטיוב|לינקדאין|פוסט|לייק|עוקבים|צפיות|סרטון|רשתות", re.I)
+# The platform a question names comes first ("our last Instagram post" → the Instagram summary).
+_PLATFORMS = {r"instagram|\binsta\b|אינסטגרם": "Instagram", r"facebook|\bfb\b|פייסבוק": "Facebook",
+              r"youtube|יוטיוב": "YouTube", r"linkedin|לינקדאין": "LinkedIn"}
+_SUMMARIES = """
+SELECT c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind, d.metadata, d.updated_at, 1.0 AS score
+FROM chunks c JOIN documents d ON d.id = c.document_id
+WHERE d.kind = 'social' AND d.metadata->>'summary' = 'true' AND {access}
+ORDER BY (d.metadata->>'platform' = ANY(%(named)s::text[])) DESC, d.updated_at DESC, c.id
+LIMIT 6
+"""
 
 
 def fuse(primary: list[dict], secondary: list[dict], k: int | None = None) -> list[dict]:
@@ -106,7 +128,8 @@ def format_sources(hits: list[dict]) -> str:
     for i, h in enumerate(hits, 1):
         where = f", {h['location']}" if h["location"] else ""
         kind = {"interview": " (employee interview)", "email": " (email)", "whatsapp": " (WhatsApp chat)",
-                "calendar": " (calendar)", "web": " (website)", "slack": " (Slack)"}.get(h["kind"], "")
+                "calendar": " (calendar)", "web": " (website)", "slack": " (Slack)",
+                "social": " (social media)"}.get(h["kind"], "")
         date = h["updated_at"].date().isoformat() if h.get("updated_at") else ""
         blocks.append(
             f'<source id="{i}" title="{h["title"]}{where}{kind}" updated="{date}">\n{h["content"]}\n</source>'

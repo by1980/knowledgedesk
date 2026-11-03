@@ -378,3 +378,24 @@ img.tone-light { filter: brightness(0); opacity: .85; }
 
 .kpi .sub { line-height: 1.4; }
 #home-title .btn.link { font-size: 13px; font-weight: 500; margin-left: 8px; vertical-align: middle; }
+
+/* Everything clickable shows a pointing hand */
+a[href], button:not(:disabled), [role="button"], summary, select, label.check, label.btn, .tile, .segmented span, .dropzone,
+input[type="checkbox"], input[type="radio"], input[type="file"], [data-doc], [data-items], [data-copy], .side-user, .side-link,
+.examples button, .feedback button, .viz .hit { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* Social media accounts under a connection */
+.brand-tile.duo { width: auto; padding: 0 8px; gap: 6px; display: inline-flex; }
+.social-list { margin-top: 10px; display: grid; gap: 8px; }
+.social-acc { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.social-acc a { color: inherit; }
+.social-acc a:hover { color: var(--accent); }
+.social-pf { font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 3px 8px; border-radius: 999px; color: #fff; flex: none; }
+.pf-facebook { background: #1877F2; }
+.pf-instagram { background: linear-gradient(45deg, #FA7E1E, #D62976 55%, #4F5BD5); }
+.pf-youtube { background: #E00; }
+.pf-linkedin { background: #0A66C2; }
+.social-week { text-align: right; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.social-week b { font-size: 18px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .social-acc { flex-wrap: wrap; } .social-week { align-items: flex-start; text-align: left; } }

@@ -181,9 +181,45 @@ Slack only accepts **https** return addresses, so Slack needs the return page on
 KnowledgeDesk reads all public channels and private channels the app was added to, including
 thread replies. It never posts anything.
 
+### Facebook and Instagram (developers.facebook.com)
+One "Connect Facebook account" step reads the customer's Facebook Pages and the Instagram business
+accounts linked to them: posts, captions, likes, comments, shares and follower counts. Like Slack, it
+needs the **https** return page.
+1. **My Apps → Create app**, use case **Other**, type **Business**, name `KnowledgeDesk`.
+2. Add the **Facebook Login for Business** product. Under *Settings*, add your return address to
+   *Valid OAuth Redirect URIs*.
+3. **App settings → Basic:** add your privacy policy link and app icon. Copy the **App ID** and
+   **App secret** into `.env` (`META_APP_ID`, `META_APP_SECRET`) or into `app/vendor_oauth.json`
+   under `"meta"`.
+4. **App Review → Permissions and features:** request `pages_show_list`, `pages_read_engagement`,
+   `pages_read_user_content`, `instagram_basic`, `instagram_manage_insights` and
+   `business_management`. Until Meta approves them, only people with a role on the app (add them
+   under **App roles**) can connect. Approval is free and needs a short screen recording of the
+   Connect flow. Then switch the app to **Live**.
+
+Facebook asks people to sign in again every 60 days. When that happens, the Sources page says so
+and shows the Connect button.
+
+### YouTube
+YouTube uses the Google sign-in. In the Google project, also enable **YouTube Data API v3**
+(APIs & Services → Library), and add the `youtube.readonly` scope under *Data access*. Adding YouTube
+to an already connected Google account keeps its Gmail, Calendar and Drive access.
+
+### LinkedIn
+LinkedIn only lets approved marketing partners read company pages. Customers import the export
+instead: on their company page, **Analytics → Content → Export**, then **Import LinkedIn file** on
+the Sources page.
+
+### How social numbers stay current
+Posts and their numbers are checked every hour. Each account also gets a summary item: latest post,
+this week and last week, the last 7 and 30 days, the best post of the month, week-by-week totals,
+and follower changes. Questions like "how many likes did we get last week?" are answered from it,
+with the date the numbers were taken.
+
 ### Putting the keys in
 - **One computer:** add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID` and
-  `MICROSOFT_CLIENT_SECRET` (plus `OAUTH_REDIRECT_URL` for the relay address) to `.env`, then run
+  `MICROSOFT_CLIENT_SECRET`, `SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET` and `META_APP_ID`/`META_APP_SECRET`
+  (plus `OAUTH_REDIRECT_URL` for the relay address) to `.env`, then run
   `docker compose up -d`.
 - **Every installation:** copy `app/vendor_oauth.example.json` to `app/vendor_oauth.json` and fill it
   in. It is then built into every installation. Keep the GitHub repository private, because this

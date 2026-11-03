@@ -49,7 +49,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Home shows the setup checklist (0 of 3)", (await text("#home-setup")).includes("0 of 3 done"));
   check("Home: key numbers shown", /Items in the knowledge base[\s\S]*Added in the last 24 hours[\s\S]*Questions this week[\s\S]*Questions answered/.test(await text("#home-kpis")));
   check("Home: empty chart explains itself", /No questions yet/.test(await text("#home-q-chart")));
-  check("Home says what needs attention", /Connected sources|Nothing connected/.test(await text("#home-health")));
+  check("Home: no alert box when nothing is broken", (await text("#home-health")).trim() === "");
+  check("Home: no 'Not your name?' link", !/Not your name/.test(await text("#page-home")));
   await shot("home-first-use");
 
   // ------------------------------------------------------------------ 3. Ask before anything is connected
@@ -146,6 +147,34 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Overview: Slack tile now Connected", await until(async () => /Connected/.test(await text("[data-tile=slack]")), 10000, 500));
   await page.evaluate(() => document.querySelector("#page-sources").scrollTo(0, 0)); await sleep(300);
   await shot("sources-overview", false);
+  // ------------------------------------------------------------------ 6c. Social media
+  const fb = ".provider-card[data-provider=meta]";
+  check("Social media: Facebook and Instagram card with a clear button", (await text(`${fb} [data-open-connect]`)).trim() === "Connect Facebook account");
+  check("Connection hub: Facebook & Instagram, YouTube and LinkedIn tiles", await page.isVisible("[data-tile=meta_social] [data-connect-tile]")
+    && await page.isVisible("[data-tile=youtube] [data-connect-tile]") && /Import/.test(await text("[data-tile=linkedin]")));
+  await page.click(`${fb} [data-open-connect]`);
+  check("Facebook: tells to pick the Page and its Instagram account", /Instagram account when asked/.test(await text(`${fb} .panel`)));
+  await page.check(`${fb} .panel .vis-everyone`); await page.click(`${fb} [data-go]`);
+  await page.waitForURL(/facebook\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
+  const fbReady = await until(async () => /@acme\.plumbing/.test(await text(`${fb} .pc-accounts`)) && /7 posts searchable/.test(await text(`${fb} .pc-accounts`)), 90000, 2000);
+  check("Facebook: Page and Instagram connected, posts searchable", fbReady, await text(`${fb} .pc-accounts`));
+  check("Facebook: shows followers, last post and likes this week", /1,840 followers/.test(await text(`${fb} .pc-accounts`))
+    && /3,120 followers/.test(await text(`${fb} .pc-accounts`)) && /last post/.test(await text(`${fb} .pc-accounts`)) && /212/.test(await text(`${fb} .pc-accounts`)), await text(`${fb} .pc-accounts`));
+  const yt = ".provider-card[data-provider=youtube]";
+  check("YouTube: clear 'Connect YouTube channel' button", (await text(`${yt} [data-open-connect]`)).trim() === "Connect YouTube channel");
+  await page.click(`${yt} [data-open-connect]`); await page.check(`${yt} .panel .vis-everyone`);
+  check("YouTube: signs in with Google", /Continue to Google/.test(await text(`${yt} [data-go]`)));
+  await page.click(`${yt} [data-go]`);
+  await page.waitForURL(/google\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
+  check("YouTube: channel connected with its numbers", await until(async () => /@acmeplumbing[\s\S]*860 subscribers/.test(await text(`${yt} .pc-accounts`)), 60000, 1500), await text(`${yt} .pc-accounts`));
+  check("YouTube: Gmail on the same Google account is still fine", await until(async () => !/Needs attention/.test(await text(`${g} .account`)), 5000, 500));
+  check("Connection hub: Facebook & Instagram tile now Connected", await until(async () => /Connected|Importing/.test(await text("[data-tile=meta_social]")), 10000, 500));
+  await page.locator(fb).scrollIntoViewIfNeeded(); await sleep(300);
+  await shot("social-media", false);
+  await page.click("#li-upload");
+  check("LinkedIn: import selects 'LinkedIn export' in the upload form", await until(async () => await page.isChecked("input[name=kind][value=linkedin]"), 3000, 200));
+  await page.click("label:has(input[name=kind][value=file])");
+
   await page.locator(".provider-card[data-provider=slack]").scrollIntoViewIfNeeded(); await sleep(300);
   await shot("slack-and-whatsapp", false);
 
@@ -266,10 +295,13 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click(".msg.bot .feedback button[data-v='-1']");
   check("Feedback is confirmed", await toastSeen(/Thanks/));
   check("Ask: 'Search in' lists the kinds of sources that exist", await page.evaluate(() =>
-    [...document.querySelectorAll("#scope-filter option")].map((o) => o.textContent).join(",")).then((t) => /Emails/.test(t) && /Calendar/.test(t) && /Slack/.test(t)));
+    [...document.querySelectorAll("#scope-filter option")].map((o) => o.textContent).join(",")).then((t) => /Emails/.test(t) && /Calendar/.test(t) && /Slack/.test(t) && /Social media/.test(t)));
+  await page.fill("#question", "How many likes did our last Instagram post get?"); await page.press("#question", "Enter");
+  await until(async () => (await page.$$(".msg.bot .feedback")).length === 2, 30000, 300);
+  check("Ask: Instagram question uses the account summary", /Instagram summary/.test(await text(".msg.bot:last-of-type .sources")), await text(".msg.bot:last-of-type"));
   await page.selectOption("#scope-filter", "kind:calendar");
   await page.fill("#question", "When is the supplier visit?"); await page.press("#question", "Enter");
-  await until(async () => (await page.$$(".msg.bot .feedback")).length === 2, 30000, 300);
+  await until(async () => (await page.$$(".msg.bot .feedback")).length === 3, 30000, 300);
   check("Ask: calendar question finds the calendar", /Calendar|Supplier visit/.test(await text(".msg.bot:last-of-type")));
   check("Ask: 'Calendar only' searched only the calendar", !/Email:/.test(await text(".msg.bot:last-of-type .sources")));
   await page.selectOption("#scope-filter", "");
@@ -302,7 +334,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#logout");
   await page.fill("input[name=email]", "admin@acme.test"); await page.fill("input[name=password]", "admin-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  await until(async () => /Everything is working|need your attention|Almost ready/.test(await text("#home-health")), 10000, 300);
+  await until(async () => /Items in the knowledge base/.test(await text("#home-kpis")), 10000, 300);
   check("Home: setup checklist complete (hidden)", (await text("#home-setup")).trim() === "");
   check("Home: questions-per-day chart drawn", await until(async () => (await page.$$("#home-q-chart svg path, #home-q-chart svg rect:not(.hit)")).length > 0, 5000, 300));
   check("Home: questions by person shows who asked", /Yaniv Barak/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
@@ -320,18 +352,21 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const health = await text("#health-list");
   check("Health: every check is listed in plain words", /AI answers/.test(health) && /Search engine/.test(health) && /Connected sources/.test(health));
   check("Health: sources reported as working", /all working/.test(health), health);
+  check("Health: AI key box stays hidden while answers work", !(await page.isVisible("#ai-card")));
+  await page.evaluate(() => document.querySelector("#ai-card").classList.remove("hidden")); // as when the key is missing
+  await page.fill("#ai-form input[name=key]", "hello"); await page.click("#ai-form button");
+  check("Health: a wrong AI key gets a clear message", await until(async () => /doesn.t look like a Claude API key \(received: 5 characters\)/.test(await text("#ai-error")), 5000, 200));
+  await page.evaluate(() => document.querySelector("#ai-card").classList.add("hidden"));
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#health-download")]);
   check("Health: report can be downloaded", /knowledgedesk-health/.test(download.suggestedFilename()));
   await page.click("#nav a[data-page=settings]");
-  check("Settings: company card, Claude key and plan", await until(async () => await page.isVisible("#company-form") && await page.isVisible("#ai-form")
+  check("Settings: only company and plan – no technical key box", !(await page.$("#page-settings #ai-form")) && await until(async () => await page.isVisible("#company-form")
     && /Plan and billing/.test(await text("#plan-card")) && (await page.inputValue("#company-form input[name=name]")) !== "", 8000, 200));
   await page.fill("#company-form input[name=name]", "Acme Plumbing Ltd");
   await page.fill("#company-form input[name=website]", `${SIM}/site/`);
   await page.click("#company-form button[type=submit]");
   check("Settings: the logo is found on the company website", await until(async () => await page.isVisible("#company-logo") && await page.isVisible("#logo-preview img"), 15000, 300));
   check("Sidebar: logo links to the company website", (await page.getAttribute("#company-link", "href")) === `${SIM}/site/`);
-  await page.fill("#ai-form input[name=key]", "hello"); await page.click("#ai-form button");
-  check("Claude API key: a wrong key gets a clear message", await until(async () => /doesn.t look like a Claude API key \(received: 5 characters\)/.test(await text("#ai-error")), 5000, 200));
   await shot("settings");
 
   // ------------------------------------------------------------------ 13. Disconnect

@@ -2,5 +2,6 @@
   "redirect_url": "https://connect.yourcompany.com/oauth.html",
   "google": {"client_id": "xxxxxxxx.apps.googleusercontent.com", "client_secret": "GOCSPX-xxxxxxxx"},
   "microsoft": {"client_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "client_secret": "xxxxxxxx"},
-  "slack": {"client_id": "1234567890.1234567890", "client_secret": "xxxxxxxx"}
+  "slack": {"client_id": "1234567890.1234567890", "client_secret": "xxxxxxxx"},
+  "meta": {"client_id": "123456789012345", "client_secret": "xxxxxxxx"}
 }

@@ -49,6 +49,7 @@ class Sync:
         self.seen: set[str] = set()
         self.queued = 0
         self.skipped: list[str] = []
+        self.scheduled = False  # True when the background schedule started this run (not "Check now")
 
     def skip(self, name: str, reason: str) -> None:
         """Remember an item that could not be imported, and carry on with the rest."""

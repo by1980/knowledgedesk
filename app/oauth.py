@@ -28,6 +28,7 @@ GOOGLE_SCOPES = {
     "mail": "https://www.googleapis.com/auth/gmail.readonly",
     "calendar": "https://www.googleapis.com/auth/calendar.readonly",
     "files": "https://www.googleapis.com/auth/drive.readonly",
+    "youtube": "https://www.googleapis.com/auth/youtube.readonly",
 }
 MICROSOFT_SCOPES = {"mail": "Mail.Read", "calendar": "Calendars.Read", "files": "Files.Read.All"}
 
@@ -38,7 +39,7 @@ PROVIDERS = {
         "token_url": "https://oauth2.googleapis.com/token",
         "base_scopes": ["openid", "email"],
         "scopes": GOOGLE_SCOPES,
-        "connector_types": {"mail": "gmail", "calendar": "gcal", "files": "gdrive"},
+        "connector_types": {"mail": "gmail", "calendar": "gcal", "files": "gdrive", "youtube": "youtube"},
     },
     "microsoft": {
         "name": "Microsoft",
@@ -47,6 +48,18 @@ PROVIDERS = {
         "base_scopes": ["openid", "email", "offline_access", "User.Read"],
         "scopes": MICROSOFT_SCOPES,
         "connector_types": {"mail": "ms_mail", "calendar": "ms_cal", "files": "ms_drive"},
+    },
+    "meta": {
+        "name": "Facebook",
+        "auth_url": "https://www.facebook.com/v23.0/dialog/oauth",
+        "token_url": "https://graph.facebook.com/v23.0/oauth/access_token",
+        "base_scopes": [],
+        # Read the Pages you manage and their Instagram business accounts: posts, comments and counts.
+        "scopes": {"social": "pages_show_list,pages_read_engagement,pages_read_user_content,instagram_basic,"
+                             "instagram_manage_insights,business_management"},
+        "scope_separator": ",",
+        "pkce": False,
+        "connector_types": {"social": "meta_social"},
     },
     "slack": {
         "name": "Slack",
@@ -60,7 +73,8 @@ PROVIDERS = {
         "connector_types": {"messages": "slack"},
     },
 }
-SERVICE_LABEL = {"mail": "Email", "calendar": "Calendar", "files": "Files", "messages": "Slack"}
+SERVICE_LABEL = {"mail": "Email", "calendar": "Calendar", "files": "Files", "messages": "Slack", "youtube": "YouTube",
+                 "social": "Facebook & Instagram"}
 
 
 def _vendor_file() -> dict:
@@ -147,7 +161,8 @@ def start(provider: str, services: list[str], department_ids: list[int], company
     if cfg.get("pkce", True):
         params.update(code_challenge=_b64(hashlib.sha256(verifier.encode()).digest()), code_challenge_method="S256")
     if provider == "google":
-        params.update(access_type="offline", prompt="consent")
+        # include_granted_scopes: adding YouTube later keeps Gmail/Calendar/Drive access on the same sign-in
+        params.update(access_type="offline", prompt="consent", include_granted_scopes="true")
     elif provider == "microsoft":
         params["prompt"] = "select_account"
     auth_url = cfg["auth_url"]
@@ -162,7 +177,10 @@ def _token_request(provider: str, data: dict) -> dict:
     if client_secret:
         data["client_secret"] = client_secret
     with http() as h:
-        r = h.post(PROVIDERS[provider]["token_url"], data=data)
+        if provider == "meta":
+            r = h.get(PROVIDERS[provider]["token_url"], params=data)
+        else:
+            r = h.post(PROVIDERS[provider]["token_url"], data=data)
     body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code != 200 or body.get("ok") is False:  # Slack answers 200 with ok=false on errors
         raise RuntimeError(body.get("error_description") or body.get("error") or f"Sign-in failed ({r.status_code})")
@@ -195,7 +213,15 @@ def finish(state: str, code: str) -> list[int]:
     if PROVIDERS[provider].get("pkce", True):
         request["code_verifier"] = pending["verifier"]
     tokens = _token_request(provider, request)
-    if provider == "slack":
+    if provider == "meta":
+        longer = _token_request("meta", {"grant_type": "fb_exchange_token", "fb_exchange_token": tokens["access_token"]})
+        with http() as h:
+            me = h.get("https://graph.facebook.com/v23.0/me", params={"fields": "name"},
+                       headers={"Authorization": f"Bearer {longer['access_token']}"}).json()
+        email = me.get("name") or "Facebook account"
+        token_blob = {"refresh_token": None, "access_token": longer["access_token"],
+                      "expires_at": time.time() + int(longer.get("expires_in") or 60 * 86400) - 3600}
+    elif provider == "slack":
         # Slack bot tokens don't expire (unless token rotation is turned on, which also sends a refresh token).
         email = (tokens.get("team") or {}).get("name") or "Slack workspace"
         token_blob = {"refresh_token": tokens.get("refresh_token"), "access_token": tokens["access_token"],
@@ -255,6 +281,9 @@ def access_token(account_id: int) -> str:
         if tokens.get("access_token") and tokens.get("expires_at", 0) > time.time():
             return tokens["access_token"]
         if not tokens.get("refresh_token"):
+            if row["provider"] == "meta":
+                raise RuntimeError("Facebook access expired (Facebook asks to sign in again every 60 days). "
+                                   "Click Connect with Facebook again.")
             raise RuntimeError("Access was revoked: the saved sign-in is incomplete.")
         try:
             fresh = _token_request(row["provider"], {"grant_type": "refresh_token",

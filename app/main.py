@@ -54,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.1"
+APP_VERSION = "0.9.2"
 
 
 def _ensure_secret_key() -> None:
@@ -207,7 +207,7 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
     return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
-KINDS = {"email", "file", "calendar", "slack", "whatsapp", "web", "interview"}
+KINDS = {"email", "file", "calendar", "slack", "whatsapp", "web", "interview", "social"}
 
 
 class FeedbackIn(BaseModel):
@@ -462,7 +462,7 @@ def upload_documents(
     depts = [int(x) for x in department_ids.split(",") if x.strip().isdigit()]
     if not depts and not company_wide:
         raise HTTPException(400, "Choose at least one department, or mark the document as company-wide")
-    if kind not in ("file", "interview", "whatsapp"):
+    if kind not in ("file", "interview", "whatsapp", "linkedin"):
         raise HTTPException(400, "Unknown document kind")
     meta = {k: v for k, v in {"interviewee": interviewee, "role": role, "interview_date": interview_date}.items() if v}
     created = []
@@ -480,6 +480,10 @@ def upload_documents(
                                                            or Path(name).suffix.lower() == ".zip")):
                 doc_kind = "whatsapp"
                 title = "WhatsApp: " + re.sub(r"(?i)^whatsapp\s*(chat)?\s*(with|-)?\s*", "", title).strip()
+            if kind == "linkedin":
+                doc_kind = "social"
+                title = "LinkedIn: " + title
+                meta["platform"] = "LinkedIn"
             if doc_kind == "interview" and interviewee:
                 title = f"Interview - {interviewee}" + (f" ({role})" if role else "")
             doc_id = c.execute(
@@ -638,6 +642,7 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
         r["more"] = bool((r.get("state") or {}).get("more"))
         r["channels"] = (r.get("state") or {}).get("channel_count")
         r["private_not_added"] = (r.get("state") or {}).get("private_not_added")
+        r["social_accounts"] = (r.get("state") or {}).get("accounts")
         r.pop("state", None)
     return _with_account_emails(rows)
 
@@ -1039,7 +1044,7 @@ def _check_ai() -> dict:
     if settings.fake_llm:
         return {"state": "ok", "detail": "Test mode (answers are simulated)."}
     if not llm.api_key():
-        return {"state": "bad", "detail": "No Claude API key yet. Paste one in Settings → Claude API key."}
+        return {"state": "bad", "detail": "No Claude API key yet. Paste one below."}
     if time.time() - _ai_check["at"] < 300 and _ai_check["result"]:
         return _ai_check["result"]
     try:
@@ -1048,8 +1053,8 @@ def _check_ai() -> dict:
     except Exception as e:  # noqa: BLE001
         text = str(e)
         if "401" in text or "authentication" in text.lower():
-            result = {"state": "bad", "detail": "The Claude API key is wrong or was revoked. Paste a working key in "
-                                                "Settings → Claude API key (create one at console.anthropic.com)."}
+            result = {"state": "bad", "detail": "The Claude API key is wrong or was revoked. Paste a working key "
+                                                "below (create one at console.anthropic.com)."}
         elif "credit" in text.lower() or "billing" in text.lower():
             result = {"state": "bad", "detail": "The Claude account has no credit left. Add credit at console.anthropic.com."}
         else:

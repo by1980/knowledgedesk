@@ -105,9 +105,10 @@ function visibilityPills(item) {
 async function refreshDepartments() { departments = await getJSON("/api/departments"); }
 
 // ---------- what can be searched
-const KIND_ICON = { file: "file", documents: "file", interview: "mic", whatsapp: "chat", email: "mail", calendar: "calendar", web: "globe", slack: "ask" };
+const KIND_ICON = { file: "file", documents: "file", interview: "mic", whatsapp: "chat", email: "mail", calendar: "calendar", web: "globe", slack: "ask", social: "share" };
 const KIND_NAMES = { email: ["email", "emails"], documents: ["document", "documents"], calendar: ["calendar event", "calendar events"],
-  slack: ["Slack message", "Slack messages"], web: ["web page", "web pages"], whatsapp: ["WhatsApp chat", "WhatsApp chats"], interview: ["interview", "interviews"] };
+  slack: ["Slack message", "Slack messages"], web: ["web page", "web pages"], whatsapp: ["WhatsApp chat", "WhatsApp chats"], interview: ["interview", "interviews"],
+  social: ["social media post", "social media posts"] };
 function knowledgeChips(ready) {
   return Object.entries(KIND_NAMES).filter(([k]) => ready[k]).map(([k, [one, many]]) =>
     `<span class="stat-chip">${ic(KIND_ICON[k])}<span><b>${num(ready[k])}</b> ${ready[k] === 1 ? one : many}</span></span>`).join("");
@@ -173,7 +174,7 @@ function updateBanner() {
   const lic = appStatus.license || {};
   const banner = $("#banner");
   let html = "";
-  if (!appStatus.llm_configured && me?.role === "admin") html = `${ic("alert")}<span>Answers are off until a Claude API key is added. <a href="#settings">Add it in Settings</a></span>`;
+  if (!appStatus.llm_configured && me?.role === "admin") html = `${ic("alert")}<span>Answers are off until the AI service key is added. <a href="#health">Add it</a></span>`;
   else if (lic.message && lic.state !== "unchecked") html = `${ic("alert")}<span>${esc(lic.message)}</span>`;
   banner.innerHTML = html; banner.classList.toggle("hidden", !html);
 }
@@ -302,18 +303,18 @@ function hbarChart(rows, empty) {
 // ================================================================== Home (admins)
 LOADERS.home = async function loadHome() {
   const first = firstName(me);
-  $("#home-title").innerHTML = (first ? `Hi ${esc(first)}` : "Home") +
-    (hasRealName(me) ? "" : ` <button class="btn link small" type="button" id="set-name">Not your name?</button>`);
-  $("#set-name")?.addEventListener("click", () => $("#user-name").click());
+  $("#home-title").textContent = first ? `Hi ${first}` : "Home";
   const days = Number($("#home-days").value);
   const [setup, health, a] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health"), getJSON(`/api/admin/analytics?days=${days}`)]);
 
-  const issues = health.checks.filter((c) => !["ok", "info"].includes(c.state));
-  const bad = issues.some((c) => c.state === "bad");
-  $("#home-health").innerHTML = !issues.length ? "" : `<div class="health-banner ${bad ? "bad" : "warn"}">${ic(bad ? "error" : "clock")}<div>
-      <b>${bad ? "Some things need your attention" : "Almost ready"}</b>
-      <ul>${issues.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul>
-      <a href="#health">Open Health</a></div></div>`;
+  // Only things that are broken and need the admin. Work in progress and small notes live on the Health page.
+  const FIX = { ai: ["#health", "Fix it"], sources: ["#sources", "Open Sources"], license: ["#settings", "Open Settings"] };
+  const broken = health.checks.filter((c) => c.state === "bad");
+  $("#home-health").innerHTML = !broken.length ? "" : `<div class="health-banner bad">${ic("error")}<div class="grow">
+      <b>${broken.length === 1 ? "Something needs your attention" : "Some things need your attention"}</b>
+      <ul>${broken.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul></div>
+      <a class="btn" href="${(FIX[broken[0].id] || ["#health"])[0]}">${(FIX[broken[0].id] || ["", "See details"])[1]}</a></div>`;
+  const issues = broken;
 
   const steps = [
     [setup.has_sources, "Connect your company's information", "Email, calendar, Drive, Slack, your website, documents.", "#sources", "Connect sources"],
@@ -350,7 +351,7 @@ LOADERS.home = async function loadHome() {
 $("#home-days").addEventListener("change", () => LOADERS.home());
 
 const LEARN_LABEL = { gmail: "Gmail", gcal: "Google Calendar", gdrive: "Google Drive", ms_mail: "Outlook mail", ms_cal: "Outlook calendar",
-  ms_drive: "OneDrive", slack: "Slack", website: "Website", whatsapp_business: "WhatsApp Business", imap: "Mailbox", ics: "Calendar" };
+  ms_drive: "OneDrive", slack: "Slack", meta_social: "Facebook and Instagram", youtube: "YouTube", website: "Website", whatsapp_business: "WhatsApp Business", imap: "Mailbox", ics: "Calendar" };
 function drawLearning(a) {
   const t = a.totals;
   const rows = a.freshness.map((k) => {
@@ -382,9 +383,10 @@ const EXAMPLES = {
   documents: "What are our main procedures?", web: "What services do we offer?",
   interview: "How do we handle a new customer order?", whatsapp: "What was decided in the team chat recently?",
   slack: "What was discussed in Slack this week?",
+  social: "What was our latest Instagram post and how many likes did it get?",
 };
 const SCOPE_KINDS = [["email", "email", "Emails"], ["documents", "file", "Documents and files"], ["calendar", "calendar", "Calendar"],
-  ["slack", "slack", "Slack"], ["whatsapp", "whatsapp", "WhatsApp"], ["web", "web", "Websites"], ["interview", "interview", "Interviews"]];
+  ["slack", "slack", "Slack"], ["whatsapp", "whatsapp", "WhatsApp"], ["web", "web", "Websites"], ["social", "social", "Social media"], ["interview", "interview", "Interviews"]];
 LOADERS.ask = async function loadAsk() {
   let o = { ready: {} };
   try { o = await getJSON("/api/overview"); } catch {}
@@ -561,13 +563,18 @@ $("#lib-search").addEventListener("input", debounce(() => LOADERS.library()));
 
 // ================================================================== Sources
 const PROVIDER_TYPES = { google: { mail: "gmail", calendar: "gcal", files: "gdrive" }, microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" },
-  slack: { messages: "slack" } };
-const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft", slack: "Slack" };
-const PROVIDER_ACCOUNT = { google: "account", microsoft: "account", slack: "workspace" };
+  slack: { messages: "slack" }, meta: { social: "meta_social" }, youtube: { youtube: "youtube" } };
+const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft", slack: "Slack", meta: "Facebook", youtube: "YouTube" };
+const PROVIDER_ACCOUNT = { google: "account", microsoft: "account", slack: "workspace", meta: "account", youtube: "channel" };
+// Cards that sign in through another provider's page
+const CARD_PROVIDER = { youtube: "google" };
+const oauthOf = (card) => CARD_PROVIDER[card] || card;
 const PROVIDER_SERVICES = {
   google: [["mail", "Gmail", "all mail except spam, trash and promotions"], ["calendar", "Google Calendar", ""], ["files", "Google Drive", ""]],
   microsoft: [["mail", "Outlook mail", "all mail in Inbox and Sent"], ["calendar", "Outlook calendar", ""], ["files", "OneDrive", ""]],
   slack: [["messages", "Slack channels", "public channels, plus private channels you add the KnowledgeDesk app to"]],
+  meta: [["social", "Facebook Pages and their Instagram accounts", "you choose which ones on Facebook's page"]],
+  youtube: [["youtube", "YouTube channel", "videos, views, likes and comments"]],
 };
 const SERVICE_INFO = {
   gmail: ["mail", "Gmail", "email", "emails"], ms_mail: ["mail", "Outlook mail", "email", "emails"],
@@ -575,11 +582,13 @@ const SERVICE_INFO = {
   gdrive: ["folder", "Google Drive", "file", "files"], ms_drive: ["folder", "OneDrive", "file", "files"],
   imap: ["mail", "Mailbox", "email", "emails"], ics: ["calendar", "Calendar", "event", "events"], website: ["globe", "Website", "page", "pages"],
   slack: ["ask", "Channels", "message", "messages"],
+  meta_social: ["share", "Pages and Instagram", "post", "posts"], youtube: ["play", "Videos", "video", "videos"],
   whatsapp_business: ["chat", "WhatsApp Business", "conversation-day", "conversation-days"],
 };
 const CALENDAR_TYPES = ["gcal", "ms_cal", "ics", "slack"]; // counted in events / messages, not documents
 let conns = [];
 let overviewNow = { importing: 0 };
+let linkedinFiles = 0;
 let oauthState = { configured: {}, redirect_url: "" };
 let editing = false; // a form or panel is open: refreshes must not redraw it
 
@@ -628,7 +637,8 @@ LOADERS.sources = async function loadSources() {
 const TILES = [
   ["gmail", "Gmail", "mail", "google"], ["gcal", "Google Calendar", "calendar", "google"], ["gdrive", "Google Drive", "folder", "google"],
   ["ms_mail", "Outlook mail", "mail", "microsoft"], ["ms_cal", "Outlook calendar", "calendar", "microsoft"], ["ms_drive", "OneDrive", "folder", "microsoft"],
-  ["slack", "Slack", "ask", "slack"], ["website", "Websites", "globe", "web-card"], ["whatsapp", "WhatsApp", "chat", "whatsapp-card"],
+  ["slack", "Slack", "ask", "slack"], ["meta_social", "Facebook & Instagram", "share", "meta"], ["youtube", "YouTube", "play", "youtube"],
+  ["linkedin", "LinkedIn", "share", "linkedin-card"], ["website", "Websites", "globe", "web-card"], ["whatsapp", "WhatsApp", "chat", "whatsapp-card"],
   ["uploads", "Uploaded files", "upload", "files-card"],
 ];
 function tileState(type) {
@@ -641,6 +651,7 @@ function tileState(type) {
     return n ? ["ok", "Chats imported", plural(n, "chat", "chats")] : ["", "Not connected", ""];
   }
   if (type === "uploads") return ["", "", ""];
+  if (type === "linkedin") return linkedinFiles ? ["ok", "Imported", plural(linkedinFiles, "file", "files")] : ["", "Not connected", ""];
   if (!ks.length) return ["", "Not connected", ""];
   const count = ks.reduce((a, k) => a + (CALENDAR_TYPES.includes(k.type) ? k.events : k.ready), 0);
   const [, , one, many] = SERVICE_INFO[type];
@@ -652,7 +663,7 @@ function drawTiles(uploads) {
   $("#overview-tiles").innerHTML = TILES.map(([type, label, icon, target]) => {
     let [state, text, count] = tileState(type);
     if (type === "uploads") [state, text, count] = uploads ? ["ok", "Added", plural(uploads, "file", "files")] : ["", "None yet", ""];
-    const action = type === "uploads" ? "Upload" : type === "website" ? "Add" : "Connect";
+    const action = type === "uploads" ? "Upload" : type === "website" ? "Add" : type === "linkedin" ? "Import" : "Connect";
     return `<div class="tile ${state ? "" : "off"}" data-tile="${type}" data-target="${target}" role="button" tabindex="0">
       <span class="icon-tile">${ic(icon)}</span><span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}
       ${state ? "" : `<button type="button" class="btn small primary tile-connect" data-connect-tile="${type}">${action}</button>`}</span></div>`;
@@ -664,17 +675,19 @@ function drawTiles(uploads) {
   });
 }
 const TILE_SERVICE = { gmail: ["google", "mail"], gcal: ["google", "calendar"], gdrive: ["google", "files"],
-  ms_mail: ["microsoft", "mail"], ms_cal: ["microsoft", "calendar"], ms_drive: ["microsoft", "files"], slack: ["slack", "messages"] };
+  ms_mail: ["microsoft", "mail"], ms_cal: ["microsoft", "calendar"], ms_drive: ["microsoft", "files"], slack: ["slack", "messages"],
+  meta_social: ["meta", "social"], youtube: ["youtube", "youtube"] };
 function connectFromTile(type) {
   if (TILE_SERVICE[type]) {
     const [provider, service] = TILE_SERVICE[type];
     const card = $(`.provider-card[data-provider=${provider}]`);
     card.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (!oauthState.configured[provider]) return setupNeededDialog(provider);
+    if (!oauthState.configured[oauthOf(provider)]) return setupNeededDialog(provider);
     openConnectPanel(provider, [service]);
     return;
   }
   if (type === "website") { $("#web-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#web-form input").focus(), 400); return; }
+  if (type === "linkedin") return $("#li-upload").click();
   if (type === "whatsapp") { $("#whatsapp-card").scrollIntoView({ behavior: "smooth", block: "start" }); openWhatsAppPanel(); return; }
   if (type === "uploads") { $("#files-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#dropzone input").click(), 400); }
 }
@@ -699,17 +712,20 @@ async function refreshSources(withFiles = false) {
   conns = await getJSON("/api/connectors");
   overviewNow = await getJSON("/api/overview");
   const o = overviewNow;
+  linkedinFiles = await api("/api/documents?source=uploads&kind=social&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => linkedinFiles);
   try {
     const up = await api("/api/documents?source=uploads&limit=1");
     drawTiles(Number(up.headers.get("X-Total-Count") || 0));
   } catch { drawTiles(0); }
+  linkedinFiles = await api("/api/documents?source=uploads&kind=social&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => 0);
+  $("#li-status").innerHTML = linkedinFiles ? `<p class="muted small wa-status">${plural(linkedinFiles, "LinkedIn file", "LinkedIn files")} imported – listed under Files and recordings.</p>` : "";
   const imported = await api("/api/documents?source=uploads&kind=whatsapp&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => 0);
   $("#wa-status").innerHTML = imported ? `<span class="muted small">${plural(imported, "chat", "chats")} imported from the phone – listed under Files and recordings.</span>` : "";
   const importing = o.importing || conns.some((k) => k.syncing || !k.last_sync || k.more);
   $("#kb-summary").innerHTML = `<div class="toolbar"><h3>In the knowledge base now</h3></div>
     ${o.total ? `<div class="chips">${knowledgeChips(o.ready)}</div>` : '<p class="muted">Nothing yet. Connect an account, add your website, or upload files below.</p>'}
     ${importing ? `<p class="status-detail">${badge("busy", "Working")} ${o.importing ? `${plural(o.importing, "item is", "items are")} being prepared for search${o.eta ? ` (about ${esc(o.eta)} left)` : ""}.` : "Importing from your sources."} New items become searchable automatically – you can already ask questions.</p>` : ""}`;
-  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawWebsites(); drawManual(); drawWhatsApp(); }
+  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawProvider("meta"); drawProvider("youtube"); drawWebsites(); drawManual(); drawWhatsApp(); }
   if (withFiles || o.importing || refreshSources.wasImporting) await loadFiles(false);
   refreshSources.wasImporting = o.importing > 0;
   if (importing || conns.some((k) => k.indexing)) poll(() => refreshSources(), 4000);
@@ -724,7 +740,7 @@ function drawProvider(provider) {
 
   const noun = PROVIDER_ACCOUNT[provider];
   $(".pc-connect", card).innerHTML = `<button class="btn ${has ? "" : "primary"}" data-open-connect>${has ? ic("plus") : ""}${has ? `Connect another ${PROVIDER_NAME[provider]} ${noun}` : `Connect ${PROVIDER_NAME[provider]} ${noun}`}</button>`;
-  $("[data-open-connect]", card).onclick = () => oauthState.configured[provider] ? openConnectPanel(provider) : setupNeededDialog(provider);
+  $("[data-open-connect]", card).onclick = () => oauthState.configured[oauthOf(provider)] ? openConnectPanel(provider) : setupNeededDialog(provider);
 
   $(".pc-accounts", card).innerHTML = Object.entries(accounts).map(([accountId, list]) => {
     const first = list[0];
@@ -735,7 +751,7 @@ function drawProvider(provider) {
       const name = `<div class="svc-name"><span class="icon-tile sm">${ic(icon)}</span>${label}</div>`;
       if (!k) return `<div class="svc">${name}<div class="status-line">${badge("", "Not connected")}</div>
         <div><button class="btn small" data-add-svc="${svc}" data-account="${accountId}">${ic("plus")}Connect</button></div></div>`;
-      return `<div class="svc">${name}<div>${sourceStatus(k)}</div>
+      return `<div class="svc">${name}<div>${sourceStatus(k)}${socialAccounts(k)}</div>
         <div>${k.documents ? `<button class="btn link" data-items="${k.id}">View items</button>` : ""}</div></div>`;
     }).join("");
     return `<div class="account">
@@ -781,11 +797,12 @@ function drawProvider(provider) {
   });
   $$("[data-add-svc]", card).forEach((b) => b.onclick = () => {
     const list = accounts[b.dataset.account];
-    startSignIn(provider, [b.dataset.addSvc], { department_ids: list[0].departments.map((d) => d.id), company_wide: list[0].company_wide }, b);
+    startSignIn(oauthOf(provider), [b.dataset.addSvc], { department_ids: list[0].departments.map((d) => d.id), company_wide: list[0].company_wide }, b);
   });
 }
 
-function setupNeededDialog(provider) {
+function setupNeededDialog(card) {
+  const provider = oauthOf(card);
   const f = openDialog(`<h2>${PROVIDER_NAME[provider]} sign-in isn't set up yet</h2>
     <p class="muted">To connect ${PROVIDER_NAME[provider]} ${PROVIDER_ACCOUNT[provider]}s with one click, ${PROVIDER_NAME[provider]} needs to know about this installation.
       It's a one-time setup (about 30 minutes, free) done by whoever installed KnowledgeDesk – see "Setting up one-click sign-in" in the README.</p>
@@ -803,8 +820,10 @@ function openConnectPanel(provider, only = null) {
       ${hint ? `<span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
     ${visibilityPicker([], false)}
     <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, posts, changes or deletes anything.
-      ${provider === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}</p>
-    <div class="row"><button class="btn primary" data-go>Continue to ${PROVIDER_NAME[provider]}</button><button class="btn" data-cancel>Cancel</button></div>
+      ${oauthOf(provider) === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}
+      ${provider === "meta" ? "On Facebook, pick your business Page <b>and</b> its Instagram account when asked, and leave every permission switched on." : ""}
+      ${provider === "youtube" ? "Sign in with the Google account that owns the channel. If you already connected Gmail with that account, it stays connected." : ""}</p>
+    <div class="row"><button class="btn primary" data-go>Continue to ${PROVIDER_NAME[oauthOf(provider)]}</button><button class="btn" data-cancel>Cancel</button></div>
     <p class="error" role="alert"></p></div>`;
   $("[data-cancel]", slot).onclick = () => { editing = false; slot.innerHTML = ""; refreshSources(); };
   $("[data-go]", slot).onclick = (e) => {
@@ -812,8 +831,21 @@ function openConnectPanel(provider, only = null) {
     const v = readVisibility(slot);
     const err = !services.length ? "Tick at least one thing to read." : visibilityError(v);
     if (err) { $(".error", slot).textContent = err; return; }
-    startSignIn(provider, services, v, e.target, $(".error", slot));
+    startSignIn(oauthOf(provider), services, v, e.target, $(".error", slot));
   };
+}
+// Facebook / Instagram / YouTube accounts behind one connection, with their headline numbers
+function socialAccounts(k) {
+  const list = k.social_accounts || [];
+  if (!list.length) return "";
+  const icon = { Facebook: "share", Instagram: "share", YouTube: "play" };
+  return `<div class="social-list">${list.map((a) => `<div class="social-acc">
+      <span class="social-pf pf-${a.platform.toLowerCase()}">${esc(a.platform)}</span>
+      <div class="grow"><b dir="auto">${a.link ? `<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.handle || a.name)}</a>` : esc(a.handle || a.name)}</b>
+        <div class="muted small">${num(a.followers)} ${a.platform === "YouTube" ? "subscribers" : "followers"} · ${plural(a.posts, a.platform === "YouTube" ? "video" : "post", a.platform === "YouTube" ? "videos" : "posts")}
+          ${a.last_post ? ` · last ${a.platform === "YouTube" ? "video" : "post"} ${ago(a.last_post)}` : ""}</div></div>
+      <div class="social-week"><b>${num(a.likes_week)}</b><span class="muted small">likes on ${plural(a.posts_week, "post", "posts")} this week</span></div>
+    </div>`).join("")}</div>`;
 }
 async function startSignIn(provider, services, visibility, button, errorEl) {
   const old = button.innerHTML;
@@ -952,6 +984,12 @@ function openWhatsAppPanel() {
 $("#wa-connect").addEventListener("click", openWhatsAppPanel);
 
 const uploadForm = $("#upload-form");
+$("#li-upload").addEventListener("click", () => {
+  const radio = $("input[name=kind][value=linkedin]", uploadForm);
+  radio.checked = true; radio.dispatchEvent(new Event("change"));
+  $("#files-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => $("#dropzone input").click(), 400);
+});
 $("#wa-upload").addEventListener("click", () => {
   const radio = $("input[name=kind][value=whatsapp]", uploadForm);
   radio.checked = true; radio.dispatchEvent(new Event("change"));
@@ -1167,14 +1205,13 @@ $("#q-gaps").addEventListener("change", drawQuestions);
 
 // ================================================================== Settings
 let lastHealth = null;
-LOADERS.health = () => drawHealth();
+LOADERS.health = async () => { await drawHealth(); await drawAiKey(); };
 LOADERS.settings = async function loadSettings() {
   const st = await (await fetch("/api/status")).json();
   appStatus = { ...appStatus, ...st };
   const f = $("#company-form");
   f.name.value = st.company || ""; f.website.value = st.website || "";
   drawLogoPreview();
-  await drawAiKey();
 };
 function drawLogoPreview() {
   $("#logo-preview").innerHTML = appStatus.logo ? `<img src="${esc(appStatus.logo)}" class="tone-${esc(appStatus.logo_tone || "dark")}" alt="Logo">` : "No logo yet";
@@ -1220,6 +1257,8 @@ async function drawHealth() {
 }
 async function drawAiKey() {
   const k = await getJSON("/api/admin/ai-key");
+  // Only shown when answers can't work: no key yet, or the key stopped working.
+  $("#ai-card").classList.toggle("hidden", k.check.state === "ok");
   const state = !k.set ? badge("bad", "Not set") : k.check.state === "ok" ? badge("ok", "Working") : badge("bad", "Not working");
   $("#ai-state").innerHTML = `${state} ${k.masked ? `<code>${esc(k.masked)}</code>` : ""}`;
 }
@@ -1233,7 +1272,7 @@ $("#ai-form").addEventListener("submit", (e) => {
       await api("/api/admin/ai-key", { method: "PUT", json: { key } });
       e.target.reset(); toast("Key saved. Answers are on.");
       appStatus.llm_configured = true; updateBanner();
-      await Promise.all([drawAiKey(), drawHealth()]);
+      await drawHealth(); await drawAiKey();
     } catch (err) { $("#ai-error").textContent = err.message; }
   });
 });

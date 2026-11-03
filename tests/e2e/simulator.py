@@ -61,8 +61,11 @@ def _docx(text: str) -> bytes:
 @app.get("/accounts.google.com/o/oauth2/v2/auth")
 @app.get("/login.microsoftonline.com/common/oauth2/v2.0/authorize")
 @app.get("/slack.com/oauth/v2/authorize")
+@app.get("/www.facebook.com/v23.0/dialog/oauth")
 def authorize(request: Request, redirect_uri: str, state: str):
-    provider = "Google" if "google" in request.url.path else "Slack" if "slack" in request.url.path else "Microsoft"
+    path = request.url.path
+    provider = ("Google" if "google" in path else "Slack" if "slack" in path else "Facebook" if "facebook" in path
+                else "Microsoft")
     # A tiny consent screen with an Allow button, like the real thing
     return HTMLResponse(f"""<!doctype html><title>Sign in – {provider} (simulated)</title>
       <body style="font-family:system-ui;max-width:420px;margin:12vh auto">
@@ -222,6 +225,105 @@ async def slack_api(method: str, request: Request):
         return {"ok": True, "messages": [{"ts": form.get("ts"), "user": "U1", "text": "parent"},
                                          {"ts": f"{NOW - 7000:.6f}", "user": "U2", "text": "Except holidays – then it's closed all day"}]}
     return {"ok": False, "error": "unknown_method"}
+
+
+
+# ---------------------------------------------------------------- Facebook Pages + Instagram
+def _iso(days_ago: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S+0000")
+
+
+FB = "http://127.0.0.1:9999/graph.facebook.com/v23.0"
+
+
+def _fb_ok(request: Request, token: str = "fb-long") -> bool:
+    return request.headers.get("authorization") == f"Bearer {token}"
+
+
+@app.get("/graph.facebook.com/v23.0/oauth/access_token")
+def fb_token(request: Request):
+    q = request.query_params
+    if q.get("grant_type") == "fb_exchange_token":
+        return {"access_token": "fb-long", "token_type": "bearer", "expires_in": 5184000}
+    if q.get("code") != "sim-code" or not q.get("client_secret"):
+        return JSONResponse({"error": {"message": "Invalid verification code format.", "code": 100}}, 400)
+    return {"access_token": "fb-short", "token_type": "bearer", "expires_in": 3600}
+
+
+@app.get("/graph.facebook.com/v23.0/me")
+def fb_me(request: Request):
+    if not _fb_ok(request):
+        return JSONResponse({"error": {"message": "Invalid OAuth access token.", "code": 190}}, 401)
+    return {"name": "Dana Cohen", "id": "U100"}
+
+
+@app.get("/graph.facebook.com/v23.0/me/accounts")
+def fb_accounts(request: Request):
+    if not _fb_ok(request):
+        return JSONResponse({"error": {"message": "Invalid OAuth access token.", "code": 190}}, 401)
+    return {"data": [{"id": "P1", "name": "Acme Plumbing", "access_token": "page-token", "link": "https://facebook.com/acmeplumbing",
+                      "followers_count": 1840, "fan_count": 1800,
+                      "instagram_business_account": {"id": "IG1", "username": "acme.plumbing", "name": "Acme Plumbing",
+                                                     "followers_count": 3120, "media_count": 3}}]}
+
+
+@app.get("/graph.facebook.com/v23.0/P1/posts")
+def fb_posts(request: Request, after: str = ""):
+    if not _fb_ok(request, "page-token"):
+        return JSONResponse({"error": {"message": "Invalid OAuth access token.", "code": 190}}, 401)
+    if after == "page2":
+        return {"data": [{"id": "P1_3", "message": "We're hiring a junior plumber in Haifa. Send your CV!", "created_time": _iso(40),
+                          "permalink_url": "https://facebook.com/acmeplumbing/posts/3",
+                          "reactions": {"summary": {"total_count": 15}}, "comments": {"data": [], "summary": {"total_count": 0}}}]}
+    return {"data": [
+        {"id": "P1_1", "message": "Winter boiler check: 20% off until the end of the month.", "created_time": _iso(1),
+         "permalink_url": "https://facebook.com/acmeplumbing/posts/1", "shares": {"count": 4},
+         "reactions": {"summary": {"total_count": 57}},
+         "comments": {"data": [{"message": "Do you also cover Kiryat Ata?", "from": {"name": "Yossi"}}], "summary": {"total_count": 6}}},
+        {"id": "P1_2", "message": "Our team at the Haifa trade fair", "created_time": _iso(12),
+         "permalink_url": "https://facebook.com/acmeplumbing/posts/2",
+         "reactions": {"summary": {"total_count": 31}}, "comments": {"data": [], "summary": {"total_count": 2}}}],
+        "paging": {"next": "https://graph.facebook.com/v23.0/P1/posts?after=page2"}}
+
+
+@app.get("/graph.facebook.com/v23.0/IG1/media")
+def ig_media(request: Request):
+    if not _fb_ok(request, "page-token"):
+        return JSONResponse({"error": {"message": "Invalid OAuth access token.", "code": 190}}, 401)
+    return {"data": [
+        {"id": "M1", "caption": "Before and after: full bathroom renovation in Nesher #plumbing", "media_type": "CAROUSEL_ALBUM",
+         "timestamp": _iso(2), "permalink": "https://instagram.com/p/M1", "like_count": 212, "comments_count": 14,
+         "comments": {"data": [{"text": "Amazing work!", "username": "noa.k"}]}},
+        {"id": "M2", "caption": "Meet Avi, our emergency technician", "media_type": "VIDEO", "timestamp": _iso(9),
+         "permalink": "https://instagram.com/p/M2", "like_count": 98, "comments_count": 3}]}
+
+
+# ---------------------------------------------------------------- YouTube
+@app.get("/www.googleapis.com/youtube/v3/channels")
+def yt_channels():
+    return {"items": [{"id": "UC1", "snippet": {"title": "Acme Plumbing TV", "customUrl": "@acmeplumbing"},
+                       "statistics": {"subscriberCount": "860", "viewCount": "45210"},
+                       "contentDetails": {"relatedPlaylists": {"uploads": "UU1"}}}]}
+
+
+@app.get("/www.googleapis.com/youtube/v3/playlistItems")
+def yt_playlist():
+    return {"items": [{"contentDetails": {"videoId": "V1"}}, {"contentDetails": {"videoId": "V2"}}]}
+
+
+@app.get("/www.googleapis.com/youtube/v3/videos")
+def yt_videos():
+    return {"items": [
+        {"id": "V1", "snippet": {"title": "How to bleed a radiator in 3 minutes", "description": "Step by step guide.",
+                                 "publishedAt": _iso(3).replace("+0000", "Z")},
+         "statistics": {"viewCount": "1530", "likeCount": "88", "commentCount": "5"}},
+        {"id": "V2", "snippet": {"title": "Fixing a leaking tap", "description": "", "publishedAt": _iso(60).replace("+0000", "Z")},
+         "statistics": {"viewCount": "9800", "likeCount": "410", "commentCount": "0"}}]}
+
+
+@app.get("/www.googleapis.com/youtube/v3/commentThreads")
+def yt_comments():
+    return {"items": [{"snippet": {"topLevelComment": {"snippet": {"authorDisplayName": "Ron", "textDisplay": "Saved me a call-out, thanks!"}}}}]}
 
 
 # ---------------------------------------------------------------- Meta (WhatsApp Business)

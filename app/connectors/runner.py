@@ -9,7 +9,7 @@ import psycopg
 
 from ..config import settings
 from ..db import conn
-from . import calendar_ics, email_imap, google, microsoft, slack, website, whatsapp_business
+from . import calendar_ics, email_imap, google, microsoft, slack, social, website, whatsapp_business
 from .base import Sync
 
 log = logging.getLogger("connectors")
@@ -20,7 +20,7 @@ MANUAL_TYPES = {"imap": email_imap.sync, "ics": calendar_ics.sync, "website": we
 # Sources connected with "Sign in with Google / Microsoft".
 OAUTH_TYPES = {"gmail": google.sync_gmail, "gcal": google.sync_gcal, "gdrive": google.sync_gdrive,
                "ms_mail": microsoft.sync_mail, "ms_cal": microsoft.sync_calendar, "ms_drive": microsoft.sync_drive,
-               "slack": slack.sync_slack}
+               "slack": slack.sync_slack, "meta_social": social.sync_meta_social, "youtube": social.sync_youtube}
 TYPES = {**MANUAL_TYPES, **OAUTH_TYPES}
 # Config fields stored encrypted, per connector type.
 SECRETS = {"imap": {"password"}, "ics": {"url"}, "whatsapp_business": {"access_token", "app_secret"}}
@@ -35,17 +35,17 @@ def lock_for(connector_id: int) -> threading.Lock:
         return _locks[connector_id]
 
 
-def sync_connector(connector_id: int) -> dict:
+def sync_connector(connector_id: int, scheduled: bool = False) -> dict:
     lock = lock_for(connector_id)
     if not lock.acquire(blocking=False):
         return {"queued": 0, "error": None, "skipped": "already syncing"}
     try:
-        return _sync(connector_id)
+        return _sync(connector_id, scheduled)
     finally:
         lock.release()
 
 
-def _sync(connector_id: int) -> dict:
+def _sync(connector_id: int, scheduled: bool = False) -> dict:
     with conn() as c:
         connector = c.execute("SELECT * FROM connectors WHERE id=%s", (connector_id,)).fetchone()
     if not connector:
@@ -55,6 +55,7 @@ def _sync(connector_id: int) -> dict:
     queued = 0
     with conn() as c:
         s = Sync(c, connector)
+        s.scheduled = scheduled
         try:
             run(s)
         except Exception as e:  # noqa: BLE001 - keep everything imported so far and show the problem
@@ -86,6 +87,8 @@ def friendly_error(e: Exception) -> str:
     if "quota" in low or "rate limit" in low or "ratelimit" in low or "too many requests" in low or text.startswith("429"):
         return ("The provider is limiting how fast we can read. Everything imported so far is kept, "
                 "and the rest continues automatically at the next sync.")
+    if "facebook" in low or "youtube" in low:
+        return text[:500]
     if "revoked" in low or "invalid_grant" in low or text.startswith("401") or "invalid_auth" in low:
         return "Access to this account was lost or expired. Click Disconnect, then connect the account again."
     return text[:500]
@@ -99,4 +102,4 @@ def sync_due() -> None:
             " OR (state->>'more')::boolean IS TRUE) ORDER BY last_sync NULLS FIRST", (cutoff,)
         ).fetchall()
     for r in rows:
-        sync_connector(r["id"])
+        sync_connector(r["id"], scheduled=True)

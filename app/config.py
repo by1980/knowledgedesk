@@ -54,6 +54,8 @@ class Settings:
     google_client_secret = _env("GOOGLE_CLIENT_SECRET")
     microsoft_client_id = _env("MICROSOFT_CLIENT_ID")
     microsoft_client_secret = _env("MICROSOFT_CLIENT_SECRET")
+    meta_client_id = _env("META_APP_ID")
+    meta_client_secret = _env("META_APP_SECRET")
     slack_client_id = _env("SLACK_CLIENT_ID")
     slack_client_secret = _env("SLACK_CLIENT_SECRET")
     oauth_redirect_url = _env("OAUTH_REDIRECT_URL")  # e.g. https://connect.yourcompany.com/oauth.html

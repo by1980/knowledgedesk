@@ -9,7 +9,7 @@ TEXT_EXT = {".txt", ".md", ".markdown", ".log", ".json", ".xml", ".yaml", ".yml"
 AUDIO_VIDEO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".wma", ".opus",
                    ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 SUPPORTED_EXT = TEXT_EXT | AUDIO_VIDEO_EXT | {
-    ".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".tsv", ".pptx", ".html", ".htm", ".eml", ".vtt", ".srt", ".zip",
+    ".pdf", ".docx", ".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".pptx", ".html", ".htm", ".eml", ".vtt", ".srt", ".zip",
 }
 
 Section = tuple[str, str]
@@ -93,24 +93,15 @@ def extract(path: Path) -> list[Section]:
         from openpyxl import load_workbook
 
         wb = load_workbook(str(path), read_only=True, data_only=True)
-        sections = []
-        for ws in wb.worksheets:
-            rows = []
-            header = None
-            for row in ws.iter_rows(values_only=True):
-                values = ["" if v is None else str(v) for v in row]
-                if not any(values):
-                    continue
-                if header is None:
-                    header = values
-                    rows.append(" | ".join(values))
-                else:
-                    # "Column: value" keeps meaning when rows are split into chunks.
-                    pairs = [f"{h}: {v}" for h, v in zip(header, values) if v]
-                    rows.append("; ".join(pairs))
-            if rows:
-                sections.append(("\n".join(rows), f"sheet {ws.title}"))
-        return sections
+        return [(text, f"sheet {ws.title}") for ws in wb.worksheets
+                if (text := _sheet_text(ws.iter_rows(values_only=True)))]
+
+    if ext == ".xls":  # older Excel files, e.g. LinkedIn page analytics exports
+        import xlrd
+
+        book = xlrd.open_workbook(str(path))
+        return [(text, f"sheet {sh.name}") for sh in book.sheets()
+                if (text := _sheet_text(sh.get_rows(), cell=lambda c: c.value))]
 
     if ext in {".csv", ".tsv"}:
         import csv
@@ -169,3 +160,22 @@ def extract(path: Path) -> list[Section]:
         return transcribe(path)
 
     raise ValueError(f"Unsupported file type: {ext}")
+
+
+def _sheet_text(rows, cell=lambda v: v) -> str:
+    """Spreadsheet rows as text. Rows become "Column: value; ..." so meaning survives chunking.
+    The header is the first row with at least 3 filled cells (exports often start with a title line)."""
+    table = [["" if (v := cell(x)) is None else (str(int(v)) if isinstance(v, float) and v.is_integer() else str(v))
+              for x in row] for row in rows]
+    table = [values for values in table if any(values)]
+    need = min(3, max((sum(1 for v in values if v) for values in table), default=0))
+    out, header = [], None
+    for values in table:
+        if header is None:
+            if sum(1 for v in values if v) >= need:
+                header = values
+            out.append(" | ".join(v for v in values if v))
+        else:
+            pairs = [f"{h}: {v}" for h, v in zip(header, values) if v]
+            out.append("; ".join(pairs))
+    return "\n".join(out)
