@@ -53,7 +53,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
   check("Home shows the setup checklist (0 of 3)", (await text("#home-setup")).includes("0 of 3 done"));
-  check("Home: pulse cards (knowledge added, questions asked, connections)", /Knowledge added[\s\S]*Questions asked[\s\S]*Connections[\s\S]*Sources[\s\S]*Cortex[\s\S]*Teams/.test(await text("#home-kpis")));
+  check("Home: four numbers in plain words", /things Cortex knows[\s\S]*new items learned this week[\s\S]*questions asked this week[\s\S]*of questions answered/.test(await text("#home-kpis")));
+  check("Home: every chart says what question it answers", /Is your team using Cortex\?[\s\S]*What Cortex couldn't answer[\s\S]*What Cortex knows[\s\S]*Who asks the most/.test(await text("#page-home")));
   check("Home: empty chart explains itself", /No questions yet/.test(await text("#home-q-chart")));
   check("Home: no alert box when nothing is broken", (await text("#home-health")).trim() === "");
   check("Home: no 'Not your name?' link", !/Not your name/.test(await text("#page-home")));
@@ -456,6 +457,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Home: setup checklist complete (hidden)", (await text("#home-setup")).trim() === "");
   check("Home: questions-per-day chart drawn", await until(async () => (await page.$$("#home-q-chart svg path, #home-q-chart svg rect:not(.hit)")).length > 0, 5000, 300));
   check("Home: questions by person shows who asked", /Yaniv Barak/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
+  check("Home: What Cortex knows lists the apps with their counts", /Gmail[\s\S]*30/.test(await text("#home-knows")));
+  check("Home: What Cortex couldn't answer lists the actual question", /Levi Gardens/.test(await text("#home-gaps")));
   check("Home: 'Keeping up to date' lists live sources with their last new item", /Keeping up to date/.test(await text("#home-learning")) &&
     /Gmail[\s\S]*Live/.test(await text("#home-learning")) && /Last new item/.test(await text("#home-learning")));
   await page.hover("#home-q-chart .hit >> nth=-1");

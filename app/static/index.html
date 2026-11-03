@@ -93,12 +93,20 @@
           <label class="period">Period <select id="home-days"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select></label></div>
         <div id="home-health"></div>
         <div id="home-setup"></div>
-        <div class="pulse" id="home-kpis"></div>
-        <div class="card"><div class="toolbar"><div><h2>Questions per day</h2><p class="muted small" id="q-chart-sub"></p></div></div>
+        <div class="stat-tiles" id="home-kpis"></div>
+        <div class="card"><h2>Is your team using Cortex?</h2>
+          <p class="muted small">Each bar is one day: how many questions your team asked. Orange means Cortex had no answer, or someone marked the answer unhelpful. Hover a day for its numbers.</p>
           <div id="home-q-chart"></div></div>
         <div class="grid2">
-          <div class="card"><h2>Questions by department</h2><p class="muted small">Which teams ask the most. By the department of the person asking.</p><div id="home-by-dept"></div></div>
-          <div class="card"><h2>Questions by person</h2><p class="muted small">Who uses Cortex the most.</p><div id="home-by-person"></div></div>
+          <div class="card"><h2>What Cortex couldn't answer</h2>
+            <p class="muted small">Recent questions without a good answer. They usually point to information Cortex doesn't have yet.</p>
+            <div id="home-gaps"></div></div>
+          <div class="card"><h2>What Cortex knows</h2><p class="muted small">Everything it can answer from, by app. Click one to browse it in the Brain.</p>
+            <div id="home-knows"></div></div>
+        </div>
+        <div class="grid2">
+          <div class="card"><h2>Who asks the most</h2><p class="muted small">Questions per person in the selected period.</p><div id="home-by-person"></div></div>
+          <div class="card"><h2>Which teams ask the most</h2><p class="muted small">Questions per department of the person asking.</p><div id="home-by-dept"></div></div>
         </div>
         <div class="card" id="home-learning"></div>
       </main>

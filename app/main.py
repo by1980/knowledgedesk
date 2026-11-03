@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.14"
+APP_VERSION = "0.9.15"
 
 
 def _ensure_secret_key() -> None:
@@ -1483,7 +1483,7 @@ def health(_: dict = Depends(auth.admin_user)):
 def recent_questions(limit: int = 200, _: dict = Depends(auth.admin_user)):
     with conn() as c:
         rows = c.execute(
-            "SELECT q.id, q.question, q.answer, q.feedback, q.found_sources, q.created_at, "
+            "SELECT q.id, q.question, q.answer, q.feedback, q.found_sources, q.created_at, q.conversation_id, "
             " u.name AS user_name, u.email AS user_email, d.name AS department "
             "FROM questions q LEFT JOIN users u ON u.id=q.user_id LEFT JOIN departments d ON d.id=q.department_id "
             "ORDER BY q.created_at DESC LIMIT %s", (min(limit, 1000),)

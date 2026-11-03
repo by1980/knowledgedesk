@@ -368,72 +368,56 @@ LOADERS.home = async function loadHome() {
 
   const t = a.totals;
   const rate = t.asked_period ? Math.round((t.answered_period / t.asked_period) * 100) : null;
-  $("#home-kpis").innerHTML = pulseCards(a, days, rate);
+  const [brain, qs] = await Promise.all([getJSON("/api/brain"), getJSON("/api/admin/questions?limit=300")]);
 
+  // 1. Four numbers, each a plain sentence
+  const week = a.per_day.slice(-7), before = a.per_day.slice(-14, -7);
+  const askedWeek = week.reduce((s, d) => s + d.asked, 0), askedBefore = before.reduce((s, d) => s + d.asked, 0);
+  const trend = (now, prev) => before.length < 7 ? "" : now === prev ? "Same as the week before" : `${now > prev ? "Up" : "Down"} from ${num(prev)} the week before`;
+  const gaps = qs.questions.filter((q) => !q.found_sources || q.feedback === -1);
+  const tiles = [
+    ["brain", "#brain", num(t.searchable), "things Cortex knows", `From ${plural(brain.apps.length, "connected app", "connected apps")}`],
+    ["refresh", "#sources", num(t.added_week), "new items learned this week", `${num(t.added_today)} today. New items are added automatically.`],
+    ["ask", "#conversations", num(askedWeek), "questions asked this week", trend(askedWeek, askedBefore) || `${num(t.asked_period)} in the last ${days} days`],
+    ["check", "#conversations", rate == null ? "–" : `${rate}%`, "of questions answered", rate == null ? "Shows once people start asking" : `In the last ${days} days`],
+  ];
+  $("#home-kpis").innerHTML = tiles.map(([icon, href, value, label, sub]) => `<a class="stat-tile" href="${href}">
+      <span class="st-icon">${ic(icon)}</span><span class="st-text"><span class="st-value">${value}</span> <span class="st-label">${label}</span>
+      <span class="st-sub">${esc(sub)}</span></span></a>`).join("");
+
+  // 2. Is the team using it: questions per day
   const qRows = a.per_day.map((r) => ({ day: r.day, answered: r.asked - r.unanswered, unanswered: r.unanswered }));
-  $("#q-chart-sub").textContent = `How many questions your team asked each day. Orange means no answer was found or someone marked it unhelpful. Usually information that's missing.`;
   $("#home-q-chart").innerHTML = t.asked_period ? columnChart(qRows, [
-    { key: "answered", label: "Answered", color: "--series-1" }, { key: "unanswered", label: "No answer or not helpful", color: "--series-2" }],
-    { title: "Questions per day" }) : '<div class="empty">No questions yet. Once people start asking, you\'ll see the trend here.</div>';
-  $("#home-by-dept").innerHTML = hbarChart(a.by_department, "No questions yet.");
+    { key: "answered", label: "Answered", color: "--series-1" }, { key: "unanswered", label: "Not answered", color: "--series-2" }],
+    { title: "Questions per day", height: 190, legend: false }) : '<div class="empty">No questions yet. Once people start asking, you\'ll see each day here.</div>';
+
+  // 3. What it couldn't answer: the actual questions
+  $("#home-gaps").innerHTML = gaps.length ? `<div class="gap-list">${gaps.slice(0, 6).map((q) => `<a href="#" class="gap" data-gap-conv="${q.conversation_id || ""}">
+      <span class="gap-q" dir="auto">${esc(q.question)}</span>
+      <span class="gap-meta">${esc(q.user_name || q.user_email || "")} · ${ago(q.created_at)} · ${!q.found_sources ? "Nothing found" : "Marked unhelpful"}</span></a>`).join("")}</div>
+      <a class="btn small" href="#conversations" id="gaps-all">See all unanswered</a>`
+    : `<div class="empty">${t.asked_period ? "Every question so far got an answer." : "Nothing yet."}</div>`;
+  $$("#home-gaps [data-gap-conv]").forEach((g) => g.onclick = (e) => { e.preventDefault(); if (g.dataset.gapConv) openConversation(Number(g.dataset.gapConv)).catch((err) => toast(err.message, true)); });
+  $("#gaps-all")?.addEventListener("click", () => { conv.scope = "all"; $$("#conv-scope button").forEach((x) => x.classList.toggle("on", x.dataset.scope === "all")); $("#q-gaps").checked = true; });
+
+  // 4. What it knows, by app
+  const top = Math.max(1, ...brain.apps.map((f) => f.count));
+  $("#home-knows").innerHTML = brain.apps.length ? `<div class="knows">${brain.apps.slice(0, 9).map((f) => {
+      const [label] = APP_FOLDERS[f.key] || [f.label || f.key];
+      const icon = f.key.startsWith("upload:") ? brandTile(APP_LOGO[f.key] || "", f.key === "upload:interview" ? "mic" : "upload", "sm") : brandTile(f.key, (SERVICE_INFO[f.key] || ["file"])[0], "sm");
+      return `<a href="#brain" class="know-row" data-know="${esc(f.key)}">${icon}<span class="kr-label">${esc(f.label || label)}</span>
+        <span class="kr-bar"><i style="width:${Math.max(2, (f.count / top) * 100)}%"></i></span><span class="kr-n">${num(f.count)}</span></a>`;
+    }).join("")}</div>`
+    : '<div class="empty">Nothing connected yet. <a href="#sources">Connect your first source</a></div>';
+  $$("#home-knows [data-know]").forEach((r) => r.onclick = () => { brainState.folder = { key: r.dataset.know }; setTimeout(() => brainState.data && openFolder(r.dataset.know), 300); });
+
   $("#home-by-person").innerHTML = hbarChart(a.by_person, "No questions yet.");
+  $("#home-by-dept").innerHTML = hbarChart(a.by_department, "No questions yet.");
   drawLearning(a);
   if (issues.some((c) => c.state === "busy")) poll(LOADERS.home, 15000);
 };
 $("#home-days").addEventListener("change", () => LOADERS.home());
 
-// Three cards at the top of Home: what Cortex learned, what people asked, and how it's all connected
-function pulseCards(a, days, rate) {
-  const t = a.totals;
-  // 1. Knowledge added: one square per day, darker = more new items
-  const grow = a.growth.slice(-30);
-  const added = grow.reduce((s, g) => s + g.added, 0);
-  const max = Math.max(1, ...grow.map((g) => g.added));
-  const level = (n) => !n ? 0 : Math.min(4, Math.ceil((n / max) * 4));
-  const squares = grow.map((g) => `<i class="lv${level(g.added)}" title="${new Date(g.day).toLocaleDateString(undefined, { day: "numeric", month: "short" })}: ${plural(g.added, "new item", "new items")}"></i>`).join("");
-  // 2. Questions: the last 7 days as a smooth line, and who asks most
-  const week = a.per_day.slice(-7);
-  const W = 300, H = 74, peak = Math.max(1, ...week.map((d) => d.asked));
-  const pts = week.map((d, i) => [10 + (i * (W - 20)) / Math.max(1, week.length - 1), H - 8 - (d.asked / peak) * (H - 22)]);
-  let path = `M${pts[0][0]},${pts[0][1]}`;
-  for (let i = 1; i < pts.length; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], cx = (x0 + x1) / 2; path += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`; }
-  const area = `${path} L${pts[pts.length - 1][0]},${H} L${pts[0][0]},${H} Z`;
-  const last = pts[pts.length - 1];
-  const asked7 = week.reduce((s, d) => s + d.asked, 0);
-  const people = a.by_person.slice(0, 3).map((p) => `<span class="pchip"><span class="avatar xs">${esc(initials(p.name))}</span>${esc(p.name.split(" ")[0])} <b>${num(p.n)}</b></span>`).join("");
-  // 3. Connections: your sources, flowing into Cortex, serving your teams
-  const types = [...new Set(a.freshness.map((k) => k.type))];
-  const shown = types.slice(0, 3).map((ty) => brandTile(ty, (SERVICE_INFO[ty] || ["file"])[0], "sm")).join("");
-  const teams = departments.slice(0, 3).map((d) => `<span class="team-dot" title="${esc(d.name)}">${esc(initials(d.name))}</span>`).join("");
-  return `<div class="pulse-card">
-      <div class="pulse-head"><span class="pulse-label">Knowledge added</span><span class="pulse-num">${ic("activity")}${num(added)}</span></div>
-      <div class="pulse-sub">New items learned, last ${grow.length} days</div>
-      <div class="heat" role="img" aria-label="New items per day">${squares}</div>
-    </div>
-    <div class="pulse-card">
-      <div class="pulse-head"><span class="pulse-label">Questions asked</span><span class="pulse-num">${num(asked7)}</span></div>
-      <div class="pulse-sub">Last 7 days${rate != null ? ` · ${rate}% answered` : ""}</div>
-      <svg class="spark" viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Questions per day, last 7 days">
-        <defs><linearGradient id="spark-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
-        <path d="${area}" fill="url(#spark-fill)"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
-        <circle cx="${last[0]}" cy="${last[1]}" r="3.6" fill="var(--accent)"/>
-        ${week.map((d, i) => `<text x="${pts[i][0]}" y="${H + 13}" text-anchor="middle">${new Date(d.day).toLocaleDateString(undefined, { weekday: "narrow" })}</text><title>${d.day}: ${d.asked}</title>`).join("")}
-      </svg>
-      <div class="pchips">${people || '<span class="muted small">No questions yet</span>'}</div>
-    </div>
-    <div class="pulse-card">
-      <div class="pulse-head"><span class="pulse-label">Connections</span><span class="pulse-num">${num(t.searchable)}</span></div>
-      <div class="pulse-sub">Items your team can ask about</div>
-      <div class="flow">
-        <a class="flow-end" href="#sources" title="Sources">${shown || ic("plus")}${types.length > 3 ? `<span class="more">+${types.length - 3}</span>` : ""}</a>
-        <span class="flow-dots"><i></i><i></i><i></i></span>
-        <span class="flow-core"><img src="/static/cortex.svg" alt="Cortex"></span>
-        <span class="flow-dots"><i></i><i></i><i></i></span>
-        <a class="flow-end" href="#people" title="Teams">${teams || `<span class="team-dot">${ic("people")}</span>`}${departments.length > 3 ? `<span class="more">+${departments.length - 3}</span>` : ""}</a>
-      </div>
-      <div class="flow-labels"><span>Sources</span><span>Cortex</span><span>Teams</span></div>
-    </div>`;
-}
 
 const LEARN_LABEL = { gmail: "Gmail", gcal: "Google Calendar", gdrive: "Google Drive", ms_mail: "Outlook mail", ms_cal: "Outlook calendar",
   ms_drive: "OneDrive", slack: "Slack", meta_social: "Facebook and Instagram", youtube: "YouTube", website: "Website", whatsapp_business: "WhatsApp Business", imap: "Mailbox", ics: "Calendar" };
