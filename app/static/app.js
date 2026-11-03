@@ -122,10 +122,10 @@ function docBadge(d) {
 
 // ================================================================== start, login, navigation
 const ADMIN_PAGES = [["home", "Home", "home"], ["ask", "Ask", "ask"], ["sources", "Sources", "sources"], ["people", "People", "people"],
-  ["learning", "Learning Center", "learn"], ["activity", "Activity", "activity"], ["health", "Health", "check"], ["settings", "Settings", "settings"]];
-const MEMBER_PAGES = [["ask", "Ask", "ask"], ["library", "Library", "library"], ["learning", "Learning Center", "learn"]];
+  ["learning", "Learning Center", "learn"], ["conversations", "Conversations", "chat"], ["health", "Health", "check"], ["settings", "Settings", "settings"]];
+const MEMBER_PAGES = [["ask", "Ask", "ask"], ["conversations", "Conversations", "chat"], ["library", "Library", "library"], ["learning", "Learning Center", "learn"]];
 // New employees: only their learning path, and questions answered from it
-const LEARNER_PAGES = [["learning", "Learning Center", "learn"], ["ask", "Ask", "ask"]];
+const LEARNER_PAGES = [["learning", "Learning Center", "learn"], ["ask", "Ask", "ask"], ["conversations", "Conversations", "chat"]];
 const pagesFor = (u) => u.role === "admin" ? ADMIN_PAGES : u.role === "learner" ? LEARNER_PAGES : MEMBER_PAGES;
 const ROLE_LABEL = { admin: "Admin", learner: "New employee" };
 const LOADERS = {};
@@ -382,8 +382,8 @@ function drawLearning(a) {
     ${t.added_week || a.growth.some((g) => g.added) ? `<h3 style="margin:18px 0 2px">New items per day</h3><p class="muted small" style="margin:0 0 8px">How much new information was added each day.</p>${columnChart(a.growth, [{ key: "added", label: "New items", color: "--series-1" }], { height: 140, title: "New items per day" })}` : ""}`;
 }
 
-// ================================================================== Ask
-const chat = { history: [], busy: false };
+// ================================================================== Ask (the chat)
+const chat = { history: [], busy: false, cid: null };
 const EXAMPLES = {
   calendar: "What meetings do I have this week?", email: "What were the latest emails about prices?",
   documents: "What are our main procedures?", web: "What services do we offer?",
@@ -393,8 +393,11 @@ const EXAMPLES = {
 };
 const SCOPE_KINDS = [["email", "email", "Emails"], ["documents", "file", "Documents and files"], ["calendar", "calendar", "Calendar"],
   ["slack", "slack", "Slack"], ["whatsapp", "whatsapp", "WhatsApp"], ["web", "web", "Websites"], ["social", "social", "Social media"], ["interview", "interview", "Interviews"]];
+const qBox = $("#question");
+const chatEmpty = () => !$(".msg", $("#messages"));
+
 LOADERS.ask = async function loadAsk() {
-  let o = { ready: {} };
+  let o = { ready: {}, total: 0 };
   try { o = await getJSON("/api/overview"); } catch {}
   const kinds = SCOPE_KINDS.filter(([key]) => o.ready[key]);
   const mine = me.role === "admin" ? departments : me.departments;
@@ -404,31 +407,48 @@ LOADERS.ask = async function loadAsk() {
     (mine.length ? `<optgroup label="Department">${mine.map((d) => `<option value="dept:${d.id}">${esc(d.name)}</option>`).join("")}</optgroup>` : "");
   if ([...sel.options].some((x) => x.value === current)) sel.value = current;
   $("#scope-label").classList.toggle("hidden", sel.options.length < 2);
-  if (!chat.history.length && !chat.busy && !$(".msg", $("#messages"))) await drawWelcome();
-  $("#question").focus();
+  if (!chat.busy && chatEmpty()) drawWelcome(o);
+  qBox.focus();
 };
-async function drawWelcome() {
-  let o = { ready: {}, total: 0 };
-  try { o = await getJSON("/api/overview"); } catch {}
-  if (chat.busy || $(".msg", $("#messages"))) return; // a question was asked meanwhile
-  const examples = Object.keys(EXAMPLES).filter((k) => o.ready[k]).map((k) => EXAMPLES[k]).slice(0, 4);
-  $("#messages").innerHTML = `<div class="welcome">
-    <h2>What would you like to know?</h2>
-    ${o.total ? `<p class="muted">Answers come only from your company's own information, with sources.</p>
-      <div class="chips">${knowledgeChips(o.ready)}</div>
-      <div class="examples">${examples.map((x) => `<button type="button">${esc(x)}</button>`).join("")}</div>`
-    : me.role === "admin" ? `<p class="muted">Nothing can be searched yet.</p><a class="btn primary" href="#sources">Connect your first source</a>`
-    : `<p class="muted">Nothing can be searched yet. Your admin is still adding the company's information.</p>`}</div>`;
-  $$(".examples button").forEach((b) => b.onclick = () => { $("#question").value = b.textContent; $("#ask-form").requestSubmit(); });
+function greeting() {
+  const h = new Date().getHours();
+  const part = h < 5 ? "Good evening" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const first = firstName(me);
+  return first ? `${part}, ${first}` : part;
 }
+// Empty chat: a greeting, the composer in the middle, and a few things to try
+function drawWelcome(o) {
+  if (chat.busy || !chatEmpty()) return;
+  $("#page-ask").classList.add("is-new");
+  const examples = Object.keys(EXAMPLES).filter((k) => o.ready[k]).map((k) => EXAMPLES[k]).slice(0, 4);
+  $("#chat-hello").innerHTML = `<img src="/static/cortex.svg" alt="" class="hello-logo"><h1>${esc(greeting())}</h1>
+    <p class="muted">${o.total ? "What would you like to know about the company?" : me.role === "admin"
+      ? 'Nothing can be searched yet. <a href="#sources">Connect your first source</a> and ask away.' : "Nothing can be searched yet. Your admin is still adding the company's information."}</p>`;
+  $("#chat-suggest").innerHTML = examples.map((x) => `<button type="button">${esc(x)}</button>`).join("");
+  $$("#chat-suggest button").forEach((b) => b.onclick = () => { qBox.value = b.textContent; $("#ask-form").requestSubmit(); });
+}
+function leaveWelcome() {
+  $("#page-ask").classList.remove("is-new");
+  $("#chat-hello").innerHTML = ""; $("#chat-suggest").innerHTML = "";
+}
+function newChat() {
+  if (chat.busy) return;
+  chat.history = []; chat.cid = null;
+  $("#messages").innerHTML = "";
+  getJSON("/api/overview").then(drawWelcome).catch(() => drawWelcome({ ready: {}, total: 0 }));
+  qBox.value = ""; qBox.style.height = "auto"; qBox.focus();
+}
+$("#new-chat").addEventListener("click", newChat);
+$("#conv-new").addEventListener("click", () => setTimeout(newChat, 0));
 
 function renderAnswer(text, sources) {
   const inline = (s) => esc(s)
     .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\[(\d+)\]/g, (m, n) => {
       const s = sources[Number(n) - 1];
-      return s ? `<span class="cite" title="${esc(s.title + (s.location ? ", " + s.location : ""))}">[${n}]</span>` : m;
+      return s ? `<span class="cite" title="${esc(s.title + (s.location ? ", " + s.location : ""))}">${n}</span>` : m;
     });
   const out = []; let list = null;
   for (const raw of text.split("\n")) {
@@ -442,23 +462,56 @@ function renderAnswer(text, sources) {
     if (list) { out.push(`</${list.type}>`); list = null; }
     if (!line.trim()) continue;
     const h = line.match(/^#{1,4}\s+(.*)/);
-    out.push(h ? `<p><b>${inline(h[1])}</b></p>` : `<p>${inline(line)}</p>`);
+    out.push(h ? `<h3>${inline(h[1])}</h3>` : `<p>${inline(line)}</p>`);
   }
   if (list) out.push(`</${list.type}>`);
   return out.join("");
 }
-function addMessage(cls, html) {
-  $(".welcome")?.remove();
+function addUser(text) {
+  leaveWelcome();
   const div = document.createElement("div");
-  div.className = `msg ${cls}`; div.dir = "auto"; div.innerHTML = html;
+  div.className = "msg user"; div.innerHTML = `<div class="bubble" dir="auto">${esc(text)}</div>`;
   $("#messages").append(div);
-  $("#messages").scrollTop = $("#messages").scrollHeight;
   return div;
 }
-const qBox = $("#question");
-qBox.addEventListener("input", () => { qBox.style.height = "auto"; qBox.style.height = qBox.scrollHeight + "px"; });
-qBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ask-form").requestSubmit(); } });
-$("#new-chat").addEventListener("click", () => { chat.history = []; $("#messages").innerHTML = ""; drawWelcome(); qBox.focus(); });
+function addBot() {
+  const div = document.createElement("div");
+  div.className = "msg bot";
+  div.innerHTML = `<img src="/static/cortex.svg" alt="" class="bot-avatar"><div class="bot-body">
+    <div class="answer" dir="auto"><div class="thinking"><span class="dots"><i></i><i></i><i></i></span><span>Searching your company's information</span></div></div></div>`;
+  $("#messages").append(div);
+  scrollChat(true);
+  return div;
+}
+function scrollChat(force) {
+  const el = $("#chat-scroll");
+  if (force || el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
+}
+// Under every answer: its sources as chips, then copy and feedback
+function finishBot(bot, text, sources, qid, feedback = null) {
+  const body = $(".bot-body", bot);
+  const cited = sources.filter((s) => text.includes(`[${s.n}]`));
+  if (cited.length) body.insertAdjacentHTML("beforeend", `<div class="src-chips">${cited.map((s) => {
+    const label = `<b>${s.n}</b>${ic(KIND_ICON[s.kind] || "file")}<span>${esc(s.title)}</span>`;
+    return s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title)}">${label}</a>`
+      : `<a class="src-chip" href="#" data-doc="${s.document_id}" title="${esc(s.title + (s.location ? ", " + s.location : ""))}">${label}</a>`;
+  }).join("")}</div>`);
+  body.insertAdjacentHTML("beforeend", `<div class="msg-actions">
+    <button type="button" data-copy-answer title="Copy" aria-label="Copy">${ic("copy")}</button>
+    ${qid ? `<button type="button" data-v="1" title="Helpful" aria-label="Helpful" class="${feedback === 1 ? "chosen" : ""}">${ic("up")}</button>
+    <button type="button" data-v="-1" title="Not helpful" aria-label="Not helpful" class="${feedback === -1 ? "chosen" : ""}">${ic("down")}</button>` : ""}</div>`);
+  $("[data-copy-answer]", body).onclick = async () => {
+    try { await navigator.clipboard.writeText(text.replace(/\s*\[\d+\]/g, "")); toast("Copied."); } catch { toast("Select the text and copy it.", true); }
+  };
+  $$("[data-v]", body).forEach((b) => b.onclick = async () => {
+    $$("[data-v]", body).forEach((x) => x.classList.toggle("chosen", x === b));
+    try { await api(`/api/questions/${qid}/feedback`, { method: "POST", json: { value: Number(b.dataset.v) } }); toast("Thanks. Your feedback helps improve the answers."); }
+    catch (err) { toast(err.message, true); }
+  });
+}
+
+qBox.addEventListener("input", () => { qBox.style.height = "auto"; qBox.style.height = Math.min(qBox.scrollHeight, 220) + "px"; });
+qBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#ask-form").requestSubmit(); } });
 
 $("#ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -466,13 +519,14 @@ $("#ask-form").addEventListener("submit", async (e) => {
   if (!question || chat.busy) return;
   chat.busy = true; $("#ask-btn").disabled = true;
   qBox.value = ""; qBox.style.height = "auto";
-  addMessage("user", esc(question));
-  const bot = addMessage("bot", `<div class="thinking"><span class="spinner"></span><span>Searching your company's information…</span></div>`);
+  addUser(question);
+  const bot = addBot();
+  const answerEl = $(".answer", bot);
   const scope = $("#scope-filter").value;
   let text = "", sources = [], qid = null, failed = "";
   try {
-    const res = await api("/api/ask", { method: "POST", json: { question, history: chat.history, department_id: scope.startsWith("dept:") ? Number(scope.slice(5)) : null,
-      kinds: scope.startsWith("kind:") ? [scope.slice(5)] : [] } });
+    const res = await api("/api/ask", { method: "POST", json: { question, history: chat.history, conversation_id: chat.cid,
+      department_id: scope.startsWith("dept:") ? Number(scope.slice(5)) : null, kinds: scope.startsWith("kind:") ? [scope.slice(5)] : [] } });
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
     for (;;) {
       const { value, done } = await reader.read();
@@ -481,37 +535,99 @@ $("#ask-form").addEventListener("submit", async (e) => {
       let nl;
       while ((nl = buf.indexOf("\n")) >= 0) {
         const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
-        if (ev.type === "sources") { sources = ev.sources; const t = $(".thinking span:last-child", bot); if (t && sources.length) t.textContent = `Found ${plural(sources.length, "relevant passage", "relevant passages")}. Writing the answer…`; }
-        if (ev.type === "text") { text += ev.text; bot.innerHTML = renderAnswer(text, sources); }
+        if (ev.type === "conversation") chat.cid = ev.id;
+        if (ev.type === "sources") { sources = ev.sources; const t = $(".thinking span:last-child", bot); if (t && sources.length) t.textContent = `Found ${plural(sources.length, "relevant passage", "relevant passages")}. Writing the answer`; }
+        if (ev.type === "text") { text += ev.text; answerEl.innerHTML = renderAnswer(text, sources) + '<span class="caret"></span>'; }
         if (ev.type === "error") failed = ev.message;
         if (ev.type === "done") qid = ev.question_id;
       }
-      $("#messages").scrollTop = $("#messages").scrollHeight;
+      scrollChat();
     }
   } catch (err) { failed = err.message; }
   chat.busy = false; $("#ask-btn").disabled = false;
   if (failed && !text) {
-    bot.innerHTML = `<p class="state-text bad">${ic("alert")} ${esc(failed)}</p><button class="btn small" type="button">${ic("refresh")}Try again</button>`;
-    $("button", bot).onclick = () => { bot.previousElementSibling?.remove(); bot.remove(); qBox.value = question; $("#ask-form").requestSubmit(); };
+    answerEl.innerHTML = `<p class="state-text bad">${ic("alert")} ${esc(failed)}</p><button class="btn small" type="button">${ic("refresh")}Try again</button>`;
+    $("button", answerEl).onclick = () => { bot.previousElementSibling?.remove(); bot.remove(); qBox.value = question; $("#ask-form").requestSubmit(); };
     return;
   }
+  answerEl.innerHTML = renderAnswer(text, sources);
   chat.history.push({ role: "user", content: question }, { role: "assistant", content: text });
-  const cited = sources.filter((s) => text.includes(`[${s.n}]`));
-  if (cited.length) {
-    bot.insertAdjacentHTML("beforeend", `<div class="sources"><b>Sources</b><ol>${cited.map((s) => `<li value="${s.n}">${ic(KIND_ICON[s.kind] || "file")}
-      ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : `<a href="#" data-doc="${s.document_id}">${esc(s.title)}</a>`}
-      ${s.location ? `<span class="muted">(${esc(s.location)})</span>` : ""}</li>`).join("")}</ol></div>`);
-  }
-  if (qid) {
-    bot.insertAdjacentHTML("beforeend", `<div class="feedback">Was this helpful? <button type="button" data-v="1" aria-label="Helpful">${ic("up")}</button><button type="button" data-v="-1" aria-label="Not helpful">${ic("down")}</button></div>`);
-    $$(".feedback button", bot).forEach((b) => b.onclick = async () => {
-      $$(".feedback button", bot).forEach((x) => x.classList.toggle("chosen", x === b));
-      try { await api(`/api/questions/${qid}/feedback`, { method: "POST", json: { value: Number(b.dataset.v) } }); toast("Thanks. Your feedback helps improve the answers."); }
-      catch (err) { toast(err.message, true); }
-    });
-  }
+  finishBot(bot, text, sources, qid);
+  scrollChat();
   qBox.focus();
 });
+
+// Open a saved conversation in the chat, to read it and carry on
+async function openConversation(id) {
+  const c = await getJSON(`/api/conversations/${id}`);
+  if (!c.mine) return viewConversation(c);
+  chat.cid = c.id; chat.history = [];
+  $("#messages").innerHTML = ""; leaveWelcome();
+  for (const m of c.messages) {
+    addUser(m.question);
+    const bot = addBot();
+    $(".answer", bot).innerHTML = m.answer ? renderAnswer(m.answer, m.sources || []) : `<p class="muted">No answer was saved.</p>`;
+    if (m.answer) finishBot(bot, m.answer, m.sources || [], m.id, m.feedback);
+    chat.history.push({ role: "user", content: m.question }, { role: "assistant", content: m.answer || "" });
+  }
+  location.hash = "#ask";
+  setTimeout(() => scrollChat(true), 50);
+}
+// Someone else's conversation (admins): read only
+function viewConversation(c) {
+  const f = openDialog(`<h2 dir="auto">${esc(c.title || "Conversation")}</h2>
+    <p class="muted small">${esc(c.user_name || c.user_email || "")} · ${new Date(c.updated_at).toLocaleString()}</p>
+    <div class="conv-view">${c.messages.map((m) => `<div class="msg user"><div class="bubble" dir="auto">${esc(m.question)}</div></div>
+      <div class="msg bot"><img src="/static/cortex.svg" alt="" class="bot-avatar"><div class="bot-body"><div class="answer" dir="auto">${m.answer ? renderAnswer(m.answer, m.sources || []) : '<p class="muted">No answer was saved.</p>'}</div>
+      ${!m.found_sources ? badge("bad", "No answer found") : m.feedback === -1 ? badge("bad", "Not helpful") : m.feedback === 1 ? badge("ok", "Helpful") : ""}</div></div>`).join("")}</div>
+    <div class="dialog-actions"><button class="btn primary" type="button" data-close>Close</button></div>`);
+  $("[data-close]", f).onclick = closeDialog;
+}
+
+// ================================================================== Conversations
+const conv = { scope: "mine" };
+LOADERS.conversations = async function loadConversations() {
+  const admin = me.role === "admin";
+  $("#conv-scope").classList.toggle("hidden", !admin);
+  $("#conv-gaps-label").classList.toggle("hidden", !admin || conv.scope !== "all");
+  $("#q-stats").classList.toggle("hidden", !admin || conv.scope !== "all");
+  $("#conv-intro").textContent = admin && conv.scope === "all"
+    ? "Everyone's conversations. Unanswered questions and thumbs down show what information is missing."
+    : "Your past chats with Cortex. Open one to continue where you left off.";
+  if (admin && conv.scope === "all") {
+    const s = (await getJSON("/api/admin/questions?limit=1")).stats;
+    $("#q-stats").innerHTML = [["Questions asked", s.total], ["This week", s.last_7_days], ["Helpful", s.helpful], ["Not helpful", s.not_helpful], ["No answer found", s.no_sources]]
+      .map(([l, v]) => `<div class="stat"><div class="label">${l}</div><div class="big-number">${num(v)}</div></div>`).join("");
+  }
+  const q = new URLSearchParams({ scope: conv.scope, q: $("#conv-search").value, gaps: String(admin && conv.scope === "all" && $("#q-gaps").checked) });
+  const rows = await getJSON(`/api/conversations?${q}`);
+  const everyone = conv.scope === "all";
+  $("#conv-list").innerHTML = rows.map((c) => `<div class="conv-row" data-conv="${c.id}" role="button" tabindex="0">
+      <span class="icon-tile sm">${ic("chat")}</span>
+      <div class="grow"><div class="title" dir="auto">${esc(c.title || "Conversation")}</div>
+        <div class="meta" dir="auto">${esc((c.last_answer || "").replace(/\s*\[\d+\]/g, "").slice(0, 140))}</div>
+        <div class="meta">${everyone ? `${esc(c.user_name || c.user_email || "")} · ` : ""}${plural(c.messages, "question", "questions")} · ${ago(c.updated_at)}</div></div>
+      <div class="row tight">${c.unanswered ? badge("bad", "No answer found") : c.not_helpful ? badge("bad", "Not helpful") : ""}
+        ${c.user_id === me.id ? `<button type="button" class="btn link small danger" data-del-conv="${c.id}" title="Delete" aria-label="Delete">${ic("trash")}</button>` : ""}</div></div>`).join("")
+    || `<div class="empty">${$("#conv-search").value ? "No conversations match." : everyone && $("#q-gaps").checked ? "No unanswered questions." : 'No conversations yet. <a href="#ask">Ask your first question</a>'}</div>`;
+  $$("#conv-list .conv-row").forEach((r) => {
+    const open = (e) => { if (e.target.closest("[data-del-conv]")) return; openConversation(Number(r.dataset.conv)).catch((err) => toast(err.message, true)); };
+    r.onclick = open; r.onkeydown = (e) => { if (e.key === "Enter") open(e); };
+  });
+  $$("[data-del-conv]").forEach((b) => b.onclick = async () => {
+    if (!await confirmBox({ title: "Delete this conversation?", text: "It will be removed from your conversations.", confirm: "Delete", danger: true })) return;
+    await api(`/api/conversations/${b.dataset.delConv}`, { method: "DELETE" });
+    if (chat.cid === Number(b.dataset.delConv)) { chat.cid = null; chat.history = []; $("#messages").innerHTML = ""; }
+    toast("Deleted."); LOADERS.conversations();
+  });
+};
+$$("#conv-scope button").forEach((b) => b.onclick = () => {
+  conv.scope = b.dataset.scope;
+  $$("#conv-scope button").forEach((x) => x.classList.toggle("on", x === b));
+  LOADERS.conversations();
+});
+$("#conv-search").addEventListener("input", debounce(() => LOADERS.conversations()));
+$("#q-gaps").addEventListener("change", () => LOADERS.conversations());
 
 document.addEventListener("click", async (e) => {
   const a = e.target.closest("a[data-doc]");
@@ -1331,21 +1447,6 @@ function userDialog(u) {
 
 // ================================================================== Activity
 let qData = null;
-LOADERS.activity = async function loadActivity() { qData = await getJSON("/api/admin/questions"); drawQuestions(); };
-function drawQuestions() {
-  const s = qData.stats;
-  $("#q-stats").innerHTML = [["Asked in total", s.total], ["This week", s.last_7_days], ["Helpful", s.helpful], ["Not helpful", s.not_helpful], ["No answer found", s.no_sources]]
-    .map(([l, v]) => `<div class="stat"><div class="label">${l}</div><div class="big-number">${num(v)}</div></div>`).join("");
-  const gaps = $("#q-gaps").checked;
-  const list = qData.questions.filter((q) => !gaps || !q.found_sources || q.feedback === -1);
-  $("#q-list").innerHTML = list.map((q) => `<div class="list-row"><div>
-      <details><summary class="title" dir="auto">${esc(q.question)}</summary><div class="muted small" style="white-space:pre-wrap;margin-top:6px" dir="auto">${esc(q.answer || "")}</div></details>
-      <div class="meta">${esc(q.user_name || q.user_email || "")} · ${new Date(q.created_at).toLocaleString()}</div></div>
-      <div>${!q.found_sources ? badge("bad", "No answer found") : q.feedback === -1 ? badge("bad", "Not helpful") : q.feedback === 1 ? badge("ok", "Helpful") : ""}</div></div>`).join("")
-    || `<div class="empty">${gaps ? "No unanswered questions." : "No questions yet."}</div>`;
-}
-$("#q-gaps").addEventListener("change", drawQuestions);
-
 // ================================================================== Settings
 let lastHealth = null;
 LOADERS.health = async () => { await drawHealth(); await drawAiKey(); };

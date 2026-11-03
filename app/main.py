@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.7"
+APP_VERSION = "0.9.8"
 
 
 def _ensure_secret_key() -> None:
@@ -132,6 +132,7 @@ def me(user: dict = Depends(auth.current_user)):
 
 class AskIn(BaseModel):
     question: str
+    conversation_id: int | None = None  # continue a conversation; empty = start a new one
     department_id: int | None = None
     kinds: list[str] = []  # limit to some kinds of sources, e.g. ["email"]
     history: list[dict] = []
@@ -165,6 +166,16 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
         raise HTTPException(403, "You are not a member of that department")
 
     history = _clean_history(body.history)
+    with conn() as c:
+        if body.conversation_id is not None:
+            own = c.execute("SELECT id FROM conversations WHERE id=%s AND user_id=%s",
+                            (body.conversation_id, user["id"])).fetchone()
+            if not own:
+                raise HTTPException(404, "This conversation was not found. Start a new one with +.")
+            conversation_id = own["id"]
+        else:
+            conversation_id = c.execute("INSERT INTO conversations(user_id, title) VALUES (%s, %s) RETURNING id",
+                                        (user["id"], _title(question))).fetchone()["id"]
     scope = {"is_admin": is_admin, "user_depts": dept_ids, "only_dept": body.department_id,
              "learner": user["role"] == "learner",
              "kinds": [k for k in body.kinds if k in KINDS] or None}
@@ -182,6 +193,7 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
     ]
 
     def events():
+        yield json.dumps({"type": "conversation", "id": conversation_id}) + "\n"
         yield json.dumps({"type": "sources", "sources": sources}) + "\n"
         answer = []
         try:
@@ -201,13 +213,75 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
             yield json.dumps({"type": "error", "message": "The assistant is unavailable right now. Please try again."}) + "\n"
         with conn() as c:
             qid = c.execute(
-                "INSERT INTO questions(user_id, department_id, question, answer, sources, found_sources) "
-                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                (user["id"], body.department_id, question, "".join(answer), json.dumps(sources), bool(hits)),
+                "INSERT INTO questions(user_id, department_id, question, answer, sources, found_sources, conversation_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (user["id"], body.department_id, question, "".join(answer), json.dumps(sources), bool(hits), conversation_id),
             ).fetchone()["id"]
+            c.execute("UPDATE conversations SET updated_at=now() WHERE id=%s", (conversation_id,))
         yield json.dumps({"type": "done", "question_id": qid}) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+def _title(question: str) -> str:
+    """A short conversation title from its first question."""
+    t = " ".join(question.split())
+    return t if len(t) <= 80 else t[:77].rsplit(" ", 1)[0] + "…"
+
+
+# ---------------------------------------------------------------- conversations
+
+@app.get("/api/conversations")
+def list_conversations(user: dict = Depends(auth.current_user), scope: str = "mine", q: str = "", gaps: bool = False,
+                       limit: int = 100):
+    """Your conversations. Admins can also see everyone's (scope=all)."""
+    everyone = scope == "all" and user["role"] == "admin"
+    where, params = ["(%(all)s OR c.user_id = %(me)s)"], {"all": everyone, "me": user["id"], "limit": max(1, min(limit, 500))}
+    if q.strip():
+        where.append("(c.title ILIKE %(q)s OR EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id "
+                     "AND (x.question ILIKE %(q)s OR x.answer ILIKE %(q)s)))")
+        params["q"] = f"%{q.strip()}%"
+    if gaps:
+        where.append("EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id AND (NOT x.found_sources OR x.feedback = -1))")
+    with conn() as c:
+        return c.execute(
+            "SELECT c.id, c.title, c.created_at, c.updated_at, c.user_id, u.name AS user_name, u.email AS user_email, "
+            " (SELECT count(*) FROM questions x WHERE x.conversation_id=c.id) AS messages, "
+            " (SELECT left(x.answer, 160) FROM questions x WHERE x.conversation_id=c.id ORDER BY x.id DESC LIMIT 1) AS last_answer, "
+            " EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id AND NOT x.found_sources) AS unanswered, "
+            " EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id AND x.feedback = -1) AS not_helpful "
+            "FROM conversations c LEFT JOIN users u ON u.id=c.user_id "
+            f"WHERE {' AND '.join(where)} AND EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id) "
+            "ORDER BY c.updated_at DESC LIMIT %(limit)s", params).fetchall()
+
+
+def _conversation(c, cid: int, user: dict) -> dict:
+    row = c.execute("SELECT c.id, c.title, c.user_id, c.updated_at, u.name AS user_name, u.email AS user_email "
+                    "FROM conversations c LEFT JOIN users u ON u.id=c.user_id WHERE c.id=%s", (cid,)).fetchone()
+    if not row or (row["user_id"] != user["id"] and user["role"] != "admin"):
+        raise HTTPException(404, "Conversation not found")
+    return row
+
+
+@app.get("/api/conversations/{cid}")
+def get_conversation(cid: int, user: dict = Depends(auth.current_user)):
+    with conn() as c:
+        conv = _conversation(c, cid, user)
+        conv["mine"] = conv["user_id"] == user["id"]
+        conv["messages"] = c.execute(
+            "SELECT id, question, answer, sources, feedback, found_sources, created_at FROM questions "
+            "WHERE conversation_id=%s ORDER BY id", (cid,)).fetchall()
+    return conv
+
+
+@app.delete("/api/conversations/{cid}")
+def delete_conversation(cid: int, user: dict = Depends(auth.current_user)):
+    with conn() as c:
+        conv = _conversation(c, cid, user)
+        if conv["user_id"] != user["id"]:
+            raise HTTPException(403, "Only the person who had this conversation can delete it")
+        c.execute("DELETE FROM conversations WHERE id=%s", (cid,))
+    return {"ok": True}
 
 
 KINDS = {"email", "file", "calendar", "slack", "whatsapp", "web", "interview", "social"}

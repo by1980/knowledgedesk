@@ -121,3 +121,25 @@ CREATE TABLE IF NOT EXISTS learning_progress (
     done_at     TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (user_id, document_id)
 );
+
+-- v0.9.8: questions are grouped into conversations people can reopen and continue.
+CREATE TABLE IF NOT EXISTS conversations (
+    id          SERIAL PRIMARY KEY,
+    user_id     INT REFERENCES users(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS conversation_id INT REFERENCES conversations(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS questions_conversation ON questions(conversation_id);
+CREATE INDEX IF NOT EXISTS conversations_user ON conversations(user_id, updated_at DESC);
+-- Questions asked before conversations existed: one conversation each.
+DO $$
+DECLARE r RECORD; cid INT;
+BEGIN
+    FOR r IN SELECT id, user_id, question, created_at FROM questions WHERE conversation_id IS NULL LOOP
+        INSERT INTO conversations(user_id, title, created_at, updated_at)
+        VALUES (r.user_id, left(r.question, 80), r.created_at, r.created_at) RETURNING id INTO cid;
+        UPDATE questions SET conversation_id = cid WHERE id = r.id;
+    END LOOP;
+END $$;

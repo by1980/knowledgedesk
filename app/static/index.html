@@ -45,6 +45,9 @@
     <symbol id="i-learn" viewBox="0 0 24 24"><path d="m2 9 10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5M22 9v6"/></symbol>
     <symbol id="i-up-arrow" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
     <symbol id="i-down-arrow" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-4 16-4-6.5z"/><path d="M12 13.5 20 4"/></symbol>
   </svg>
@@ -100,15 +103,25 @@
 
       <!-- ---------------------------------------------------------- Ask -->
       <main id="page-ask" class="page page-ask hidden">
-        <div class="ask-head">
-          <label class="scope" id="scope-label">Search in <select id="scope-filter"></select></label>
-          <button id="new-chat" class="btn"><svg class="ic"><use href="#i-plus"/></svg>New conversation</button>
+        <div class="chat-scroll" id="chat-scroll">
+          <div class="chat-col">
+            <div id="chat-hello" class="chat-hello"></div>
+            <div id="messages" class="messages" aria-live="polite"></div>
+          </div>
         </div>
-        <div id="messages" class="messages" aria-live="polite"></div>
-        <form id="ask-form" class="ask-bar">
-          <textarea id="question" rows="1" dir="auto" placeholder="Ask anything about the company…" aria-label="Your question"></textarea>
-          <button type="submit" class="btn primary" id="ask-btn"><svg class="ic"><use href="#i-send"/></svg>Ask</button>
-        </form>
+        <div class="chat-dock">
+          <form id="ask-form" class="composer">
+            <textarea id="question" rows="1" dir="auto" placeholder="Ask Cortex anything about your company…" aria-label="Your question"></textarea>
+            <div class="composer-row">
+              <button type="button" id="new-chat" class="round-btn" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"/></svg></button>
+              <label class="scope-pill" id="scope-label" title="Where to look"><svg class="ic"><use href="#i-search"/></svg><select id="scope-filter" aria-label="Where to look"></select></label>
+              <span class="grow"></span>
+              <button type="submit" class="send-btn" id="ask-btn" title="Send" aria-label="Send"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+            </div>
+          </form>
+          <div id="chat-suggest" class="chat-suggest"></div>
+          <p class="composer-note">Cortex answers only from your company's information. Check important details in the sources.</p>
+        </div>
       </main>
 
       <!-- ---------------------------------------------------------- Library (team members) -->
@@ -335,13 +348,19 @@
           <p class="muted small">Who is going through the path, and how far they got.</p><div id="learn-people"></div></div>
       </main>
 
-      <main id="page-activity" class="page hidden">
-        <div class="page-head"><div><h1>Activity</h1><p class="muted">What people ask. Unanswered questions and thumbs-down show what information is missing.</p></div></div>
-        <div class="stats" id="q-stats"></div>
+      <main id="page-conversations" class="page hidden">
+        <div class="page-head"><div><h1>Conversations</h1><p class="muted" id="conv-intro">Your past chats with Cortex. Open one to continue where you left off.</p></div>
+          <a class="btn primary" href="#ask" id="conv-new"><svg class="ic"><use href="#i-plus"/></svg>New chat</a></div>
+        <div class="stats hidden" id="q-stats"></div>
         <div class="card">
-          <div class="toolbar"><h2>Questions</h2>
-            <label class="check"><input type="checkbox" id="q-gaps"> Only unanswered or not helpful</label></div>
-          <div id="q-list"></div>
+          <div class="toolbar">
+            <div class="search-box"><svg class="ic"><use href="#i-search"/></svg><input id="conv-search" type="search" placeholder="Search conversations" dir="auto"></div>
+            <div class="row tight">
+              <div class="segmented hidden" id="conv-scope" role="tablist"><button type="button" data-scope="mine" class="on">Mine</button><button type="button" data-scope="all">Everyone</button></div>
+              <label class="check hidden" id="conv-gaps-label"><input type="checkbox" id="q-gaps"> Only unanswered or not helpful</label>
+            </div>
+          </div>
+          <div id="conv-list"></div>
         </div>
       </main>
 

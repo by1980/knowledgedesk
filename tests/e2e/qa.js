@@ -42,7 +42,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
   check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
   await page.click("#dialog[open] [data-close]");
-  check("Admin menu has all its pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Learning Center,Activity,Health,Settings");
+  check("Admin menu has all its pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Learning Center,Conversations,Health,Settings");
 
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
@@ -55,8 +55,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 3. Ask before anything is connected
   await page.click("#nav a[data-page=ask]");
-  check("Ask page explains nothing can be searched yet", await until(async () => /Nothing can be searched yet/.test(await text("#messages")), 5000, 200));
-  check("…and offers to connect a source", await page.isVisible("#messages a[href='#sources']"));
+  check("Ask page explains nothing can be searched yet", await until(async () => /Nothing can be searched yet/.test(await text("#chat-hello")), 5000, 200));
+  check("…and offers to connect a source", await page.isVisible("#chat-hello a[href='#sources']"));
 
   // ------------------------------------------------------------------ 4. Connect Google
   await page.click("#nav a[data-page=sources]");
@@ -305,28 +305,43 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 10. Ask as admin
   await page.click("#nav a[data-page=ask]");
-  await page.waitForSelector(".welcome");
-  check("Ask: shows what can be asked about", /emails/.test(await text(".welcome .chips")) && /web pages/.test(await text(".welcome .chips")));
-  check("Ask: offers example questions", (await page.$$(".examples button")).length >= 2);
+  await page.waitForSelector("#page-ask.is-new");
+  check("Ask: greets by name, chat box in the middle, example questions", /Good (morning|afternoon|evening), Yaniv/.test(await text("#chat-hello h1"))
+    && (await page.$$("#chat-suggest button")).length >= 2);
+  check("Ask: a + button starts a new chat (no separate button)", await page.isVisible("#ask-form #new-chat") && !/New conversation/.test(await text("#page-ask")));
   await shot("ask-welcome");
   await page.fill("#question", "How much is the Levi Gardens maintenance contract?"); await page.press("#question", "Enter");
-  await page.waitForSelector(".msg.bot .feedback", { timeout: 30000 });
+  await page.waitForSelector(".msg.bot .msg-actions", { timeout: 30000 });
   const answer = await text(".msg.bot");
-  check("Ask: answer cites the right email", /Levi Gardens/.test(answer) && /Sources/.test(answer), answer.slice(0, 300));
-  await page.click(".msg.bot .feedback button[data-v='-1']");
+  check("Ask: answer cites the right email, shown as a source chip", /Levi Gardens/.test(await text(".msg.bot .src-chips")), answer.slice(0, 300));
+  check("Ask: your question on the right, the answer with the Cortex mark", await page.isVisible(".msg.user .bubble") && await page.isVisible(".msg.bot .bot-avatar"));
+  await page.click(".msg.bot .msg-actions button[data-v='-1']");
   check("Feedback is confirmed", await toastSeen(/Thanks/));
   check("Ask: 'Search in' lists the kinds of sources that exist", await page.evaluate(() =>
     [...document.querySelectorAll("#scope-filter option")].map((o) => o.textContent).join(",")).then((t) => /Emails/.test(t) && /Calendar/.test(t) && /Slack/.test(t) && /Social media/.test(t)));
   await page.fill("#question", "How many likes did our last Instagram post get?"); await page.press("#question", "Enter");
-  await until(async () => (await page.$$(".msg.bot .feedback")).length === 2, 30000, 300);
-  check("Ask: Instagram question uses the account summary", /Instagram summary/.test(await text(".msg.bot:last-of-type .sources")), await text(".msg.bot:last-of-type"));
+  await until(async () => (await page.$$(".msg.bot .msg-actions")).length === 2, 30000, 300);
+  check("Ask: Instagram question uses the account summary", /Instagram summary/.test(await text(".msg.bot:last-of-type .src-chips")), await text(".msg.bot:last-of-type"));
   await page.selectOption("#scope-filter", "kind:calendar");
   await page.fill("#question", "When is the supplier visit?"); await page.press("#question", "Enter");
-  await until(async () => (await page.$$(".msg.bot .feedback")).length === 3, 30000, 300);
+  await until(async () => (await page.$$(".msg.bot .msg-actions")).length === 3, 30000, 300);
   check("Ask: calendar question finds the calendar", /Calendar|Supplier visit/.test(await text(".msg.bot:last-of-type")));
-  check("Ask: 'Calendar only' searched only the calendar", !/Email:/.test(await text(".msg.bot:last-of-type .sources")));
+  check("Ask: 'Calendar only' searched only the calendar", !/Email:/.test(await text(".msg.bot:last-of-type .src-chips")));
   await page.selectOption("#scope-filter", "");
   await shot("ask-answers");
+  const firstCid = await page.evaluate(() => chat.cid);
+  await page.click("#new-chat");
+  check("Ask: + starts a fresh chat", await until(async () => await page.isVisible("#page-ask.is-new") && (await page.$$(".msg")).length === 0, 5000, 200)
+    && await page.evaluate(() => chat.cid === null));
+  await page.click("#nav a[data-page=conversations]");
+  check("Conversations: the chat is listed with its first question as the title", await until(async () => /How much is the Levi Gardens maintenance contract/.test(await text("#conv-list"))
+    && /3 questions/.test(await text("#conv-list")), 8000, 300), await text("#conv-list"));
+  await page.click(`#conv-list [data-conv="${firstCid}"]`);
+  check("Conversations: opening one brings back the whole chat", await until(async () => !(await page.isHidden("#page-ask")) && (await page.$$(".msg.bot")).length === 3, 8000, 300));
+  await page.fill("#question", "And when is it paid?"); await page.press("#question", "Enter");
+  await until(async () => (await page.$$(".msg.bot .msg-actions")).length === 4, 30000, 300);
+  check("Conversations: continuing adds to the same conversation", await page.evaluate(() => chat.cid) === firstCid);
+  await shot("conversation-continued");
 
   // ------------------------------------------------------------------ 10b. Learning Center (admin builds the path)
   await page.click("#nav a[data-page=learning]");
@@ -356,7 +371,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("Team member menu: Ask, Library and Learning Center", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Ask,Library,Learning Center");
+  check("Team member menu: Ask, Library and Learning Center", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Ask,Conversations,Library,Learning Center");
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
@@ -365,7 +380,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Team member can't open admin pages", !(await page.isVisible("#page-settings")));
   await page.click("#nav a[data-page=ask]");
   await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
-  const danaAnswered = await until(async () => (await page.$$(".msg.bot .feedback")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
+  const danaAnswered = await until(async () => (await page.$$(".msg.bot .msg-actions")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
   check("Team member never gets HR-only information", danaAnswered && !/14,000/.test(await text("#messages")), await text("#messages"));
   await page.click("#nav a[data-page=library]");
   await until(async () => (await page.$$("#lib-list .list-row")).length > 0, 10000, 300);
@@ -379,7 +394,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "noa@acme.test"); await page.fill("input[name=password]", "noa-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("New employee menu: only Learning Center and Ask", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center,Ask");
+  check("New employee menu: only Learning Center and Ask", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center,Ask,Conversations");
   check("New employee lands on the Learning Center with the path and note", await until(async () => !(await page.isHidden("#page-learning"))
     && /Interview - Moshe/.test(await text("#learn-list")) && /read this first/.test(await text("#learn-list")) && /0 of 1/.test(await text("#learn-progress")), 8000, 300));
   check("New employee doesn't see admin buttons", !(await page.isVisible("#learn-add")) && !(await page.isVisible("#learn-people-card")));
@@ -388,9 +403,9 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("learning-new-employee");
   await page.click("#nav a[data-page=ask]");
   await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
-  await until(async () => (await page.$$(".msg.bot .feedback")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
+  await until(async () => (await page.$$(".msg.bot .msg-actions")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
   check("Logging out leaves nothing of the previous person's questions", !/Levi Gardens|Supplier visit/.test(await text("#messages")), await text("#messages"));
-  check("New employee's answers come only from the learning path", !/14,000/.test(await text("#messages")) && !/Salaries|Levi Gardens|Email:/.test(await text("#messages .sources")), await text("#messages"));
+  check("New employee's answers come only from the learning path", !/14,000/.test(await text("#messages")) && !/Salaries|Levi Gardens|Email:/.test(await text("#messages .src-chips")), await text("#messages"));
   await page.goto(APP + "/app#library"); await sleep(500);
   check("New employee can't open the Library", !(await page.isVisible("#page-library")));
 
@@ -407,10 +422,13 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.hover("#home-q-chart .hit >> nth=-1");
   check("Home: hovering a day shows its numbers", await until(async () => /Answered/.test(await page.textContent("#viz-tip")), 3000, 200));
   await shot("home-after-setup");
-  await page.click("#nav a[data-page=activity]");
+  await page.click("#nav a[data-page=conversations]");
+  await page.click("#conv-scope [data-scope=all]");
+  check("Conversations (admin): everyone's chats, with Dana's", await until(async () => /Dana Cohen/.test(await text("#conv-list")), 8000, 300));
   await page.check("#q-gaps");
-  check("Activity: the 👎 question is listed as a gap", /Levi Gardens/.test(await text("#q-list")));
-  await shot("activity");
+  check("Conversations (admin): the thumbs down chat is listed as a gap", await until(async () => /Levi Gardens/.test(await text("#conv-list")) && /Not helpful|No answer found/.test(await text("#conv-list")), 8000, 300));
+  await shot("conversations");
+  await page.uncheck("#q-gaps"); await page.click("#conv-scope [data-scope=mine]");
   await page.click("#nav a[data-page=health]");
   await until(async () => /Claude/.test(await text("#health-list")), 15000, 300);
   const health = await text("#health-list");
@@ -444,7 +462,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 14. Phone layout
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ["home", "ask", "sources", "people", "learning", "activity", "health", "settings"]) {
+  for (const p of ["home", "ask", "sources", "people", "learning", "conversations", "health", "settings"]) {
     await page.click(`#nav a[data-page=${p}]`); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
     const emojis = await emojisOnPage();

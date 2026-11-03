@@ -36,7 +36,7 @@ def login(client, email, password):
 def ask(client, headers, question):
     r = client.post("/api/ask", headers=headers, json={"question": question})
     assert r.status_code == 200, r.text
-    return [json.loads(line) for line in r.text.splitlines()]
+    return [e for e in map(json.loads, r.text.splitlines()) if e["type"] != "conversation"]  # the conversation id comes first
 
 
 def process_pending():

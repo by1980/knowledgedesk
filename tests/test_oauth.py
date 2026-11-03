@@ -191,7 +191,7 @@ def process_pending():
 
 def ask(client, admin, q):
     r = client.post("/api/ask", headers=admin, json={"question": q})
-    return [json.loads(x) for x in r.text.splitlines()]
+    return [e for e in map(json.loads, r.text.splitlines()) if e["type"] != "conversation"]
 
 
 def test_google_one_click(client):

@@ -68,7 +68,7 @@ def sign_in(client, admin, provider, services):
 
 def ask(client, admin, question):
     r = client.post("/api/ask", headers=admin, json={"question": question})
-    return [json.loads(x) for x in r.text.splitlines()]
+    return [e for e in map(json.loads, r.text.splitlines()) if e["type"] != "conversation"]
 
 
 def test_facebook_and_instagram(client):
