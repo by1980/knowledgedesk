@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.10"
+APP_VERSION = "0.9.11"
 
 
 def _ensure_secret_key() -> None:
@@ -197,8 +197,11 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
     last_user_q = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
     if last_user_q and not plan:
         hits = retrieval.fuse(hits, retrieval.search(f"{last_user_q}\n{question}", **scope))
+    hits = _with_attachments(hits, user)
     sources = [
         {"n": i, "document_id": h["document_id"], "title": h["title"], "location": h["location"] or "",
+         "date": (h.get("doc_date") or h.get("updated_at")).isoformat() if (h.get("doc_date") or h.get("updated_at")) else "",
+         "to": (h["metadata"] or {}).get("to", ""), "email_subject": (h["metadata"] or {}).get("email_subject", ""),
          "kind": h["kind"], "snippet": h["content"][:300], "filename": h.get("filename") or "",
          "url": (h["metadata"] or {}).get("url") or (h["metadata"] or {}).get("link") or ""}
         for i, h in enumerate(hits, 1)
@@ -250,6 +253,36 @@ def _plan_summary(plan: dict) -> str:
     if plan.get("newest_first"):
         bits.append("newest first")
     return " · ".join(b for b in bits if b)
+
+
+def _with_attachments(hits: list[dict], user: dict, per_answer: int = 6) -> list[dict]:
+    """When an email is among the results, its attached files come with it (right after it), so a request like
+    "send me the proposal" can hand over the actual PDF. Files without readable text are still offered."""
+    emails = [h["document_id"] for h in hits if h["kind"] == "email"][:6]
+    if not emails:
+        return hits
+    with conn() as c:
+        rows = c.execute(
+            "SELECT DISTINCT ON (d.id) coalesce(ch.id, -d.id) AS id, coalesce(ch.content, '(This file has no readable text. "
+            "It can still be opened or downloaded.)') AS content, ch.location, d.id AS document_id, d.title, d.filename, "
+            "d.kind, d.metadata, d.updated_at, d.doc_date, 0.0 AS score, e.id AS email_id "
+            "FROM documents e JOIN documents d ON d.connector_id = e.connector_id AND d.external_id LIKE e.external_id || ':att:%%' "
+            "LEFT JOIN chunks ch ON ch.document_id = d.id "
+            f"WHERE e.id = ANY(%(ids)s) AND {VISIBLE} ORDER BY d.id, ch.position",
+            {"ids": emails, **_visible_params(user)}).fetchall()
+    have = {h["document_id"] for h in hits}
+    extra: dict[int, list] = {}
+    for r in rows:
+        if r["document_id"] not in have:
+            extra.setdefault(r["email_id"], []).append(r)
+    out, added = [], 0
+    for h in hits:
+        out.append(h)
+        for a in extra.pop(h["document_id"], []) if h["kind"] == "email" else []:
+            if added < per_answer:
+                out.append(a)
+                added += 1
+    return out
 
 
 def _my_addresses(user: dict) -> list[str]:

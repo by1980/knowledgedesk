@@ -163,3 +163,21 @@ def test_rescan_adds_attachments_that_older_versions_missed(client, mailbox):
     assert att and "dima@operad.com" in att["metadata"]["to"]
     assert email_doc["metadata"]["attachments"] == "Signed agreement.pdf" and email_doc["status"] == "pending"
     assert email_imap.rescan_saved_emails() == 0  # only once
+
+
+def test_found_email_brings_its_attachment(client, mailbox, monkeypatch):
+    """The search matches only the email's own words; its attached PDF (about something else entirely) still comes
+    right after it, ready to open or download."""
+    raw = _apple_mail("Weekly sync notes", "Attaching the Lumenfield offer for your review.", "Fri, 06 Mar 2026 09:00:00 +0200",
+                      "Zebra quarterly figures.pdf", _pdf("Zebra quarterly figures"))
+    with conn() as c:
+        sync = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (mailbox,)).fetchone())
+        store_message(sync, "brings-att", raw, "Sent")
+    process_pending()
+    monkeypatch.setattr(llm, "plan_search", lambda q, h: None)
+    admin = login(client)
+    sources = _ask(client, admin, "Lumenfield offer for your review")
+    i = next(i for i, x in enumerate(sources) if x["title"] == "Email: Weekly sync notes")
+    nxt = sources[i + 1]
+    assert nxt["filename"] == "Zebra quarterly figures.pdf" and nxt["email_subject"] == "Weekly sync notes", nxt
+    assert nxt["date"].startswith("2026-03-06") and "dima@operad.com" in nxt["to"]

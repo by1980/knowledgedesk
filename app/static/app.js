@@ -452,7 +452,11 @@ function renderAnswer(text, sources) {
     });
   const out = []; let list = null;
   for (const raw of text.split("\n")) {
-    const line = raw.trimEnd();
+    // [[file:N]]: the file itself, right here in the answer, with Open and Download
+    const cards = [];
+    const line = raw.replace(/\[\[file:(\d+)\]\]/g, (m, n) => { const s = sources[Number(n) - 1]; if (s) cards.push(fileCard(s)); return ""; }).trimEnd();
+    if (cards.length && !line.trim()) { if (list) { out.push(`</${list.type}>`); list = null; } out.push(...cards); continue; }
+    if (cards.length) { out.push(`<p>${inline(line)}</p>`, ...cards); continue; }
     const bullet = line.match(/^\s*[-*•]\s+(.*)/); const numbered = line.match(/^\s*\d+[.)]\s+(.*)/);
     if (bullet || numbered) {
       const type = bullet ? "ul" : "ol";
@@ -467,6 +471,21 @@ function renderAnswer(text, sources) {
   if (list) out.push(`</${list.type}>`);
   return out.join("");
 }
+const FILE_COLORS = { PDF: "#e5252a", DOC: "#2b579a", DOCX: "#2b579a", XLS: "#217346", XLSX: "#217346", CSV: "#217346", PPT: "#d24726", PPTX: "#d24726" };
+function fileCard(s) {
+  const ext = (s.filename || "").includes(".") ? s.filename.split(".").pop().toUpperCase().slice(0, 4) : "FILE";
+  const when = s.date ? new Date(s.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+  const to = (s.to || "").replace(/<[^>]*>/g, "").split(",")[0].trim();
+  const about = s.email_subject ? `Attached to "${esc(s.email_subject)}"` : esc(s.title);
+  const meta = [about, when && (s.email_subject ? `sent ${when}` : when), to && s.email_subject ? `to ${esc(to)}` : ""].filter(Boolean).join(" · ");
+  const open = s.url ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : `href="#" data-doc="${s.document_id}"`;
+  return `<div class="file-card" dir="ltr"><span class="file-icon" style="--fc:${FILE_COLORS[ext] || "var(--accent)"}">${esc(ext)}</span>
+    <div class="file-info"><div class="file-name" dir="auto">${esc(s.filename || s.title)}</div><div class="file-meta" dir="auto">${meta}</div></div>
+    <a class="btn small" ${open}>Open</a>
+    <a class="btn small primary" href="#" data-doc="${s.document_id}" data-download>${ic("download")}Download</a></div>`;
+}
+// Real files someone can open or download: attachments, Drive / OneDrive files and uploads (not synced posts or chat days)
+const isFile = (s) => s.kind === "file" && /\.[a-z0-9]{2,5}$/i.test(s.filename || "");
 function addUser(text) {
   leaveWelcome();
   const div = document.createElement("div");
@@ -490,10 +509,11 @@ function scrollChat(force) {
 // Under every answer: its sources as chips, then copy and feedback
 function finishBot(bot, text, sources, qid, feedback = null) {
   const body = $(".bot-body", bot);
-  const cited = sources.filter((s) => text.includes(`[${s.n}]`));
+  const carded = new Set([...$$(".file-card [data-download]", body)].map((a) => a.dataset.doc));
+  const cited = sources.filter((s) => text.includes(`[${s.n}]`) && !carded.has(String(s.document_id)));
   if (cited.length) body.insertAdjacentHTML("beforeend", `<div class="src-chips">${cited.map((s) => {
     // Files (attachments, Drive files, uploads) show their type and can be downloaded right here
-    const ext = s.kind !== "email" && /\.([a-z0-9]{2,5})$/i.test(s.filename || "") ? s.filename.split(".").pop().toUpperCase() : "";
+    const ext = isFile(s) ? s.filename.split(".").pop().toUpperCase() : "";
     const label = `<b>${s.n}</b>${ic(KIND_ICON[s.kind] || "file")}<span>${esc(s.title)}</span>${ext ? `<i class="ftype">${esc(ext)}</i>` : ""}`;
     const chip = s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title)}">${label}</a>`
       : `<a class="src-chip" href="#" data-doc="${s.document_id}" title="Open ${esc(s.title + (s.location ? ", " + s.location : ""))}">${label}</a>`;
@@ -504,7 +524,7 @@ function finishBot(bot, text, sources, qid, feedback = null) {
     ${qid ? `<button type="button" data-v="1" title="Helpful" aria-label="Helpful" class="${feedback === 1 ? "chosen" : ""}">${ic("up")}</button>
     <button type="button" data-v="-1" title="Not helpful" aria-label="Not helpful" class="${feedback === -1 ? "chosen" : ""}">${ic("down")}</button>` : ""}</div>`);
   $("[data-copy-answer]", body).onclick = async () => {
-    try { await navigator.clipboard.writeText(text.replace(/\s*\[\d+\]/g, "")); toast("Copied."); } catch { toast("Select the text and copy it.", true); }
+    try { await navigator.clipboard.writeText(text.replace(/\[\[file:\d+\]\]\n?/g, "").replace(/\s*\[\d+\]/g, "")); toast("Copied."); } catch { toast("Select the text and copy it.", true); }
   };
   $$("[data-v]", body).forEach((b) => b.onclick = async () => {
     $$("[data-v]", body).forEach((x) => x.classList.toggle("chosen", x === b));
@@ -555,6 +575,10 @@ $("#ask-form").addEventListener("submit", async (e) => {
     return;
   }
   answerEl.innerHTML = renderAnswer(text, sources);
+  if (!/\[\[file:\d+\]\]/.test(text)) {
+    const files = sources.filter((s) => isFile(s) && text.includes(`[${s.n}]`));
+    if (files.length === 1) answerEl.insertAdjacentHTML("beforeend", fileCard(files[0]));
+  }
   chat.history.push({ role: "user", content: question }, { role: "assistant", content: text });
   finishBot(bot, text, sources, qid);
   scrollChat();
@@ -571,6 +595,10 @@ async function openConversation(id) {
     addUser(m.question);
     const bot = addBot();
     $(".answer", bot).innerHTML = m.answer ? renderAnswer(m.answer, m.sources || []) : `<p class="muted">No answer was saved.</p>`;
+    if (m.answer && !/\[\[file:\d+\]\]/.test(m.answer)) {
+      const files = (m.sources || []).filter((s) => isFile(s) && m.answer.includes(`[${s.n}]`));
+      if (files.length === 1) $(".answer", bot).insertAdjacentHTML("beforeend", fileCard(files[0]));
+    }
     if (m.answer) finishBot(bot, m.answer, m.sources || [], m.id, m.feedback);
     chat.history.push({ role: "user", content: m.question }, { role: "assistant", content: m.answer || "" });
   }

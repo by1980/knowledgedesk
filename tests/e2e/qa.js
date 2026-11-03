@@ -329,6 +329,18 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Ask: 'Calendar only' searched only the calendar", !/Email:/.test(await text(".msg.bot:last-of-type .src-chips")));
   await page.selectOption("#scope-filter", "");
   await shot("ask-answers");
+  await page.evaluate(() => {   // how a requested file is handed over: inside the answer, with Open and Download
+    const bot = addBot();
+    const src = [{ n: 1, kind: "file", filename: "Proposal & Agreement - Operad.pdf", title: "Proposal & Agreement - Operad", document_id: 1,
+      date: "2026-03-04T08:00:00Z", to: "Dima Binkovsky <dima@operad.com>", email_subject: "Re: Call summery" }];
+    const text = "Here is the last proposal you sent to Cut Inside, on 4 March 2026 [1].\n[[file:1]]";
+    bot.querySelector(".answer").innerHTML = renderAnswer(text, src); finishBot(bot, text, src, null);
+  });
+  check("Ask: a requested file appears inside the answer with Open and Download", await page.isVisible(".msg.bot:last-of-type .answer .file-card")
+    && /Proposal & Agreement - Operad\.pdf[\s\S]*Attached to "Re: Call summery"[\s\S]*sent[\s\S]*to Dima Binkovsky[\s\S]*Open[\s\S]*Download/.test(await text(".msg.bot:last-of-type .file-card"))
+    && (await page.$$(".msg.bot:last-of-type .src-chips")).length === 0, await text(".msg.bot:last-of-type"));
+  await page.locator(".msg.bot:last-of-type").scrollIntoViewIfNeeded();
+  await shot("ask-file-card", false);
   const firstCid = await page.evaluate(() => chat.cid);
   await page.click("#new-chat");
   check("Ask: + starts a fresh chat", await until(async () => await page.isVisible("#page-ask.is-new") && (await page.$$(".msg")).length === 0, 5000, 200)
