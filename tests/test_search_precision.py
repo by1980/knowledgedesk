@@ -67,14 +67,14 @@ def _ask(client, admin, question):
 
 def test_addresses_are_searchable_words(client, mailbox, monkeypatch):
     """Even without the AI's plan: "cutinside" now matches the recipient address dima@cutinside.com."""
-    monkeypatch.setattr(llm, "plan_search", lambda q, h: None)
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: None)
     admin = login(client)
     titles = [s["title"] for s in _ask(client, admin, "proposal sent to cutinside")]
     assert any("Operad" in t for t in titles), titles
 
 
 def test_last_proposal_sent_to_cutinside_comes_first(client, mailbox, monkeypatch):
-    monkeypatch.setattr(llm, "plan_search", lambda q, h: PLAN)
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: PLAN)
     admin = login(client)
     sources = _ask(client, admin, "find me the last proposal I sent to cutinside")
     titles = [s["title"] for s in sources]
@@ -91,7 +91,7 @@ def test_last_proposal_sent_to_cutinside_comes_first(client, mailbox, monkeypatc
 
 
 def test_received_vs_sent(client, mailbox, monkeypatch):
-    monkeypatch.setattr(llm, "plan_search", lambda q, h: {**PLAN, "query": "latest email from Cut Inside", "keywords": [],
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: {**PLAN, "query": "latest email from Cut Inside", "keywords": [],
                                                          "direction": "received"})
     admin = login(client)
     titles = [s["title"] for s in _ask(client, admin, "what was the last email Dima from cutinside sent me?")]
@@ -136,7 +136,7 @@ def test_pdf_inside_apple_mail_message_is_found_and_downloadable(client, mailbox
         s = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (mailbox,)).fetchone())
         store_message(s, "apple-pdf", raw, "Sent")
     process_pending()
-    monkeypatch.setattr(llm, "plan_search", lambda q, h: {"query": "latest PDF proposal sent to Dima", "keywords": ["proposal", "pdf", "הצעה"],
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: {"query": "latest PDF proposal sent to Dima", "keywords": ["proposal", "pdf", "הצעה"],
                                                          "people": ["dima", "operad"], "direction": "sent", "newest_first": True, "kinds": []})
     admin = login(client)
     sources = _ask(client, admin, "I want the PDF proposal I sent to Dima")
@@ -174,10 +174,49 @@ def test_found_email_brings_its_attachment(client, mailbox, monkeypatch):
         sync = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (mailbox,)).fetchone())
         store_message(sync, "brings-att", raw, "Sent")
     process_pending()
-    monkeypatch.setattr(llm, "plan_search", lambda q, h: None)
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: None)
     admin = login(client)
     sources = _ask(client, admin, "Lumenfield offer for your review")
     i = next(i for i, x in enumerate(sources) if x["title"] == "Email: Weekly sync notes")
     nxt = sources[i + 1]
     assert nxt["filename"] == "Zebra quarterly figures.pdf" and nxt["email_subject"] == "Weekly sync notes", nxt
     assert nxt["date"].startswith("2026-03-06") and "dima@operad.com" in nxt["to"]
+
+
+
+@pytest.fixture(scope="module")
+def own_website(client, mailbox):
+    from app import branding
+
+    branding.save(website="https://by1labs.com", name="BY1 Labs")
+    with conn() as c:
+        cid = c.execute("INSERT INTO connectors(type, name, config, company_wide) VALUES ('website', 'by1labs.com', %s, true) RETURNING id",
+                        (json.dumps({"url": "https://by1labs.com"}),)).fetchone()["id"]
+        site = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (cid,)).fetchone())
+        for url, title, text in [
+            ("https://by1labs.com/", "BY1 Labs", "BY1 Labs builds AI agents and company knowledge platforms for small and medium businesses."),
+            ("https://by1labs.com/what-we-do", "What we do", "Our offering: AI strategy workshops, custom AI agents, workflow automation and Cortex, the company brain."),
+            ("https://by1labs.com/contact", "Contact", "Talk to Yaniv about your project."),
+        ]:
+            site.upsert(url, f"Web: {title}", "page.txt", f"{title}\n{url}\n\n{text}".encode(), "web", {"url": url})
+        mail = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (mailbox,)).fetchone())
+        for i in range(15):  # other companies' services, in many emails
+            store_message(mail, f"operad-services-{i}", _email("Dima <dima@operad.com>", "yaniv@by1labs.com", f"Operad services and pricing {i}",
+                          f"Operad services: analytics, paid media and organic. We offer a monthly minimum of 25,000 NIS. Services list {i}.",
+                          f"Mon, {i + 1:02d} Oct 2025 10:00:00 +0300"), "INBOX")
+    process_pending()
+
+
+def test_what_services_do_we_offer_uses_our_own_website(client, own_website, monkeypatch):
+    admin = login(client)
+    # without the AI's plan: "we" is recognised in the question itself
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: None)
+    titles = [s["title"] for s in _ask(client, admin, "What services do we offer?")]
+    assert titles[0].startswith("Web: ") and any(t == "Web: What we do" for t in titles[:3]), titles
+    # with the AI's plan
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: {"query": "services BY1 Labs offers", "keywords": ["services", "offering"],
+                                                             "people": [], "direction": "any", "newest_first": False, "about_us": True})
+    titles = [s["title"] for s in _ask(client, admin, "What services do we offer?")]
+    first_email = next(i for i, t in enumerate(titles) if t.startswith("Email:"))
+    # our website (and our own uploaded documents) come before any email from other companies
+    assert "Web: What we do" in titles[:3] and titles.index("Web: What we do") < first_email, titles

@@ -99,7 +99,8 @@ def _names_query(names: list[str]) -> str:
 
 def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: int | None = None,
            include_company: bool = True, k: int | None = None, kinds: list[str] | None = None,
-           learner: bool = False, plan: dict | None = None, mine: list[str] | None = None) -> list[dict]:
+           learner: bool = False, plan: dict | None = None, mine: list[str] | None = None,
+           own_site: str = "") -> list[dict]:
     """Find the passages that answer the question. With a search plan (from the AI: who, when, which way,
     newest first...) several targeted searches run and their results are combined."""
     params = {
@@ -113,6 +114,7 @@ def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: i
         "kinds": kinds or None,
         "k": k or settings.top_k,
         "_question": question,
+        "_own_site": own_site,
     }
     with conn() as c:
         hits = _run(c, params, plan, mine)
@@ -218,10 +220,34 @@ ORDER BY c.document_id,
 """
 
 
+# "What services do WE offer?": questions about the company itself
+_ABOUT_US = re.compile(r"\b(we|our|ours|us)\b|אנחנו|שלנו|אנו|החברה שלנו|\bלנו\b", re.I)
+
+
+def _about_us(c, params: dict, text: str) -> list[dict]:
+    """The company's own website pages (and its uploaded documents) that match, so "we" is never answered from
+    other companies' emails."""
+    site = params.get("_own_site") or ""
+    extra = "(d.kind = 'web' AND (%(own)s = '' OR d.metadata->>'url' ILIKE %(own_like)s) OR d.source IN ('upload', 'folder'))"
+    p = {**params, "own": site, "own_like": f"%{site}%", "qvec": embeddings.embed_query(text), "tsq": _keyword_query(text)}
+    return c.execute(_SQL_PARTS.format(extra=extra), p).fetchall()
+
+
 def _run(c, params: dict, plan: dict | None, mine: list[str] | None) -> list[dict]:
     base = c.execute(_SQL_PARTS.format(extra="TRUE"), params).fetchall()
-    if not plan:
-        return base
+    about = plan.get("about_us") if plan else bool(_ABOUT_US.search(params["_question"]))
+    ours = []
+    if about and params.get("kinds") is None:
+        # our own pages lead; everything else fills in behind them
+        ours = fuse_many([(1.0, _about_us(c, params, (plan or {}).get("query") or params["_question"]))], 5)
+    found = _planned(c, params, plan, mine, base) if plan else base
+    if not ours:
+        return found
+    seen = {h["id"] for h in ours}
+    return (ours + [h for h in found if h["id"] not in seen])[: params["k"] + (4 if plan else 0)]
+
+
+def _planned(c, params: dict, plan: dict, mine: list[str] | None, base: list[dict]) -> list[dict]:
     text = " ".join([plan.get("query") or ""] + list(plan.get("keywords") or []))
     words = " ".join([params["_question"], text] + list(plan.get("people") or []))
     p2 = {**params, "qvec": embeddings.embed_query(text or params["_question"]), "tsq": _keyword_query(words)}

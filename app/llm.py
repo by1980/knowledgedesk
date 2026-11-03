@@ -67,8 +67,10 @@ Rules:
 - Answer ONLY from the numbered sources provided in the user's message. Do not use outside knowledge \
 about this company, and do not guess names, numbers, prices or dates.
 - Cite sources inline with their number in square brackets, e.g. [2]. Every factual sentence needs a citation.
-- If the sources do not contain the answer, say so plainly, mention what related information you did find \
-(if any), and suggest which department or person might know.
+- "We", "our" and "us" mean {company} itself, never the other companies in its emails. Questions about what we do, our \
+services or products are answered from {company}'s own website and documents.
+- If the sources do not contain the answer, say so in one or two sentences and suggest which department or person \
+might know. Do not fill the answer with information about other topics or other companies.
 - If sources contradict each other, point out the conflict and prefer the most recent one.
 - Information from employee interviews, emails, Slack and WhatsApp chats is one person's account at one point in time; \
 say who said it and when (e.g. "according to Moshe's email from March") when relying on it.
@@ -106,7 +108,7 @@ def stream_answer(question: str, sources_block: str, history: list[dict]) -> Ite
     with client().beta.messages.stream(
         model=settings.llm_model,
         max_tokens=8000,
-        system=ANSWER_SYSTEM.format(company=settings.company_name),
+        system=ANSWER_SYSTEM.format(company=company_name()),
         messages=messages,
         output_config={"effort": settings.llm_effort},
         betas=[FALLBACK_BETA],
@@ -180,6 +182,8 @@ PLAN_TOOL = {
             "after": {"type": "string", "description": "YYYY-MM-DD, only if the question gives a time frame."},
             "before": {"type": "string", "description": "YYYY-MM-DD, only if the question gives a time frame."},
             "newest_first": {"type": "boolean", "description": "True when the user wants the latest / last / most recent item."},
+            "about_us": {"type": "boolean", "description": "True when the question is about OUR OWN company itself: what we do, our services, "
+                                                          "products, prices, team, policies, how we work. Best answered by our own website and documents."},
         },
         "required": ["query", "keywords", "people", "direction", "newest_first"],
     },
@@ -188,7 +192,16 @@ PLAN_SYSTEM = ("You plan searches for a company knowledge assistant. Read the us
                "Be generous with keyword synonyms and Hebrew/English translations, and with name spellings. Never answer the question.")
 
 
-def plan_search(question: str, history: list[dict]) -> dict | None:
+def company_name() -> str:
+    from . import branding
+
+    try:
+        return branding.get()["name"] or settings.company_name
+    except Exception:  # noqa: BLE001
+        return settings.company_name
+
+
+def plan_search(question: str, history: list[dict], company: str = "", website: str = "") -> dict | None:
     """Turn the question into a search plan (who, which way, when, newest first...). None = plain search."""
     if settings.fake_llm:
         return None
@@ -198,7 +211,9 @@ def plan_search(question: str, history: list[dict]) -> dict | None:
         return None
     from datetime import date
 
-    messages = list(history[-4:]) + [{"role": "user", "content": f"Today is {date.today():%Y-%m-%d}.\n\nRequest: {question}"}]
+    us = f"The user works at {company}" + (f" (website {website})" if website else "") + \
+        ". 'We', 'our' and 'us' mean this company, not the companies it emails with.\n" if company else ""
+    messages = list(history[-4:]) + [{"role": "user", "content": f"Today is {date.today():%Y-%m-%d}.\n{us}\nRequest: {question}"}]
     for model in dict.fromkeys([settings.planner_model, settings.llm_model]):
         try:
             r = c.messages.create(model=model, max_tokens=700, system=PLAN_SYSTEM, messages=messages, tools=[PLAN_TOOL],

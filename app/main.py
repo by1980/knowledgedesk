@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.12"
+APP_VERSION = "0.9.13"
 
 
 def _ensure_secret_key() -> None:
@@ -190,8 +190,10 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
              "kinds": [k for k in body.kinds if k in KINDS] or None}
     # The AI first works out what is being asked (who, which way, when, newest first...), then several
     # targeted searches run. Without a plan (AI not set up), the plain search still works.
-    plan = llm.plan_search(question, history)
-    hits = retrieval.search(question, **scope, plan=plan, mine=_my_addresses(user))
+    brand = branding.get()
+    own_site = re.sub(r"^https?://(www\.)?", "", (brand.get("website") or "").strip()).split("/")[0]
+    plan = llm.plan_search(question, history, brand.get("name") or settings.company_name, brand.get("website") or "")
+    hits = retrieval.search(question, **scope, plan=plan, mine=_my_addresses(user), own_site=own_site)
     # A follow-up ("and for VIP customers?") may need the previous question too. The new question
     # always leads; results for "previous + new" only fill in behind it.
     last_user_q = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
