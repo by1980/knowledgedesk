@@ -60,8 +60,9 @@ def _docx(text: str) -> bytes:
 # ---------------------------------------------------------------- sign-in pages and tokens
 @app.get("/accounts.google.com/o/oauth2/v2/auth")
 @app.get("/login.microsoftonline.com/common/oauth2/v2.0/authorize")
+@app.get("/slack.com/oauth/v2/authorize")
 def authorize(request: Request, redirect_uri: str, state: str):
-    provider = "Google" if "google" in request.url.path else "Microsoft"
+    provider = "Google" if "google" in request.url.path else "Slack" if "slack" in request.url.path else "Microsoft"
     # A tiny consent screen with an Allow button, like the real thing
     return HTMLResponse(f"""<!doctype html><title>Sign in – {provider} (simulated)</title>
       <body style="font-family:system-ui;max-width:420px;margin:12vh auto">
@@ -182,6 +183,45 @@ def ms_shared():
 @app.get("/graph.microsoft.com/v1.0/me/drive/items/{fid}/content")
 def ms_content(fid: str):
     return Response(b"Safety rules: always wear gloves when handling boiler elements. Shut off the gas before any repair.")
+
+
+# ---------------------------------------------------------------- Slack
+NOW = datetime.now(timezone.utc).timestamp()
+SLACK_HISTORY = {
+    "C1": [{"ts": f"{NOW - 7200:.6f}", "user": "U1", "text": "Reminder: the Haifa warehouse closes at 15:00 on Fridays", "reply_count": 1},
+           {"ts": f"{NOW - 3600:.6f}", "user": "U2", "text": "Welcome <@U1> to the team!"}],
+    "C2": [{"ts": f"{NOW - 86400:.6f}", "user": "U2", "text": "Closed the Cohen Towers deal: 3 years, 21,000 NIS. See <https://crm.example/deal/9|deal page>"}],
+}
+
+
+@app.post("/slack.com/api/oauth.v2.access")
+async def slack_token(request: Request):
+    form = await request.form()
+    if form.get("code") != "sim-code":
+        return {"ok": False, "error": "invalid_code"}
+    return {"ok": True, "access_token": "xoxb-sim", "team": {"id": "T1", "name": "Acme Plumbing Slack"}}
+
+
+@app.post("/slack.com/api/{method}")
+async def slack_api(method: str, request: Request):
+    if request.headers.get("authorization") != "Bearer xoxb-sim":
+        return {"ok": False, "error": "invalid_auth"}
+    form = await request.form()
+    if method == "users.list":
+        return {"ok": True, "members": [{"id": "U1", "profile": {"real_name": "Dana Cohen"}}, {"id": "U2", "profile": {"real_name": "Avi Levi"}}]}
+    if method == "conversations.list":
+        return {"ok": True, "channels": [{"id": "C1", "name": "general", "is_member": False, "is_private": False},
+                                         {"id": "C2", "name": "sales", "is_member": True, "is_private": False},
+                                         {"id": "C3", "name": "board", "is_member": False, "is_private": True}]}
+    if method == "conversations.join":
+        return {"ok": True}
+    if method == "conversations.history":
+        oldest = float(form.get("oldest") or 0)
+        return {"ok": True, "messages": [m for m in SLACK_HISTORY.get(form.get("channel"), []) if float(m["ts"]) >= oldest]}
+    if method == "conversations.replies":
+        return {"ok": True, "messages": [{"ts": form.get("ts"), "user": "U1", "text": "parent"},
+                                         {"ts": f"{NOW - 7000:.6f}", "user": "U2", "text": "Except holidays – then it's closed all day"}]}
+    return {"ok": False, "error": "unknown_method"}
 
 
 # ---------------------------------------------------------------- a small company website

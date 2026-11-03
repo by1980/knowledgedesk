@@ -80,6 +80,10 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Drive: protected file is skipped and explained, not an error", /Skipped 1 item: Locked contract: can't be downloaded/.test(gtext) && !/Needs attention/.test(gtext), gtext);
   check("Calendar: counted in events (3), not months", /3 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
+  await until(async () => /Connected/.test(await text("[data-tile=gmail]")), 15000, 500);
+  check("Overview: Gmail tile says Connected with the count", /Connected[\s\S]*30 emails/.test(await text("[data-tile=gmail]")), await text("[data-tile=gmail]"));
+  check("Overview: Outlook tile says Not connected", /Not connected/.test(await text("[data-tile=ms_mail]")));
+  check("Overview: Slack tile says Not connected", /Not connected/.test(await text("[data-tile=slack]")));
   await shot("google-connected");
 
   // reconnecting the same account must not duplicate it
@@ -114,6 +118,29 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Cancelling sign-in explains what happened", /cancelled/.test(await page.textContent("body")));
   await page.goto(APP + "/#sources");
   await page.waitForSelector(`${m} .account`);
+  check("WhatsApp: has its own card with an import button", await page.isVisible("#wa-upload"));
+
+  // ------------------------------------------------------------------ 6b. Slack
+  const sl = ".provider-card[data-provider=slack]";
+  check("Slack: clear 'Connect Slack workspace' button", (await text(`${sl} [data-open-connect]`)).trim() === "Connect Slack workspace");
+  await page.click(`${sl} [data-open-connect]`); await page.check(`${sl} .panel .vis-everyone`); await page.click(`${sl} [data-go]`);
+  await page.waitForURL(/slack\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
+  const slackReady = await until(async () => /3 messages searchable/.test(await text(`${sl} .pc-accounts`)), 90000, 2000);
+  check("Slack: workspace connected and its messages become searchable", slackReady, await text(`${sl} .pc-accounts`));
+  check("Slack: says which channels it reads and how to add private ones", /Reading 2 channels[\s\S]*1 private channel isn't included/.test(await text(`${sl} .pc-accounts`)));
+  check("Overview: Slack tile now Connected", await until(async () => /Connected/.test(await text("[data-tile=slack]")), 10000, 500));
+  await page.evaluate(() => document.querySelector("#page-sources").scrollTo(0, 0)); await sleep(300);
+  await shot("sources-overview", false);
+  await page.locator(".provider-card[data-provider=slack]").scrollIntoViewIfNeeded(); await sleep(300);
+  await shot("slack-and-whatsapp", false);
+
+  // ------------------------------------------------------------------ 6c. Find an item
+  await page.fill("#find-form input", "Levi Gardens"); await page.press("#find-form input", "Enter");
+  await page.waitForSelector("#dialog[open] [data-list]");
+  check("Find an item: shows whether an email was imported", await until(async () => /Price agreement – Levi Gardens/.test(await text("#dialog[open] [data-list]")), 8000, 300));
+  await page.fill("#dialog[open] [data-q]", "warehouse closes");
+  check("Find an item: searches inside the text too (Slack message)", await until(async () => /Slack #general/.test(await text("#dialog[open] [data-list]")), 8000, 300));
+  await page.click("#dialog[open] [data-close]");
 
   // ------------------------------------------------------------------ 7. Website
   await page.fill("#web-form input[name=url]", "hello"); await page.click("#web-form button");
@@ -181,6 +208,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
     return (t.match(/Searchable/g) || []).length === 3;
   }, 90000, 2000);
   check("Uploads: all 3 files become searchable", filesReady, await text("#files-list"));
+  check("WhatsApp card: shows the imported chat", await until(async () => /1 chat searchable/.test(await text("#wa-status")), 15000, 500));
   check("Uploads: interview and WhatsApp get clear titles", /Interview - Moshe \(Senior technician\)/.test(await text("#files-list")) && /WhatsApp: chat/.test(await text("#files-list")));
   await shot("sources-full");
 

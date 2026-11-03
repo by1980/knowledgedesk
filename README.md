@@ -22,6 +22,7 @@ to see.
     attachments (PDF, Word, Excel…).
   - 📅 **Calendars** (Google Calendar or Outlook, via the calendar's private iCal link).
   - 🌐 **Websites** (company site, help pages, price pages).
+  - **Slack** (one-click, all public channels and private channels the app is added to).
   - 💬 **WhatsApp chats and groups**, imported from the phone's "Export chat" file. Voice notes
     are transcribed.
 - **Files from anywhere:** upload in the browser, or drop files into `data/sources/<Department>/`
@@ -162,6 +163,23 @@ Register **both** addresses with Google and with Microsoft.
    `Files.Read.All`, `User.Read`, `offline_access`.
 4. Copy the **Application (client) ID** from Overview.
 5. A customer whose IT blocks new apps has an admin click "Grant admin consent" once. This is free.
+
+### Slack (api.slack.com/apps)
+Slack only accepts **https** return addresses, so Slack needs the return page on your website
+(`relay/oauth.html`). `http://localhost` doesn't work for Slack.
+1. **Create New App → From scratch:** name it `KnowledgeDesk` and pick your own workspace.
+2. **OAuth & Permissions:**
+   - Under *Redirect URLs*, add your return address, for example
+     `https://connect.yourcompany.com/oauth.html`.
+   - Under *Bot Token Scopes*, add `channels:read`, `channels:history`, `channels:join`,
+     `groups:read`, `groups:history` and `users:read`.
+3. **Manage Distribution → Activate Public Distribution.** This is free and lets your customers'
+   workspaces install the app.
+4. Under **Basic Information**, copy the **Client ID** and **Client Secret** into `.env`
+   (`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`) or into `app/vendor_oauth.json`.
+
+KnowledgeDesk reads all public channels and private channels the app was added to, including
+thread replies. It never posts anything.
 
 ### Putting the keys in
 - **One computer:** add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID` and

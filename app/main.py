@@ -54,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.7"
 
 
 def _ensure_secret_key() -> None:
@@ -222,7 +222,7 @@ def overview(user: dict = Depends(auth.current_user)):
     with conn() as c:
         rows = c.execute(
             "SELECT d.kind, d.source, d.status, count(*) AS n, "
-            " sum(coalesce((d.metadata->>'events')::int, 1)) AS events FROM documents d "
+            " sum(coalesce((d.metadata->>'events')::int, (d.metadata->>'messages')::int, 1)) AS events FROM documents d "
             "WHERE %s OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
             "  WHERE dd.document_id=d.id AND dd.department_id = ANY(%s)) "
             "GROUP BY d.kind, d.source, d.status",
@@ -233,7 +233,7 @@ def overview(user: dict = Depends(auth.current_user)):
     for r in rows:
         if r["status"] == "ready":
             key = {"file": "documents"}.get(r["kind"], r["kind"])
-            ready[key] = ready.get(key, 0) + (r["events"] if r["kind"] == "calendar" else r["n"])
+            ready[key] = ready.get(key, 0) + (r["events"] if r["kind"] in ("calendar", "slack") else r["n"])
         elif r["status"] in ("pending", "processing"):
             importing += r["n"]
     left = worker.minutes_left(importing)
@@ -379,7 +379,7 @@ def _can_see(c, user: dict, doc_id: int) -> bool:
 
 @app.get("/api/documents")
 def list_documents(response: Response, user: dict = Depends(auth.current_user), q: str = "",
-                   source: str = "", connector_id: int | None = None, status: str = "",
+                   source: str = "", connector_id: int | None = None, status: str = "", kind: str = "",
                    limit: int = 1000, offset: int = 0):
     """source: "uploads" = files added by hand or from synced folders. Total count is in X-Total-Count."""
     is_admin = user["role"] == "admin"
@@ -388,13 +388,18 @@ def list_documents(response: Response, user: dict = Depends(auth.current_user), 
     params = {"admin": is_admin, "depts": [d["id"] for d in user["departments"]],
               "limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
     if q.strip():
-        where.append("(d.title ILIKE %(q)s OR d.filename ILIKE %(q)s)")
+        where.append("(d.title ILIKE %(q)s OR d.filename ILIKE %(q)s OR EXISTS (SELECT 1 FROM chunks ch "
+                     "WHERE ch.document_id = d.id AND ch.tsv @@ plainto_tsquery('simple', %(qt)s)))")
         params["q"] = f"%{q.strip()}%"
+        params["qt"] = q.strip()
     if source == "uploads":
         where.append("d.source IN ('upload', 'folder')")
     if connector_id is not None:
         where.append("d.connector_id = %(cid)s")
         params["cid"] = connector_id
+    if kind:
+        where.append("d.kind = %(kind)s")
+        params["kind"] = kind
     if status == "ready":
         where.append("d.status = 'ready'")
     elif status == "problem":
@@ -589,7 +594,7 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status IN ('pending','processing')) AS indexing, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'ready') AS ready, "
-            " (SELECT coalesce(sum(coalesce((d.metadata->>'events')::int, 1)), 0) FROM documents d "
+            " (SELECT coalesce(sum(coalesce((d.metadata->>'events')::int, (d.metadata->>'messages')::int, 1)), 0) FROM documents d "
             "   WHERE d.connector_id=k.id AND d.status = 'ready') AS events, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'error') AS failed, k.last_note, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) FROM connector_departments cd "
@@ -601,6 +606,8 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
         r["syncing"] = connector_runner.lock_for(r["id"]).locked()
         r["progress"] = (r.get("state") or {}).get("progress")
         r["more"] = bool((r.get("state") or {}).get("more"))
+        r["channels"] = (r.get("state") or {}).get("channel_count")
+        r["private_not_added"] = (r.get("state") or {}).get("private_not_added")
         r.pop("state", None)
     return _with_account_emails(rows)
 
@@ -930,10 +937,10 @@ def health(_: dict = Depends(auth.admin_user)):
                    "detail": lic.message or (f"Valid until {lic.expires}." if lic.expires else "Active.")})
     configured = oauth.configured()
     missing = [p.title() for p, ok in configured.items() if not ok]
-    checks.append({"id": "signin", "label": "Google / Microsoft sign-in",
+    checks.append({"id": "signin", "label": "Google / Microsoft / Slack sign-in",
                    "state": "ok" if not missing else "info",
                    "detail": "Both ready." if not missing else
-                   f"{' and '.join(missing)} sign-in is not set up – needed only to connect {' or '.join(missing)} accounts."})
+                   f"{', '.join(missing)} sign-in not set up – needed only to connect {' or '.join(missing)} accounts."})
     overall = "bad" if any(c["state"] == "bad" for c in checks) else \
         "warn" if any(c["state"] in ("warn", "busy") for c in checks) else "ok"
     return {"overall": overall, "checks": checks, "problems": list(reversed(recent_problems.items[-30:])),

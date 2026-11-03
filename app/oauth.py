@@ -48,8 +48,19 @@ PROVIDERS = {
         "scopes": MICROSOFT_SCOPES,
         "connector_types": {"mail": "ms_mail", "calendar": "ms_cal", "files": "ms_drive"},
     },
+    "slack": {
+        "name": "Slack",
+        "auth_url": "https://slack.com/oauth/v2/authorize",
+        "token_url": "https://slack.com/api/oauth.v2.access",
+        "base_scopes": [],
+        # Read channels (joining public ones automatically) and people's names. Nothing is ever posted.
+        "scopes": {"messages": "channels:read,channels:history,channels:join,groups:read,groups:history,users:read"},
+        "scope_separator": ",",
+        "pkce": False,
+        "connector_types": {"messages": "slack"},
+    },
 }
-SERVICE_LABEL = {"mail": "Email", "calendar": "Calendar", "files": "Files"}
+SERVICE_LABEL = {"mail": "Email", "calendar": "Calendar", "files": "Files", "messages": "Slack"}
 
 
 def _vendor_file() -> dict:
@@ -63,11 +74,8 @@ def _vendor_file() -> dict:
 def credentials(provider: str) -> tuple[str, str]:
     """Client id and secret: from .env if set, otherwise from app/vendor_oauth.json."""
     v = _vendor_file().get(provider, {})
-    if provider == "google":
-        return (settings.google_client_id or v.get("client_id", ""),
-                settings.google_client_secret or v.get("client_secret", ""))
-    return (settings.microsoft_client_id or v.get("client_id", ""),
-            settings.microsoft_client_secret or v.get("client_secret", ""))
+    return (getattr(settings, f"{provider}_client_id", "") or v.get("client_id", ""),
+            getattr(settings, f"{provider}_client_secret", "") or v.get("client_secret", ""))
 
 
 def redirect_url(origin: str) -> str:
@@ -115,10 +123,10 @@ def start(provider: str, services: list[str], department_ids: list[int], company
     client_id, _ = credentials(provider)
     if not client_id:
         raise ValueError(f"{PROVIDERS[provider]['name']} sign-in is not set up on this installation yet.")
-    services = [s for s in services if s in SERVICE_LABEL]
-    if not services:
-        raise ValueError("Choose at least one: Email, Calendar or Files")
     cfg = PROVIDERS[provider]
+    services = [s for s in services if s in cfg["scopes"]]
+    if not services:
+        raise ValueError("Choose at least one thing to read")
     verifier = _b64(secrets.token_bytes(32))
     key = secrets.token_urlsafe(24)
     with _pending_lock:
@@ -133,14 +141,15 @@ def start(provider: str, services: list[str], department_ids: list[int], company
         "client_id": client_id,
         "response_type": "code",
         "redirect_uri": redirect_url(origin),
-        "scope": " ".join(cfg["base_scopes"] + [cfg["scopes"][s] for s in services]),
+        "scope": cfg.get("scope_separator", " ").join(cfg["base_scopes"] + [cfg["scopes"][s] for s in services]),
         "state": state,
-        "code_challenge": _b64(hashlib.sha256(verifier.encode()).digest()),
-        "code_challenge_method": "S256",
-        "prompt": "consent" if provider == "google" else "select_account",
     }
+    if cfg.get("pkce", True):
+        params.update(code_challenge=_b64(hashlib.sha256(verifier.encode()).digest()), code_challenge_method="S256")
     if provider == "google":
-        params["access_type"] = "offline"
+        params.update(access_type="offline", prompt="consent")
+    elif provider == "microsoft":
+        params["prompt"] = "select_account"
     auth_url = cfg["auth_url"]
     if settings.provider_override:  # quality-assurance mode: the simulator plays the sign-in page
         auth_url = f"{settings.provider_override.rstrip('/')}/{httpx.URL(auth_url).host}{httpx.URL(auth_url).path}"
@@ -155,7 +164,7 @@ def _token_request(provider: str, data: dict) -> dict:
     with http() as h:
         r = h.post(PROVIDERS[provider]["token_url"], data=data)
     body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-    if r.status_code != 200:
+    if r.status_code != 200 or body.get("ok") is False:  # Slack answers 200 with ok=false on errors
         raise RuntimeError(body.get("error_description") or body.get("error") or f"Sign-in failed ({r.status_code})")
     return body
 
@@ -182,15 +191,21 @@ def finish(state: str, code: str) -> list[int]:
     if not pending or time.time() - pending["created"] > 900:
         raise ValueError("This sign-in has expired. Please start again.")
     provider = pending["provider"]
-    tokens = _token_request(provider, {
-        "grant_type": "authorization_code", "code": code,
-        "redirect_uri": redirect_url(pending["origin"]), "code_verifier": pending["verifier"],
-    })
-    if not tokens.get("refresh_token"):
-        raise RuntimeError("The provider did not allow offline access. Please try again and approve all requests.")
-    email = _account_email(provider, tokens["access_token"])
-    token_blob = {"refresh_token": tokens["refresh_token"], "access_token": tokens["access_token"],
-                  "expires_at": time.time() + int(tokens.get("expires_in", 3600)) - 60}
+    request = {"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_url(pending["origin"])}
+    if PROVIDERS[provider].get("pkce", True):
+        request["code_verifier"] = pending["verifier"]
+    tokens = _token_request(provider, request)
+    if provider == "slack":
+        # Slack bot tokens don't expire (unless token rotation is turned on, which also sends a refresh token).
+        email = (tokens.get("team") or {}).get("name") or "Slack workspace"
+        token_blob = {"refresh_token": tokens.get("refresh_token"), "access_token": tokens["access_token"],
+                      "expires_at": time.time() + (int(tokens["expires_in"]) - 60 if tokens.get("expires_in") else 10 * 365 * 86400)}
+    else:
+        if not tokens.get("refresh_token"):
+            raise RuntimeError("The provider did not allow offline access. Please try again and approve all requests.")
+        email = _account_email(provider, tokens["access_token"])
+        token_blob = {"refresh_token": tokens["refresh_token"], "access_token": tokens["access_token"],
+                      "expires_at": time.time() + int(tokens.get("expires_in", 3600)) - 60}
     created = []
     with conn() as c:
         existing = c.execute("SELECT id FROM oauth_accounts WHERE provider=%s AND lower(email)=lower(%s) ORDER BY id",
@@ -285,10 +300,11 @@ class Api:
     def __exit__(self, *exc):
         self.client.close()
 
-    def _request(self, url: str, params: dict | None = None, headers: dict | None = None) -> httpx.Response:
+    def _request(self, url: str, params: dict | None = None, headers: dict | None = None,
+                 data: dict | None = None) -> httpx.Response:
         for attempt in range(5):
             h = {"Authorization": f"Bearer {access_token(self.account_id)}", **(headers or {})}
-            r = self.client.get(url, params=params, headers=h)
+            r = self.client.post(url, data=data, headers=h) if data is not None else self.client.get(url, params=params, headers=h)
             if _is_rate_limit(r) and attempt < 4:
                 # Per-minute limits: wait it out (longer each time) and try again
                 wait = r.headers.get("retry-after", "")
@@ -313,6 +329,9 @@ class Api:
 
     def json(self, url: str, params: dict | None = None, headers: dict | None = None) -> dict:
         return self._request(url, params, headers).json()
+
+    def post(self, url: str, data: dict) -> dict:
+        return self._request(url, data=data).json()
 
     def bytes(self, url: str, params: dict | None = None) -> bytes:
         return self._request(url, params).content

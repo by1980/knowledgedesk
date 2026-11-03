@@ -49,7 +49,8 @@ def fake_servers(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
         if form.get("grant_type") == ["refresh_token"]:
             return httpx.Response(200, json={"access_token": "AT2", "expires_in": 3600, "refresh_token": "RT2"})
-    assert request.headers.get("authorization", "").startswith("Bearer AT"), f"no token for {url}"
+    if not (host == "slack.com" and path.endswith("oauth.v2.access")):
+        assert request.headers.get("authorization", "").startswith("Bearer AT"), f"no token for {url}"
 
     # ---- Google
     if host == "openidconnect.googleapis.com":
@@ -88,6 +89,22 @@ def fake_servers(request: httpx.Request) -> httpx.Response:
     if path == "/drive/v3/files/d1/export":
         return httpx.Response(200, content=_docx("New technicians shadow a senior technician for two weeks."))
 
+    # ---- Slack
+    if host == "slack.com" and path == "/api/oauth.v2.access":
+        return httpx.Response(200, json={"ok": True, "access_token": "AT-slack", "team": {"name": "Acme Slack"}})
+    if host == "slack.com":
+        method = path.rsplit("/", 1)[1]
+        if method == "users.list":
+            return httpx.Response(200, json={"ok": True, "members": [{"id": "U1", "profile": {"real_name": "Dana Cohen"}}]})
+        if method == "conversations.list":
+            return httpx.Response(200, json={"ok": True, "channels": [{"id": "C1", "name": "ops", "is_member": False, "is_private": False}]})
+        if method == "conversations.join":
+            return httpx.Response(200, json={"ok": True})
+        if method == "conversations.history":
+            return httpx.Response(200, json={"ok": True, "messages": [
+                {"ts": "1793000000.000100", "user": "U1", "text": "The pallet audit happens every Thursday, ask <@U1>"}]})
+        return httpx.Response(200, json={"ok": False, "error": "unknown"})
+
     # ---- Microsoft
     if path == "/v1.0/me":
         return httpx.Response(200, json={"userPrincipalName": "boss@demo.onmicrosoft.com"})
@@ -121,6 +138,8 @@ def setup_fakes(monkeypatch):
     monkeypatch.setattr(settings, "google_client_id", "google-client")
     monkeypatch.setattr(settings, "google_client_secret", "google-secret")
     monkeypatch.setattr(settings, "microsoft_client_id", "ms-client")
+    monkeypatch.setattr(settings, "slack_client_id", "slack-client")
+    monkeypatch.setattr(settings, "slack_client_secret", "slack-secret")
     monkeypatch.setattr(settings, "oauth_redirect_url", "https://connect.vendor.example/oauth.html")
 
     def fake_stream(question, sources_block, history):
@@ -264,7 +283,7 @@ def test_not_configured(client, monkeypatch):
     monkeypatch.setattr(settings, "microsoft_client_id", "")
     monkeypatch.setattr(oauth, "_vendor_file", lambda: {})
     st = client.get("/api/oauth/status", headers=admin).json()
-    assert st["configured"] == {"google": True, "microsoft": False}
+    assert st["configured"]["google"] is True and st["configured"]["microsoft"] is False
     r = client.post("/api/oauth/start", headers=admin,
                     json={"provider": "microsoft", "services": ["mail"], "company_wide": True})
     assert r.status_code == 400 and "not set up" in r.json()["detail"]
@@ -380,3 +399,22 @@ def test_big_mailbox_is_imported_completely_in_rounds(client):
         due = c.execute("SELECT id FROM connectors WHERE enabled AND (last_sync < now() - interval '30 minutes' "
                         "OR (state->>'more')::boolean IS TRUE)").fetchall()
     assert gmail["id"] in {r["id"] for r in due}
+
+
+def test_slack_workspace(client):
+    admin = login(client)
+    r = client.post("/api/oauth/start", headers={**admin, "Origin": "http://localhost:8000"},
+                    json={"provider": "slack", "services": ["messages"], "company_wide": True})
+    assert r.status_code == 200, r.text
+    q = parse_qs(urlparse(r.json()["url"]).query)
+    assert "channels:history" in q["scope"][0] and "," in q["scope"][0] and "code_challenge" not in q
+    r = client.get("/oauth/callback", params={"state": q["state"][0], "code": "good-code"}, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    rows = wait_synced(client, admin, {"slack"})
+    assert rows[0]["last_error"] is None and rows[0]["config"]["username"] == "Acme Slack"
+    assert rows[0]["channels"] == 1 and rows[0]["documents"] == 1
+    process_pending()
+    k = next(k for k in client.get("/api/connectors", headers=admin).json() if k["type"] == "slack")
+    assert k["events"] == 1  # counted in messages once searchable
+    ask(client, admin, "When does the pallet audit happen?")
+    assert "every Thursday, ask @Dana Cohen" in captured["sources"] and "(Slack)" in captured["sources"]

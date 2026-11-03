@@ -37,11 +37,11 @@ WITH vec AS (
     LIMIT 40
 ),
 kw AS (
-    SELECT c.id, row_number() OVER (ORDER BY ts_rank_cd(c.tsv, q) DESC) AS r
+    SELECT c.id, row_number() OVER (ORDER BY ts_rank_cd(c.tsv, q) + 0.5 * ts_rank_cd(to_tsvector('simple', d.title), q) DESC) AS r
     FROM chunks c JOIN documents d ON d.id = c.document_id,
          to_tsquery('simple', %(tsq)s) q
-    WHERE %(tsq)s <> '' AND c.tsv @@ q AND {_ACCESS}
-    ORDER BY ts_rank_cd(c.tsv, q) DESC
+    WHERE %(tsq)s <> '' AND (c.tsv @@ q OR to_tsvector('simple', d.title) @@ q) AND {_ACCESS}
+    ORDER BY ts_rank_cd(c.tsv, q) + 0.5 * ts_rank_cd(to_tsvector('simple', d.title), q) DESC
     LIMIT 40
 ),
 fused AS (
@@ -104,7 +104,7 @@ def format_sources(hits: list[dict]) -> str:
     for i, h in enumerate(hits, 1):
         where = f", {h['location']}" if h["location"] else ""
         kind = {"interview": " (employee interview)", "email": " (email)", "whatsapp": " (WhatsApp chat)",
-                "calendar": " (calendar)", "web": " (website)"}.get(h["kind"], "")
+                "calendar": " (calendar)", "web": " (website)", "slack": " (Slack)"}.get(h["kind"], "")
         date = h["updated_at"].date().isoformat() if h.get("updated_at") else ""
         blocks.append(
             f'<source id="{i}" title="{h["title"]}{where}{kind}" updated="{date}">\n{h["content"]}\n</source>'

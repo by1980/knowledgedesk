@@ -105,9 +105,9 @@ function visibilityPills(item) {
 async function refreshDepartments() { departments = await getJSON("/api/departments"); }
 
 // ---------- what can be searched
-const KIND_ICON = { file: "file", documents: "file", interview: "mic", whatsapp: "chat", email: "mail", calendar: "calendar", web: "globe" };
+const KIND_ICON = { file: "file", documents: "file", interview: "mic", whatsapp: "chat", email: "mail", calendar: "calendar", web: "globe", slack: "ask" };
 const KIND_NAMES = { email: ["email", "emails"], documents: ["document", "documents"], calendar: ["calendar event", "calendar events"],
-  web: ["web page", "web pages"], whatsapp: ["WhatsApp chat", "WhatsApp chats"], interview: ["interview", "interviews"] };
+  slack: ["Slack message", "Slack messages"], web: ["web page", "web pages"], whatsapp: ["WhatsApp chat", "WhatsApp chats"], interview: ["interview", "interviews"] };
 function knowledgeChips(ready) {
   return Object.entries(KIND_NAMES).filter(([k]) => ready[k]).map(([k, [one, many]]) =>
     `<span class="stat-chip">${ic(KIND_ICON[k])}<span><b>${num(ready[k])}</b> ${ready[k] === 1 ? one : many}</span></span>`).join("");
@@ -247,6 +247,7 @@ const EXAMPLES = {
   calendar: "What meetings do I have this week?", email: "What were the latest emails about prices?",
   documents: "What are our main procedures?", web: "What services do we offer?",
   interview: "How do we handle a new customer order?", whatsapp: "What was decided in the team chat recently?",
+  slack: "What was discussed in Slack this week?",
 };
 LOADERS.ask = async function loadAsk() {
   if (!$("#dept-filter").dataset.filled) {
@@ -418,15 +419,23 @@ LOADERS.library = async () => pagedDocs($("#lib-list"), { reset: true, query: { 
 $("#lib-search").addEventListener("input", debounce(() => LOADERS.library()));
 
 // ================================================================== Sources
-const PROVIDER_TYPES = { google: { mail: "gmail", calendar: "gcal", files: "gdrive" }, microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" } };
-const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft" };
+const PROVIDER_TYPES = { google: { mail: "gmail", calendar: "gcal", files: "gdrive" }, microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" },
+  slack: { messages: "slack" } };
+const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft", slack: "Slack" };
+const PROVIDER_ACCOUNT = { google: "account", microsoft: "account", slack: "workspace" };
+const PROVIDER_SERVICES = {
+  google: [["mail", "Gmail", "all mail except spam, trash and promotions"], ["calendar", "Google Calendar", ""], ["files", "Google Drive", ""]],
+  microsoft: [["mail", "Outlook mail", "all mail in Inbox and Sent"], ["calendar", "Outlook calendar", ""], ["files", "OneDrive", ""]],
+  slack: [["messages", "Slack channels", "public channels, plus private channels you add the KnowledgeDesk app to"]],
+};
 const SERVICE_INFO = {
   gmail: ["mail", "Gmail", "email", "emails"], ms_mail: ["mail", "Outlook mail", "email", "emails"],
   gcal: ["calendar", "Google Calendar", "event", "events"], ms_cal: ["calendar", "Outlook calendar", "event", "events"],
   gdrive: ["folder", "Google Drive", "file", "files"], ms_drive: ["folder", "OneDrive", "file", "files"],
   imap: ["mail", "Mailbox", "email", "emails"], ics: ["calendar", "Calendar", "event", "events"], website: ["globe", "Website", "page", "pages"],
+  slack: ["ask", "Channels", "message", "messages"],
 };
-const CALENDAR_TYPES = ["gcal", "ms_cal", "ics"];
+const CALENDAR_TYPES = ["gcal", "ms_cal", "ics", "slack"]; // counted in events / messages, not documents
 let conns = [];
 let overviewNow = { importing: 0 };
 let oauthState = { configured: {}, redirect_url: "" };
@@ -441,7 +450,9 @@ function sourceStatus(k) {
   const [, , one, many] = SERVICE_INFO[k.type] || ["", "", "item", "items"];
   const ready = CALENDAR_TYPES.includes(k.type) ? k.events : k.ready;
   const checked = k.last_sync ? `<span class="muted small">Checked ${ago(k.last_sync)}</span>` : "";
-  const note = k.last_note ? `<div class="status-detail">${esc(k.last_note)}</div>` : "";
+  let note = k.last_note ? `<div class="status-detail">${esc(k.last_note)}</div>` : "";
+  if (k.type === "slack" && k.channels != null) note += `<div class="status-detail">Reading ${plural(k.channels, "channel", "channels")}.${k.private_not_added
+    ? ` ${plural(k.private_not_added, "private channel isn't", "private channels aren't")} included – in Slack, open the channel → its name → Integrations → Add apps → KnowledgeDesk.` : ""}</div>`;
   const searchable = ready ? `${plural(ready, one, many)} searchable` : "";
   if (k.last_error && !k.syncing)
     return `<div class="status-line">${badge("bad", "Needs attention")} ${checked}</div><div class="status-detail bad">${esc(k.last_error)}</div>
@@ -472,15 +483,70 @@ LOADERS.sources = async function loadSources() {
   await refreshSources(true);
 };
 
+const TILES = [
+  ["gmail", "Gmail", "mail", "google"], ["gcal", "Google Calendar", "calendar", "google"], ["gdrive", "Google Drive", "folder", "google"],
+  ["ms_mail", "Outlook mail", "mail", "microsoft"], ["ms_cal", "Outlook calendar", "calendar", "microsoft"], ["ms_drive", "OneDrive", "folder", "microsoft"],
+  ["slack", "Slack", "ask", "slack"], ["website", "Websites", "globe", "web-card"], ["whatsapp", "WhatsApp chats", "chat", "whatsapp-card"],
+  ["uploads", "Uploaded files", "upload", "files-card"],
+];
+function tileState(type) {
+  const ks = conns.filter((k) => k.type === type);
+  if (type === "whatsapp" || type === "uploads") {
+    const n = type === "whatsapp" ? (overviewNow.ready.whatsapp || 0) : null;
+    if (type === "whatsapp") return n ? ["ok", "Imported", plural(n, "chat", "chats")] : ["", "Not added", ""];
+    return ["", "", ""];
+  }
+  if (!ks.length) return ["", "Not connected", ""];
+  const count = ks.reduce((a, k) => a + (CALENDAR_TYPES.includes(k.type) ? k.events : k.ready), 0);
+  const [, , one, many] = SERVICE_INFO[type];
+  if (ks.some((k) => k.last_error && !k.syncing)) return ["bad", "Needs attention", count ? plural(count, one, many) : ""];
+  if (ks.some((k) => k.syncing || !k.last_sync || k.more || k.indexing)) return ["busy", "Importing", count ? `${plural(count, one, many)} so far` : ""];
+  return ["ok", "Connected", plural(count, one, many)];
+}
+function drawTiles(uploads) {
+  $("#overview-tiles").innerHTML = TILES.map(([type, label, icon, target]) => {
+    let [state, text, count] = tileState(type);
+    if (type === "uploads") [state, text, count] = uploads ? ["ok", "Added", plural(uploads, "file", "files")] : ["", "None yet", ""];
+    return `<button type="button" class="tile ${state ? "" : "off"}" data-tile="${type}" data-target="${target}">
+      <span class="icon-tile">${ic(icon)}</span><span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}</span></button>`;
+  }).join("");
+  $$("#overview-tiles .tile").forEach((t) => t.onclick = () => {
+    const el = document.getElementById(t.dataset.target) || $(`.provider-card[data-provider=${t.dataset.target}]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+$("#find-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = e.target.q.value.trim();
+  if (!q) return;
+  const f = openDialog(`<h2>Find an item</h2>
+    <p class="muted small">Searches the titles and the text of everything imported. If something isn't here, it hasn't been imported (yet).</p>
+    <div class="search-box" style="width:100%">${ic("search")}<input type="search" data-q dir="auto" value="${esc(q)}"></div>
+    <div data-list style="margin-top:8px"></div>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Close</button></div>`);
+  const list = $("[data-list]", f);
+  const load = () => pagedDocs(list, { reset: true, query: { q: $("[data-q]", f).value } }, { manage: true, pageSize: 15,
+    empty: "Nothing found. It may not be imported yet – check the status of its source on this page." });
+  $("[data-q]", f).addEventListener("input", debounce(load));
+  $("[data-close]", f).onclick = closeDialog;
+  await load();
+});
+
 async function refreshSources(withFiles = false) {
   conns = await getJSON("/api/connectors");
   overviewNow = await getJSON("/api/overview");
   const o = overviewNow;
+  try {
+    const up = await api("/api/documents?source=uploads&limit=1");
+    drawTiles(Number(up.headers.get("X-Total-Count") || 0));
+  } catch { drawTiles(0); }
+  $("#wa-status").innerHTML = o.ready.whatsapp ? `${badge("ok", "Imported")} <span class="muted small">${plural(o.ready.whatsapp, "chat", "chats")} searchable – listed under Files and recordings below.</span>`
+    : `${badge("", "No chats yet")}`;
   const importing = o.importing || conns.some((k) => k.syncing || !k.last_sync || k.more);
-  $("#kb-summary").innerHTML = `<div class="toolbar"><h2>Searchable now</h2>${o.total ? '<a class="btn primary" href="#ask">Ask a question</a>' : ""}</div>
+  $("#kb-summary").innerHTML = `<div class="toolbar"><h3>Searchable now</h3>${o.total ? '<a class="btn primary small" href="#ask">Ask a question</a>' : ""}</div>
     ${o.total ? `<div class="chips">${knowledgeChips(o.ready)}</div>` : '<p class="muted">Nothing yet. Connect an account, add your website, or upload files below.</p>'}
     ${importing ? `<p class="status-detail">${badge("busy", "Working")} ${o.importing ? `${plural(o.importing, "item is", "items are")} being prepared for search${o.eta ? ` (about ${esc(o.eta)} left)` : ""}.` : "Importing from your sources."} New items become searchable automatically – you can already ask questions.</p>` : ""}`;
-  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawWebsites(); drawManual(); }
+  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawWebsites(); drawManual(); }
   if (withFiles || o.importing || refreshSources.wasImporting) await loadFiles(false);
   refreshSources.wasImporting = o.importing > 0;
   if (importing || conns.some((k) => k.indexing)) poll(() => refreshSources(), 4000);
@@ -493,7 +559,8 @@ function drawProvider(provider) {
   conns.filter((k) => types.includes(k.type)).forEach((k) => { (accounts[k.config.account_id] ||= []).push(k); });
   const has = Object.keys(accounts).length > 0;
 
-  $(".pc-connect", card).innerHTML = `<button class="btn ${has ? "" : "primary"}" data-open-connect>${has ? ic("plus") : ""}${has ? `Connect another ${PROVIDER_NAME[provider]} account` : `Connect ${PROVIDER_NAME[provider]} account`}</button>`;
+  const noun = PROVIDER_ACCOUNT[provider];
+  $(".pc-connect", card).innerHTML = `<button class="btn ${has ? "" : "primary"}" data-open-connect>${has ? ic("plus") : ""}${has ? `Connect another ${PROVIDER_NAME[provider]} ${noun}` : `Connect ${PROVIDER_NAME[provider]} ${noun}`}</button>`;
   $("[data-open-connect]", card).onclick = () => oauthState.configured[provider] ? openConnectPanel(provider) : setupNeededDialog(provider);
 
   $(".pc-accounts", card).innerHTML = Object.entries(accounts).map(([accountId, list]) => {
@@ -510,7 +577,7 @@ function drawProvider(provider) {
     }).join("");
     return `<div class="account">
       <div class="acc-head">
-        <div><b dir="ltr">${esc(first.config.username || "Connected account")}</b>
+        <div><b dir="auto">${esc(first.config.username || "Connected account")}</b>
           <div class="muted small">Who can find this: ${visibilityPills(first)} <button class="btn link small" data-edit-vis="${accountId}">Change</button></div></div>
         <div class="acc-actions">
           <button class="btn small" data-sync-account="${accountId}" ${anyBusy ? "disabled" : ""}>${anyBusy ? '<span class="spinner"></span>Importing' : `${ic("refresh")}Check for new items`}</button>
@@ -541,8 +608,8 @@ function drawProvider(provider) {
   });
   $$("[data-disconnect]", card).forEach((b) => b.onclick = async () => {
     const list = accounts[b.dataset.disconnect];
-    const ok = await confirmBox({ title: `Disconnect ${list[0].config.username || "this account"}?`, confirm: "Disconnect", danger: true,
-      text: "Everything imported from this account will be removed from KnowledgeDesk, and its sign-in will be forgotten. Nothing is deleted in the account itself." });
+    const ok = await confirmBox({ title: `Disconnect ${list[0].config.username || "this " + noun}?`, confirm: "Disconnect", danger: true,
+      text: `Everything imported from this ${noun} will be removed from KnowledgeDesk, and its sign-in will be forgotten. Nothing is deleted in the ${noun} itself.` });
     if (!ok) return;
     await busy(b, "Disconnecting…", async () => {
       try { for (const k of list) await api(`/api/connectors/${k.id}`, { method: "DELETE" }); toast("Disconnected."); } catch (err) { toast(err.message, true); }
@@ -557,7 +624,7 @@ function drawProvider(provider) {
 
 function setupNeededDialog(provider) {
   const f = openDialog(`<h2>${PROVIDER_NAME[provider]} sign-in isn't set up yet</h2>
-    <p class="muted">To connect ${PROVIDER_NAME[provider]} accounts with one click, ${PROVIDER_NAME[provider]} needs to know about this installation.
+    <p class="muted">To connect ${PROVIDER_NAME[provider]} ${PROVIDER_ACCOUNT[provider]}s with one click, ${PROVIDER_NAME[provider]} needs to know about this installation.
       It's a one-time setup (about 30 minutes, free) done by whoever installed KnowledgeDesk – see "Setting up one-click sign-in" in the README.</p>
     <p class="small">Return address to register:<br><code>${esc(oauthState.redirect_url)}</code></p>
     <div class="dialog-actions"><button class="btn primary" type="button" data-close>OK</button></div>`);
@@ -567,14 +634,12 @@ function setupNeededDialog(provider) {
 function openConnectPanel(provider) {
   editing = true;
   const slot = $(`.provider-card[data-provider=${provider}] .pc-panel`);
-  const names = { google: ["Gmail", "Google Calendar", "Google Drive"], microsoft: ["Outlook mail", "Outlook calendar", "OneDrive"] }[provider];
   slot.innerHTML = `<div class="panel">
     <span class="label">What should KnowledgeDesk read?</span>
-    <label class="check"><input type="checkbox" name="svc" value="mail" checked> ${names[0]} <span class="muted small">(all mail except spam, trash and promotions)</span></label><br>
-    <label class="check"><input type="checkbox" name="svc" value="calendar" checked> ${names[1]}</label><br>
-    <label class="check"><input type="checkbox" name="svc" value="files" checked> ${names[2]}</label>
+    ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" checked> ${label}
+      ${hint ? `<span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
     ${visibilityPicker([], false)}
-    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, changes or deletes anything.
+    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, posts, changes or deletes anything.
       ${provider === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}</p>
     <div class="row"><button class="btn primary" data-go>Continue to ${PROVIDER_NAME[provider]}</button><button class="btn" data-cancel>Cancel</button></div>
     <p class="error" role="alert"></p></div>`;
@@ -647,6 +712,12 @@ $("#web-form").addEventListener("submit", (e) => {
 
 // ---------- Files and recordings
 const uploadForm = $("#upload-form");
+$("#wa-upload").addEventListener("click", () => {
+  const radio = $("input[name=kind][value=whatsapp]", uploadForm);
+  radio.checked = true; radio.dispatchEvent(new Event("change"));
+  $("#files-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => $("#dropzone input").click(), 400);
+});
 function uploadKind() { return $("input[name=kind]:checked", uploadForm).value; }
 $$("input[name=kind]", uploadForm).forEach((r) => r.addEventListener("change", () => {
   $$(".kind-help", uploadForm).forEach((p) => p.classList.toggle("hidden", p.dataset.kind !== uploadKind()));

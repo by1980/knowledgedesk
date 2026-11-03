@@ -9,7 +9,7 @@ import psycopg
 
 from ..config import settings
 from ..db import conn
-from . import calendar_ics, email_imap, google, microsoft, website
+from . import calendar_ics, email_imap, google, microsoft, slack, website
 from .base import Sync
 
 log = logging.getLogger("connectors")
@@ -18,7 +18,8 @@ log = logging.getLogger("connectors")
 MANUAL_TYPES = {"imap": email_imap.sync, "ics": calendar_ics.sync, "website": website.sync}
 # Sources connected with "Sign in with Google / Microsoft".
 OAUTH_TYPES = {"gmail": google.sync_gmail, "gcal": google.sync_gcal, "gdrive": google.sync_gdrive,
-               "ms_mail": microsoft.sync_mail, "ms_cal": microsoft.sync_calendar, "ms_drive": microsoft.sync_drive}
+               "ms_mail": microsoft.sync_mail, "ms_cal": microsoft.sync_calendar, "ms_drive": microsoft.sync_drive,
+               "slack": slack.sync_slack}
 TYPES = {**MANUAL_TYPES, **OAUTH_TYPES}
 # Config fields stored encrypted, per connector type.
 SECRETS = {"imap": {"password"}, "ics": {"url"}}
@@ -84,7 +85,7 @@ def friendly_error(e: Exception) -> str:
     if "quota" in low or "rate limit" in low or "ratelimit" in low or "too many requests" in low or text.startswith("429"):
         return ("The provider is limiting how fast we can read. Everything imported so far is kept, "
                 "and the rest continues automatically at the next sync.")
-    if "revoked" in low or "invalid_grant" in low or text.startswith("401"):
+    if "revoked" in low or "invalid_grant" in low or text.startswith("401") or "invalid_auth" in low:
         return "Access to this account was lost or expired. Click Disconnect, then connect the account again."
     return text[:500]
 

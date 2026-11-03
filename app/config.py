@@ -46,13 +46,15 @@ class Settings:
     # Retrieval
     chunk_chars = int(_env("CHUNK_CHARS", "1500"))
     chunk_overlap = int(_env("CHUNK_OVERLAP", "200"))
-    top_k = int(_env("TOP_K", "8"))
+    top_k = int(_env("TOP_K", "12"))
 
     # One-click sign-in (see README "Setting up one-click sign-in"). Can also live in app/vendor_oauth.json.
     google_client_id = _env("GOOGLE_CLIENT_ID")
     google_client_secret = _env("GOOGLE_CLIENT_SECRET")
     microsoft_client_id = _env("MICROSOFT_CLIENT_ID")
     microsoft_client_secret = _env("MICROSOFT_CLIENT_SECRET")
+    slack_client_id = _env("SLACK_CLIENT_ID")
+    slack_client_secret = _env("SLACK_CLIENT_SECRET")
     oauth_redirect_url = _env("OAUTH_REDIRECT_URL")  # e.g. https://connect.yourcompany.com/oauth.html
 
     # License (monthly subscription)
