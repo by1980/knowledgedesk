@@ -214,7 +214,10 @@ def access_token(account_id: int) -> str:
             row = c.execute("SELECT provider, tokens FROM oauth_accounts WHERE id=%s", (account_id,)).fetchone()
         if not row:
             raise RuntimeError("The connected account was removed. Connect it again.")
-        tokens = json.loads(decrypt(row["tokens"]))
+        try:
+            tokens = json.loads(decrypt(row["tokens"]))
+        except (RuntimeError, ValueError):
+            raise RuntimeError("Access was revoked: the saved sign-in can't be read.")
         if tokens.get("access_token") and tokens.get("expires_at", 0) > time.time():
             return tokens["access_token"]
         try:

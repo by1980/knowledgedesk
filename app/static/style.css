@@ -94,3 +94,36 @@ button.provider { display: inline-flex; align-items: center; gap: 8px; backgroun
   border: 1px solid var(--line); padding: 10px 16px; font-weight: 500; }
 button.provider:hover:not(:disabled) { border-color: var(--accent); }
 code { font-size: 12px; background: var(--bg); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+
+/* Connections screen */
+.notice { border-color: var(--ok); line-height: 1.7; }
+.pc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.pc-head h2 { margin: 0; }
+.pc-head p { margin: 0; }
+.big-icon { font-size: 24px; }
+.account { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+.acc-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.acc-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.small-btn { padding: 4px 10px; font-size: 13px; }
+.badge-ok { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--ok); color: var(--surface); margin-left: 6px; }
+.svc { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.svc.off { opacity: .8; }
+.svc-name { font-weight: 500; }
+.st { font-weight: 500; }
+.st-ok { color: var(--ok); } .st-busy { color: var(--warn); } .st-bad { color: var(--danger); }
+.connect-panel, .vis-edit { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+.connect-panel .vis-edit { border: 0; padding: 0; margin: 10px 0; background: none; }
+.web-add { display: flex; gap: 8px; margin-top: 12px; }
+.web-add input { flex: 1; }
+#web-visibility .vis-edit { background: none; border: 0; padding: 0; }
+.kb-items { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.kb-item { background: var(--accent-soft); color: var(--text); border-radius: 999px; padding: 4px 12px; font-size: 14px; }
+details.more summary { cursor: pointer; }
+details.more[open] summary { margin-bottom: 12px; }
+.manual { margin-bottom: 14px; }
+.span2 { grid-column: span 2; }
+@media (max-width: 640px) {
+  .svc { grid-template-columns: 1fr; gap: 4px; }
+  .span2 { grid-column: auto; }
+  .web-add { flex-direction: column; }
+}

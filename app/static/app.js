@@ -24,7 +24,7 @@ async function api(path, opts = {}) {
 }
 const getJSON = async (p) => (await api(p)).json();
 
-function show(id) { $$("section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
+function show(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
 function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} show("#login-view"); }
 
 // ------------------------------------------------------------------ start
@@ -47,13 +47,9 @@ async function boot() {
   if (connected !== null && me.role === "admin") {
     window.history.replaceState(null, "", "/");
     $("button[data-view=admin]").click(); openSub("conns");
-    $("#oauth-done").innerHTML = `<b>✓ Account connected.</b> Importing now – you can follow the progress in
-      <b>Connected sources</b> below. When a source shows <b>✓ Ready</b>, its content can be searched.
-      <br>Next: <button class="link" id="go-ask">go to Ask</button> and try a question such as
-      “What meetings do I have next week?” or “What did we agree with &lt;customer&gt;?”`;
-    $("#oauth-done").classList.remove("hidden");
-    $("#go-ask").onclick = () => $("button[data-view=chat]").click();
+    showConnectedNotice(connected);
   }
+  loadAskSummary();
 }
 
 $("#login-form").addEventListener("submit", async (e) => {
@@ -83,6 +79,16 @@ function openSub(name) {
 }
 
 // ------------------------------------------------------------------ chat
+async function loadAskSummary() {
+  try {
+    const o = await getJSON("/api/overview");
+    const names = { email: "emails", files: "files", file: "documents", calendar: "months of calendar events", web: "web pages",
+      whatsapp: "WhatsApp chats", interview: "interviews" };
+    const parts = Object.entries(o.ready).map(([k, n]) => `${n} ${names[k] || k}`);
+    $("#ask-summary").textContent = parts.length ? `You can ask about: ${parts.join(" · ")}.`
+      : (me.role === "admin" ? "Nothing to search yet – add sources in Admin → Connections." : "Nothing to search yet – ask your admin to add company information.");
+  } catch {}
+}
 const qBox = $("#question");
 qBox.addEventListener("input", () => { qBox.style.height = "auto"; qBox.style.height = qBox.scrollHeight + "px"; });
 qBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ask-form").requestSubmit(); } });
@@ -226,33 +232,234 @@ $("#upload-form").addEventListener("submit", async (e) => {
 });
 
 // ------------------------------------------------------------------ admin: connections
-const connForm = $("#conn-form");
-const TYPE_LABEL = { imap: "📧 Email", ics: "📅 Calendar", website: "🌐 Website", gmail: "📧 Gmail", gcal: "📅 Google Calendar",
-  gdrive: "📁 Google Drive", ms_mail: "📧 Outlook mail", ms_cal: "📅 Outlook calendar", ms_drive: "📁 OneDrive" };
-const OAUTH_TYPES = ["gmail", "gcal", "gdrive", "ms_mail", "ms_cal", "ms_drive"];
+// One screen that answers three questions: what is connected, is it working, and what can be searched.
+const PROVIDER_TYPES = {
+  google: { mail: "gmail", calendar: "gcal", files: "gdrive" },
+  microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" },
+};
+const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft" };
+const SERVICE_INFO = {
+  gmail: ["📧", "Gmail", "email", "emails"], ms_mail: ["📧", "Outlook mail", "email", "emails"],
+  gcal: ["📅", "Google Calendar", "month of events", "months of events"], ms_cal: ["📅", "Outlook calendar", "month of events", "months of events"],
+  gdrive: ["📁", "Google Drive", "file", "files"], ms_drive: ["📁", "OneDrive", "file", "files"],
+  imap: ["📧", "Email", "email", "emails"], ics: ["📅", "Calendar", "month of events", "months of events"],
+  website: ["🌐", "Website", "page", "pages"],
+};
+const SERVICE_OF = { gmail: "mail", ms_mail: "mail", gcal: "calendar", ms_cal: "calendar", gdrive: "files", ms_drive: "files" };
+const OAUTH_TYPES = Object.keys(SERVICE_OF);
+const TYPE_LABEL = Object.fromEntries(Object.entries(SERVICE_INFO).map(([t, i]) => [t, `${i[0]} ${i[1]}`]));
 
-async function loadQuickConnect() {
-  deptChecks("#oauth-depts", "odept");
-  try {
-    const st = await getJSON("/api/oauth/status");
-    $$("button.provider").forEach((b) => (b.disabled = !st.configured[b.dataset.provider]));
-    const missing = Object.entries(st.configured).filter(([, ok]) => !ok).map(([p]) => p === "google" ? "Google" : "Microsoft");
-    $("#oauth-setup-note").innerHTML = missing.length ? `${missing.join(" and ")} sign-in isn't set up on this installation yet
-      (README → "Setting up one-click sign-in"). Address to register: <code>${esc(st.redirect_url)}</code>` : "";
-  } catch (err) { $("#oauth-setup-note").textContent = err.message; }
-}
-$$("button.provider").forEach((b) => b.addEventListener("click", async () => {
-  $("#oauth-error").textContent = "";
-  try {
-    const r = await (await api("/api/oauth/start", { method: "POST", json: {
-      provider: b.dataset.provider,
-      services: $$("input[name=svc]:checked").map((x) => x.value),
-      department_ids: $$("input[name=odept]:checked").map((x) => Number(x.value)),
-      company_wide: $("#oauth-everyone").checked } })).json();
-    window.location.href = r.url;
-  } catch (err) { $("#oauth-error").textContent = err.message; }
-}));
 let conns = [];
+let oauthState = { configured: {}, redirect_url: "" };
+let connPoll = null;
+let editing = false; // true while a "who can search" editor or the connect panel is open: don't redraw under the user
+const connForm = $("#conn-form");
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+function ago(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+// One clear line per source: importing / preparing / ready / problem
+function statusLine(k) {
+  const [, , one, many] = SERVICE_INFO[k.type] || ["", "", "item", "items"];
+  const note = k.last_note ? `<div class="muted small">${esc(k.last_note)}</div>` : "";
+  if (k.syncing || !k.last_sync)
+    return `<span class="st st-busy">⏳ Importing… ${plural(k.documents, one, many)} found so far</span>${note}`;
+  if (k.indexing)
+    return `<span class="st st-busy">⏳ Getting ready for search: ${k.ready} of ${k.documents} done</span>${note}`;
+  const checked = `<span class="muted small"> · checked ${ago(k.last_sync)}</span>`;
+  if (k.last_error)
+    return `<span class="st st-bad">⚠ ${esc(k.last_error)}</span>` +
+      (k.ready ? `<div class="small">${plural(k.ready, one, many)} already searchable.</div>` : "") + note;
+  if (!k.ready) return `<span class="st st-ok">✓ Connected – nothing found to import</span>${checked}${note}`;
+  return `<span class="st st-ok">✓ ${plural(k.ready, one, many)} searchable</span>${checked}${note}`;
+}
+
+function visibilityEditor(id, selectedDepts, everyone) {
+  return `<div class="vis-edit" data-vis="${id}">
+    <span class="label">Who can search this</span>
+    <div class="checks">${departments.map((d) => `<label class="radio"><input type="checkbox" value="${d.id}"
+      ${selectedDepts.includes(d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("") ||
+      '<span class="muted small">No departments yet – you can create them in the Departments tab.</span>'}</div>
+    <label class="radio"><input type="checkbox" class="vis-everyone" ${everyone ? "checked" : ""}> Everyone in the company</label>
+  </div>`;
+}
+function readVisibility(el) {
+  return { department_ids: $$(".checks input:checked", el).map((x) => Number(x.value)), company_wide: $(".vis-everyone", el).checked };
+}
+
+// ---------- Summary: what can be searched now
+async function drawSummary() {
+  const o = await getJSON("/api/overview");
+  const labels = [["email", "📧", "email", "emails"], ["files", "📁", "file", "files"], ["file", "📄", "document", "documents"],
+    ["calendar", "📅", "month of calendar events", "months of calendar events"], ["web", "🌐", "web page", "web pages"],
+    ["whatsapp", "💬", "WhatsApp chat", "WhatsApp chats"], ["interview", "🎙", "interview", "interviews"]];
+  const parts = labels.filter(([k]) => o.ready[k]).map(([k, icon, one, many]) => `<span class="kb-item">${icon} ${plural(o.ready[k], one, many)}</span>`);
+  const busy = conns.some((k) => k.syncing || !k.last_sync) || o.importing;
+  $("#kb-summary").innerHTML = `
+    <div class="row spread"><h2>What KnowledgeDesk can search now</h2>
+      ${o.total ? '<button class="primary" id="kb-ask">Ask a question →</button>' : ""}</div>
+    ${parts.length ? `<div class="kb-items">${parts.join("")}</div>` :
+      '<p class="muted">Nothing yet. Connect an account or add your website below – it takes a minute.</p>'}
+    ${busy ? `<p class="st st-busy small">⏳ Still importing${o.importing ? ` (${o.importing} item${o.importing === 1 ? "" : "s"} waiting)` : ""} – new items become searchable automatically. You can ask questions meanwhile.</p>` : ""}`;
+  const ask = $("#kb-ask");
+  if (ask) ask.onclick = () => $("button[data-view=chat]").click();
+}
+
+// ---------- Google / Microsoft cards
+function drawProvider(provider) {
+  const card = $(`.provider-card[data-provider=${provider}]`);
+  const types = Object.values(PROVIDER_TYPES[provider]);
+  const mine = conns.filter((k) => types.includes(k.type));
+  const accounts = {};
+  mine.forEach((k) => { (accounts[k.config.account_id] ||= []).push(k); });
+
+  $(".pc-accounts", card).innerHTML = Object.entries(accounts).map(([accountId, list]) => {
+    const email = list[0].config.username || "Connected account";
+    const first = list[0];
+    const deptIds = first.departments.map((d) => d.id);
+    const rows = Object.entries(PROVIDER_TYPES[provider]).map(([svc, type]) => {
+      const k = list.find((x) => x.type === type);
+      const [icon, label] = SERVICE_INFO[type];
+      if (!k) return `<div class="svc off"><div class="svc-name">${icon} ${label}</div>
+        <div class="muted small">Not connected</div>
+        <div><button class="link" data-add-svc="${svc}" data-account="${accountId}">Connect</button></div></div>`;
+      return `<div class="svc"><div class="svc-name">${icon} ${label}${k.enabled ? "" : ' <span class="muted small">(paused)</span>'}</div>
+        <div>${statusLine(k)}</div><div></div></div>`;
+    }).join("");
+    return `<div class="account" data-account="${accountId}">
+      <div class="acc-head">
+        <div><b dir="ltr">${esc(email)}</b> <span class="badge-ok">Connected</span>
+          <div class="muted small">Can be searched by: ${deptPills(first) || "nobody yet"}
+            <button class="link small" data-edit-vis="${accountId}">Change</button></div></div>
+        <div class="acc-actions">
+          <button class="secondary small-btn" data-sync-account="${accountId}" ${list.some((k) => k.syncing) ? "disabled" : ""}>
+            ${list.some((k) => k.syncing) ? "Importing…" : "Check for new items"}</button>
+          <button class="danger" data-disconnect="${accountId}">Disconnect</button>
+        </div>
+      </div>
+      ${rows}
+      <div class="vis-slot"></div>
+    </div>`;
+  }).join("");
+
+  // Connect button: clearly says "another" once an account is connected
+  const slot = $(".pc-connect", card);
+  if (!slot.querySelector(".connect-panel")) {
+    const configured = oauthState.configured[provider];
+    const has = Object.keys(accounts).length > 0;
+    slot.innerHTML = !configured
+      ? `<p class="muted small">One-click ${PROVIDER_NAME[provider]} sign-in isn't set up on this installation yet
+         (see README → "Setting up one-click sign-in"). Return address to register: <code>${esc(oauthState.redirect_url)}</code></p>`
+      : `<button class="${has ? "link" : "primary"}" data-open-connect>${has ? `+ Connect another ${PROVIDER_NAME[provider]} account` : `Connect ${PROVIDER_NAME[provider]} account`}</button>`;
+    const open = $("[data-open-connect]", slot);
+    if (open) open.onclick = () => openConnectPanel(provider);
+  }
+
+  $$("[data-edit-vis]", card).forEach((b) => b.onclick = () => {
+    const acc = b.closest(".account"); const list = accounts[b.dataset.editVis];
+    editing = true;
+    $(".vis-slot", acc).innerHTML = visibilityEditor(b.dataset.editVis, list[0].departments.map((d) => d.id), list[0].company_wide) +
+      `<div class="row"><button class="primary" data-save-vis>Save</button><button class="secondary" data-cancel-vis>Cancel</button></div>
+       <p class="error"></p>`;
+    $("[data-cancel-vis]", acc).onclick = () => { editing = false; refreshConnections(); };
+    $("[data-save-vis]", acc).onclick = async () => {
+      const v = readVisibility($(".vis-edit", acc));
+      if (!v.department_ids.length && !v.company_wide) { $(".vis-slot .error", acc).textContent = "Choose at least one department, or Everyone."; return; }
+      for (const k of list)
+        await api(`/api/connectors/${k.id}`, { method: "PUT", json: { type: k.type, name: k.name, config: {}, enabled: k.enabled, ...v } });
+      editing = false; refreshConnections();
+    };
+  });
+  $$("[data-sync-account]", card).forEach((b) => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Importing…";
+    for (const k of accounts[b.dataset.syncAccount]) await api(`/api/connectors/${k.id}/sync`, { method: "POST" });
+    setTimeout(refreshConnections, 800);
+  });
+  $$("[data-disconnect]", card).forEach((b) => b.onclick = async () => {
+    const list = accounts[b.dataset.disconnect];
+    if (!confirm(`Disconnect ${list[0].config.username || "this account"}?\n\nEverything imported from it will be removed from the knowledge base, and KnowledgeDesk will forget its sign-in.`)) return;
+    b.disabled = true; b.textContent = "Disconnecting…";
+    try { for (const k of list) await api(`/api/connectors/${k.id}`, { method: "DELETE" }); } catch (err) { alert(err.message); }
+    refreshConnections();
+  });
+  $$("[data-add-svc]", card).forEach((b) => b.onclick = async () => {
+    const list = accounts[b.dataset.account];
+    await startSignIn(provider, [b.dataset.addSvc], list[0].departments.map((d) => d.id), list[0].company_wide, b);
+  });
+}
+
+function openConnectPanel(provider) {
+  editing = true;
+  const slot = $(`.provider-card[data-provider=${provider}] .pc-connect`);
+  const names = { google: ["Gmail", "Google Calendar", "Google Drive"], microsoft: ["Outlook mail", "Outlook calendar", "OneDrive"] }[provider];
+  slot.innerHTML = `<div class="connect-panel">
+    <span class="label">What should KnowledgeDesk read?</span>
+    <div class="checks">
+      <label class="radio"><input type="checkbox" name="svc" value="mail" checked> 📧 ${names[0]}</label>
+      <label class="radio"><input type="checkbox" name="svc" value="calendar" checked> 📅 ${names[1]}</label>
+      <label class="radio"><input type="checkbox" name="svc" value="files" checked> 📁 ${names[2]}</label>
+    </div>
+    ${visibilityEditor("new-" + provider, [], false)}
+    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, changes or deletes anything.
+      ${provider === "google" ? 'If Google shows "Google hasn\'t verified this app", click <b>Continue</b>, and tick <b>all</b> the boxes on the next page.' : ""}</p>
+    <div class="row"><button class="primary" data-go>Continue to ${PROVIDER_NAME[provider]}</button>
+      <button class="secondary" data-cancel>Cancel</button></div>
+    <p class="error"></p></div>`;
+  $("[data-cancel]", slot).onclick = () => { editing = false; slot.innerHTML = ""; refreshConnections(); };
+  $("[data-go]", slot).onclick = async (e) => {
+    const services = $$("input[name=svc]:checked", slot).map((x) => x.value);
+    const v = readVisibility($(".vis-edit", slot));
+    if (!services.length) { $(".error", slot).textContent = "Tick at least one thing to read."; return; }
+    if (!v.department_ids.length && !v.company_wide) { $(".error", slot).textContent = "Choose who can search it: at least one department, or Everyone."; return; }
+    await startSignIn(provider, services, v.department_ids, v.company_wide, e.target, $(".error", slot));
+  };
+}
+
+async function startSignIn(provider, services, department_ids, company_wide, button, errorEl) {
+  button.disabled = true;
+  try {
+    const r = await (await api("/api/oauth/start", { method: "POST", json: { provider, services, department_ids, company_wide } })).json();
+    window.location.href = r.url;
+  } catch (err) { button.disabled = false; if (errorEl) errorEl.textContent = err.message; else alert(err.message); }
+}
+
+// ---------- Websites
+function drawWebsites() {
+  const sites = conns.filter((k) => k.type === "website");
+  $("#web-list").innerHTML = sites.map((k) => `<div class="svc">
+      <div class="svc-name" dir="ltr">${esc((k.config.url || "").replace(/^https?:\/\//, ""))}</div>
+      <div>${statusLine(k)}<div class="muted small">Can be searched by: ${deptPills(k)}</div></div>
+      <div class="acc-actions"><button class="link" data-web-sync="${k.id}" ${k.syncing ? "disabled" : ""}>Check now</button>
+        <button class="danger" data-web-del="${k.id}">Remove</button></div></div>`).join("");
+  $$("[data-web-sync]").forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/api/connectors/${b.dataset.webSync}/sync`, { method: "POST" }); setTimeout(refreshConnections, 800); });
+  $$("[data-web-del]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Remove this website? Its pages will no longer be searchable.")) return;
+    await api(`/api/connectors/${b.dataset.webDel}`, { method: "DELETE" }); refreshConnections();
+  });
+}
+$("#web-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const url = e.target.url.value.trim();
+  const v = readVisibility($("#web-visibility .vis-edit"));
+  $("#web-error").textContent = "";
+  if (!url) { $("#web-error").textContent = "Type the website address first."; return; }
+  if (!v.department_ids.length && !v.company_wide) { $("#web-error").textContent = "Choose who can search it."; return; }
+  const btn = $("button", e.target); btn.disabled = true; btn.textContent = "Checking the website…";
+  try {
+    await api("/api/connectors", { method: "POST", json: { type: "website", name: url, config: { url }, ...v } });
+    e.target.reset(); refreshConnections();
+  } catch (err) { $("#web-error").textContent = err.message; }
+  btn.disabled = false; btn.textContent = "Add website";
+});
+
+// ---------- More ways (other email, calendar link, WhatsApp)
 function connType() { return $("input[name=type]:checked", connForm).value; }
 function showConnFields() {
   const t = connType();
@@ -264,121 +471,59 @@ function showConnFields() {
   const isWa = t === "whatsapp";
   $(".conn-visibility", connForm).classList.toggle("hidden", isWa);
   $(".conn-actions", connForm).classList.toggle("hidden", isWa);
-  $("input[name=name]", connForm).closest("label").classList.toggle("hidden", isWa);
+  $("#conn-test").classList.toggle("hidden", t !== "imap");
 }
 $$("input[name=type]", connForm).forEach((r) => r.addEventListener("change", () => {
   $("#conn-error").textContent = ""; $("#conn-ok").textContent = ""; $("#imap-folders").textContent = ""; showConnFields();
 }));
-function setSecretHints(editing) {
-  $("input[name=password]", connForm).placeholder = editing ? "leave empty to keep the saved one" : "";
-  $(".conn-fields[data-for=ics] input[name=url]", connForm).placeholder = editing
-    ? "leave empty to keep the saved link" : "https://calendar.google.com/calendar/ical/…/basic.ics";
-}
-
 function connBody() {
-  if (connForm.dataset.oauthType) {
-    return { type: connForm.dataset.oauthType, name: connForm.name.value, config: {}, company_wide: connForm.company_wide.checked,
-      enabled: connForm.enabled.checked, department_ids: $$("input[name=cdept]:checked", connForm).map((x) => Number(x.value)) };
-  }
   const t = connType(); const config = {};
   $$(`.conn-fields[data-for=${t}] input`, connForm).forEach((i) => (config[i.name] = i.value));
-  return { type: t, name: connForm.name.value, config, company_wide: connForm.company_wide.checked, enabled: connForm.enabled.checked,
+  const name = config.name || config.username || "Calendar"; delete config.name;
+  return { type: t, name, config, company_wide: connForm.company_wide.checked, enabled: connForm.enabled.checked,
     department_ids: $$("input[name=cdept]:checked", connForm).map((x) => Number(x.value)) };
 }
 function resetConnForm() {
-  connForm.reset(); connForm.id.value = ""; connForm.removeAttribute("data-oauth-type");
-  $("#conn-types").classList.remove("hidden"); $("#conn-test").classList.remove("hidden");
-  $$("input[name=type]", connForm).forEach((r) => (r.disabled = false));
-  $("#conn-form-title").textContent = "Other ways to connect"; $("#conn-cancel").classList.add("hidden");
-  $("#conn-error").textContent = ""; $("#conn-ok").textContent = ""; $("#imap-folders").textContent = "";
-  deptChecks("#conn-depts", "cdept"); setSecretHints(false); showConnFields();
+  connForm.reset(); connForm.id.value = "";
+  $("#conn-types").classList.remove("hidden"); $("#conn-form-title").classList.add("hidden");
+  $("#conn-cancel").classList.add("hidden"); $("#conn-error").textContent = ""; $("#imap-folders").textContent = "";
+  $$("input[name=password], .conn-fields[data-for=ics] input[name=url]", connForm).forEach((i) => (i.placeholder = ""));
+  deptChecks("#conn-depts", "cdept"); showConnFields();
 }
-async function loadConns() {
-  // Opening the tab: fill the forms once. Later refreshes only update the table, so nothing you type is reset.
-  await refreshDepartments();
-  loadQuickConnect();
-  if (!connForm.id.value) resetConnForm();
-  await refreshConnTable();
-}
-
-function connStatus(k) {
-  const when = k.last_sync ? `<div class="muted small">Last checked ${new Date(k.last_sync).toLocaleString()}</div>` : "";
-  const note = k.last_note ? `<div class="muted small">${esc(k.last_note)}</div>` : "";
-  if (k.syncing || !k.last_sync)
-    return `<span class="status-pending">⏳ Importing… ${k.documents} item${k.documents === 1 ? "" : "s"} so far</span>${note}`;
-  if (k.indexing)
-    return `<span class="status-pending">⏳ Preparing for search: ${k.ready} of ${k.documents} ready</span>${when}${note}`;
-  if (k.last_error)
-    return `<span class="status-error">⚠ ${esc(k.last_error)}</span>` +
-      (k.ready ? `<div class="small">${k.ready} item${k.ready === 1 ? " is" : "s are"} already searchable.</div>` : "") + when + note;
-  if (!k.documents) return `<span class="status-ready">✓ Connected – nothing to import yet</span>${when}${note}`;
-  return `<span class="status-ready">✓ Ready – ${k.ready} item${k.ready === 1 ? "" : "s"} searchable</span>${when}${note}`;
-}
-
-let connPoll = null;
-async function refreshConnTable() {
-  clearTimeout(connPoll);
-  conns = await getJSON("/api/connectors");
-  $("#conn-rows").innerHTML = conns.map((k) => `
-    <tr><td dir="auto"><b>${TYPE_LABEL[k.type]}</b><div class="muted small">${esc(k.config.username || k.config.url || k.name)}${k.enabled ? "" : " · paused"}</div></td>
-    <td>${deptPills(k)}</td>
-    <td class="small">${connStatus(k)}</td>
-    <td class="actions"><button class="link" data-csync="${k.id}" ${k.syncing ? "disabled" : ""}>Sync now</button>
-      <button class="link" data-cedit="${k.id}">Edit</button>
-      <button class="danger" data-cdel="${k.id}">Remove</button></td></tr>`).join("") ||
-    `<tr><td colspan="4" class="muted">Nothing connected yet.</td></tr>`;
-  $$("[data-csync]").forEach((b) => b.onclick = async () => {
-    await api(`/api/connectors/${b.dataset.csync}/sync`, { method: "POST" });
-    setTimeout(refreshConnTable, 800);
+function drawManual() {
+  const list = conns.filter((k) => k.type === "imap" || k.type === "ics");
+  $("#manual-list").innerHTML = list.length ? `<div class="manual">${list.map((k) => `<div class="svc">
+      <div class="svc-name">${TYPE_LABEL[k.type]}<div class="muted small" dir="auto">${esc(k.config.username || k.name)}</div></div>
+      <div>${statusLine(k)}<div class="muted small">Can be searched by: ${deptPills(k)}</div></div>
+      <div class="acc-actions"><button class="link" data-m-sync="${k.id}" ${k.syncing ? "disabled" : ""}>Check now</button>
+        <button class="link" data-m-edit="${k.id}">Edit</button><button class="danger" data-m-del="${k.id}">Remove</button></div></div>`).join("")}</div>` : "";
+  $$("[data-m-sync]").forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/api/connectors/${b.dataset.mSync}/sync`, { method: "POST" }); setTimeout(refreshConnections, 800); });
+  $$("[data-m-del]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Remove this source? Everything imported from it will be removed.")) return;
+    await api(`/api/connectors/${b.dataset.mDel}`, { method: "DELETE" }); refreshConnections();
   });
-  $$("[data-cedit]").forEach((b) => b.onclick = () => editConn(conns.find((k) => k.id === Number(b.dataset.cedit))));
-  $$("[data-cdel]").forEach((b) => b.onclick = async () => {
-    if (!confirm("Disconnect this source? Everything imported from it will be removed from the knowledge base.")) return;
-    b.textContent = "Removing…"; b.disabled = true;
-    try { await api(`/api/connectors/${b.dataset.cdel}`, { method: "DELETE" }); } catch (err) { alert(err.message); }
-    refreshConnTable();
-  });
-  if (conns.some((k) => k.syncing || !k.last_sync || k.indexing))
-    connPoll = setTimeout(() => { if (!$("#sub-conns").classList.contains("hidden")) refreshConnTable(); }, 4000);
-}
-function editConn(k) {
-  resetConnForm();
-  const isOauth = OAUTH_TYPES.includes(k.type);
-  $("#conn-types").classList.toggle("hidden", isOauth);
-  if (isOauth) {
-    connForm.id.value = k.id; connForm.dataset.oauthType = k.type;
-    $$(".conn-fields", connForm).forEach((el) => el.classList.add("hidden"));
-    $(".conn-visibility", connForm).classList.remove("hidden"); $(".conn-actions", connForm).classList.remove("hidden");
-    $("#conn-test").classList.add("hidden");
-    $("input[name=name]", connForm).closest("label").classList.remove("hidden");
-    connForm.name.value = k.name; connForm.company_wide.checked = k.company_wide; connForm.enabled.checked = k.enabled;
+  $$("[data-m-edit]").forEach((b) => b.onclick = () => {
+    const k = conns.find((x) => x.id === Number(b.dataset.mEdit));
+    resetConnForm(); editing = true;
+    connForm.id.value = k.id;
+    $(`input[name=type][value=${k.type}]`, connForm).checked = true; showConnFields();
+    $("#conn-types").classList.add("hidden");
+    $("#conn-form-title").textContent = `Edit ${k.name}`; $("#conn-form-title").classList.remove("hidden");
+    const fields = $(`.conn-fields[data-for=${k.type}]`, connForm);
+    $("input[name=name]", fields).value = k.name;
+    for (const [key, val] of Object.entries(k.config)) { const i = $(`input[name=${key}]`, fields); if (i && val) i.value = val; }
+    $$("input[name=password], input[name=url]", fields).forEach((i) => (i.placeholder = "leave empty to keep the saved one"));
+    connForm.company_wide.checked = k.company_wide; connForm.enabled.checked = k.enabled;
     deptChecks("#conn-depts", "cdept", k.departments.map((d) => d.id));
-    $("#conn-form-title").textContent = `Edit ${k.name}`; $("#conn-cancel").classList.remove("hidden");
+    $("#conn-cancel").classList.remove("hidden");
     connForm.scrollIntoView({ behavior: "smooth" });
-    return;
-  }
-  connForm.id.value = k.id; setSecretHints(true);
-  $(`input[name=type][value=${k.type}]`, connForm).checked = true;
-  $$("input[name=type]", connForm).forEach((r) => (r.disabled = true));
-  showConnFields();
-  connForm.name.value = k.name;
-  for (const [key, val] of Object.entries(k.config)) {
-    const input = $(`.conn-fields[data-for=${k.type}] input[name=${key}]`, connForm);
-    if (input) input.value = val;
-  }
-  connForm.company_wide.checked = k.company_wide; connForm.enabled.checked = k.enabled;
-  deptChecks("#conn-depts", "cdept", k.departments.map((d) => d.id));
-  $("#conn-form-title").textContent = `Edit ${k.name}`; $("#conn-cancel").classList.remove("hidden");
-  connForm.scrollIntoView({ behavior: "smooth" });
+  });
 }
-$("#conn-cancel").addEventListener("click", resetConnForm);
-$("#refresh-conns").addEventListener("click", refreshConnTable);
+$("#conn-cancel").addEventListener("click", () => { editing = false; resetConnForm(); });
 $("#conn-test").addEventListener("click", async () => {
   $("#conn-error").textContent = ""; $("#conn-ok").textContent = "Testing…";
   try {
-    const body = connBody();
-    if (connForm.id.value && !body.config.password && !body.config.url) { $("#conn-ok").textContent = "Saved password is kept; press Save to re-check it."; return; }
-    const r = await (await api("/api/connectors/test", { method: "POST", json: body })).json();
+    const r = await (await api("/api/connectors/test", { method: "POST", json: connBody() })).json();
     $("#conn-ok").textContent = "✓ Connected successfully.";
     if (r.folders.length) $("#imap-folders").textContent = "Folders in this mailbox: " + r.folders.join(", ");
   } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
@@ -390,11 +535,40 @@ connForm.addEventListener("submit", async (e) => {
   try {
     const id = connForm.id.value;
     await api(id ? `/api/connectors/${id}` : "/api/connectors", { method: id ? "PUT" : "POST", json: connBody() });
-    resetConnForm(); $("#conn-ok").textContent = "✓ Saved. Importing now – watch the progress in Connected sources below.";
-    refreshConnTable();
+    editing = false; resetConnForm(); $("#conn-ok").textContent = "✓ Saved. Importing now – see the status above.";
+    refreshConnections();
   } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
   btn.disabled = false;
 });
+
+// ---------- Loading and refreshing
+async function loadConns() {
+  await refreshDepartments();
+  try { oauthState = await getJSON("/api/oauth/status"); } catch {}
+  editing = false;
+  $$(".pc-connect").forEach((el) => (el.innerHTML = ""));
+  $("#web-visibility").innerHTML = visibilityEditor("web", [], true);
+  resetConnForm();
+  await refreshConnections();
+}
+
+async function refreshConnections() {
+  clearTimeout(connPoll);
+  conns = await getJSON("/api/connectors");
+  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawWebsites(); drawManual(); }
+  await drawSummary();
+  const busy = conns.some((k) => k.syncing || !k.last_sync || k.indexing);
+  if (busy || editing)
+    connPoll = setTimeout(() => { if (!$("#sub-conns").classList.contains("hidden")) refreshConnections(); }, 4000);
+}
+
+function showConnectedNotice(count) {
+  $("#conn-notice").innerHTML = `<b>✓ Account connected.</b> KnowledgeDesk is importing it now – watch each item below change from
+    <span class="st st-busy">⏳ Importing</span> to <span class="st st-ok">✓ searchable</span>. You can already
+    <button class="link" id="notice-ask">ask questions</button> about anything that's searchable.`;
+  $("#conn-notice").classList.remove("hidden");
+  $("#notice-ask").onclick = () => $("button[data-view=chat]").click();
+}
 
 // ------------------------------------------------------------------ admin: departments
 async function loadDepts() {

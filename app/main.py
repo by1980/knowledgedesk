@@ -181,6 +181,31 @@ def feedback(qid: int, body: FeedbackIn, user: dict = Depends(auth.current_user)
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- what can be searched
+
+@app.get("/api/overview")
+def overview(user: dict = Depends(auth.current_user)):
+    is_admin = user["role"] == "admin"
+    dept_ids = [d["id"] for d in user["departments"]]
+    with conn() as c:
+        rows = c.execute(
+            "SELECT d.kind, d.source, d.status, count(*) AS n FROM documents d "
+            "WHERE %s OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
+            "  WHERE dd.document_id=d.id AND dd.department_id = ANY(%s)) "
+            "GROUP BY d.kind, d.source, d.status",
+            (is_admin, dept_ids),
+        ).fetchall()
+    ready: dict[str, int] = {}
+    importing = 0
+    for r in rows:
+        if r["status"] == "ready":
+            key = "files" if r["kind"] == "file" and r["source"] == "connector" else r["kind"]
+            ready[key] = ready.get(key, 0) + r["n"]
+        elif r["status"] in ("pending", "processing"):
+            importing += r["n"]
+    return {"ready": ready, "total": sum(ready.values()), "importing": importing}
+
+
 # ---------------------------------------------------------------- departments
 
 @app.get("/api/departments")
@@ -471,8 +496,10 @@ def _check_connector(body: ConnectorIn, old_config: dict | None = None) -> dict:
                 raise HTTPException(400, "Missing calendar link")
             calendar_ics.events_by_month(calendar_ics.fetch(connector_base.decrypt(cfg["url"])))
         elif body.type == "website":
-            if not cfg.get("url"):
-                raise HTTPException(400, "Missing website address")
+            from .connectors import website as website_connector
+
+            cfg["url"] = website_connector.start_url(cfg.get("url", ""))
+            website_connector.check(cfg["url"])
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001 - show the admin why the connection failed
@@ -563,7 +590,9 @@ def update_connector(cid: int, body: ConnectorIn, _: dict = Depends(auth.admin_u
         c.execute("UPDATE connectors SET name=%s, config=%s, company_wide=%s, enabled=%s WHERE id=%s",
                   (body.name.strip(), json.dumps(cfg), body.company_wide, body.enabled, cid))
         _save_connector_departments(c, cid, body.department_ids)
-    _sync_in_background(cid)
+        connector_runner.apply_visibility(c, cid, body.company_wide)  # takes effect right away, no re-import
+    if body.type not in connector_runner.OAUTH_TYPES:
+        _sync_in_background(cid)  # address/password may have changed: check and import again
     return {"ok": True}
 
 

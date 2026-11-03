@@ -301,3 +301,62 @@ def test_connectors_admin_only(client):
     client.post("/api/users", headers=admin, json={"email": "member@test.local", "password": "password-123"})
     member = login(client, "member@test.local", "password-123")
     assert client.get("/api/connectors", headers=member).status_code == 403
+
+
+# ------------------------------------------------------------------ website reader details
+
+def _site_client(pages: dict, status: dict | None = None):
+    import httpx
+
+    def handler(request):
+        url = str(request.url)
+        if url.rstrip("/") == "https://acme.example":  # bare domain redirects to www
+            return httpx.Response(301, headers={"location": "https://www.acme.example/"})
+        path = request.url.path.rstrip("/") or "/"
+        if status and path in status:
+            return httpx.Response(status[path])
+        if path in pages:
+            ctype = "application/xml" if path.endswith(".xml") else "text/html; charset=utf-8"
+            return httpx.Response(200, text=pages[path], headers={"content-type": ctype})
+        return httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+
+def test_website_follows_www_redirect_and_sitemap():
+    from app.connectors.website import crawl
+
+    pages = {
+        "/": '<html><title>Acme</title><body><a href="/about/">About</a><a href="https://www.acme.example/?utm_source=x">Home</a>'
+             "<p>Acme builds sales engines for B2B companies.</p></body></html>",
+        "/about": "<html><title>About</title><body><p>Founded by Dana in 2015 in Tel Aviv.</p></body></html>",
+        "/hidden-pricing": "<html><title>Pricing</title><body><p>Packages start at 5,000 NIS per month.</p></body></html>",
+        "/sitemap.xml": "<urlset><url><loc>https://www.acme.example/hidden-pricing</loc></url></urlset>",
+    }
+    result = crawl("acme.example", client=_site_client(pages))
+    assert set(result) == {"https://www.acme.example", "https://www.acme.example/about", "https://www.acme.example/hidden-pricing"}
+
+
+def test_website_clear_errors():
+    from app.connectors.website import WebsiteError, crawl
+
+    with pytest.raises(WebsiteError, match="refused"):
+        crawl("https://www.acme.example", client=_site_client({}, {"/": 403}))
+    with pytest.raises(WebsiteError, match="JavaScript"):
+        crawl("https://www.acme.example", client=_site_client({"/": '<html><body><div id="root"></div><script>app()</script></body></html>'}))
+    with pytest.raises(WebsiteError, match="doesn't look like"):
+        crawl("hello")
+
+
+def test_overview_counts_only_what_user_can_see(client):
+    admin = login(client, "admin@test.local", "admin-pass-123")
+    secret_dept = client.post("/api/departments", headers=admin, json={"name": "Board"}).json()["id"]
+    client.post("/api/documents", headers=admin, data={"department_ids": str(secret_dept)},
+                files={"files": ("board-notes.txt", b"Board meeting notes: plan to open a Haifa branch.", "text/plain")})
+    process_pending()
+    o = client.get("/api/overview", headers=admin).json()
+    assert o["total"] > 0 and o["ready"].get("web", 0) >= 1
+    client.post("/api/users", headers=admin, json={"email": "nodept@test.local", "password": "password-123"})
+    nobody = login(client, "nodept@test.local", "password-123")
+    mine = client.get("/api/overview", headers=nobody).json()
+    assert mine["total"] < o["total"]  # department-only items are not counted for someone outside those departments

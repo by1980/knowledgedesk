@@ -61,18 +61,21 @@ def _sync(connector_id: int) -> dict:
             if isinstance(e, psycopg.Error):
                 c.rollback()  # only the last few unsaved items are lost; earlier batches were committed
         queued = s.queued
-        # Keep every document's visibility in line with the connector's departments.
-        c.execute("UPDATE documents SET company_wide=%s WHERE connector_id=%s",
-                  (connector["company_wide"], connector_id))
-        c.execute("DELETE FROM document_departments WHERE document_id IN "
-                  "(SELECT id FROM documents WHERE connector_id=%s)", (connector_id,))
-        c.execute("INSERT INTO document_departments(document_id, department_id) "
-                  "SELECT d.id, cd.department_id FROM documents d JOIN connector_departments cd "
-                  "ON cd.connector_id=d.connector_id WHERE d.connector_id=%s", (connector_id,))
+        apply_visibility(c, connector_id, connector["company_wide"])
         c.execute("UPDATE connectors SET state=%s, last_sync=now(), last_error=%s, last_note=%s WHERE id=%s",
                   (json.dumps(connector["state"]), error, s.note(), connector_id))
     log.info("Synced %s: %d new or changed items%s", connector["name"], queued, f" (stopped: {error})" if error else "")
     return {"queued": queued, "error": error}
+
+
+def apply_visibility(c, connector_id: int, company_wide: bool) -> None:
+    """Make every item from this source visible to exactly the source's departments."""
+    c.execute("UPDATE documents SET company_wide=%s WHERE connector_id=%s", (company_wide, connector_id))
+    c.execute("DELETE FROM document_departments WHERE document_id IN "
+              "(SELECT id FROM documents WHERE connector_id=%s)", (connector_id,))
+    c.execute("INSERT INTO document_departments(document_id, department_id) "
+              "SELECT d.id, cd.department_id FROM documents d JOIN connector_departments cd "
+              "ON cd.connector_id=d.connector_id WHERE d.connector_id=%s", (connector_id,))
 
 
 def friendly_error(e: Exception) -> str:
@@ -82,7 +85,7 @@ def friendly_error(e: Exception) -> str:
         return ("The provider is limiting how fast we can read. Everything imported so far is kept, "
                 "and the rest continues automatically at the next sync.")
     if "revoked" in low or "invalid_grant" in low or text.startswith("401"):
-        return "Access was removed or expired. Click Remove, then connect the account again."
+        return "Access to this account was lost or expired. Click Disconnect, then connect the account again."
     return text[:500]
 
 
