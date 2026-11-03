@@ -41,7 +41,7 @@ class Settings:
     sources_dir = Path(_env("SOURCES_DIR", "/data/sources"))
     uploads_dir = Path(_env("UPLOADS_DIR", "/data/uploads"))
     scan_interval_seconds = int(_env("SCAN_INTERVAL_SECONDS", "300"))
-    connector_sync_minutes = int(_env("CONNECTOR_SYNC_MINUTES", "30"))
+    connector_sync_minutes = int(_env("CONNECTOR_SYNC_MINUTES", "10"))
 
     # Retrieval
     chunk_chars = int(_env("CHUNK_CHARS", "1500"))

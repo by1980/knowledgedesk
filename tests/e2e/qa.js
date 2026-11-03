@@ -38,11 +38,13 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.fill("input[name=password]", "admin-pass-123"); await page.click("#login-form button");
   await page.waitForSelector("#app-view:not(.hidden)");
   check("Admin lands on Home", /#home|\/$/.test(page.url()) && await page.isVisible("#page-home"));
-  check("Admin menu has all six pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Activity,Settings");
+  check("Admin menu has all six pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Activity,Health,Settings");
 
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
   check("Home shows the setup checklist (0 of 3)", (await text("#home-setup")).includes("0 of 3 done"));
+  check("Home: key numbers shown", /Searchable items[\s\S]*New today[\s\S]*Questions this week[\s\S]*Answered well/.test(await text("#home-kpis")));
+  check("Home: empty chart explains itself", /No questions yet/.test(await text("#home-q-chart")));
   check("Home says what needs attention", /Connected sources|Nothing connected/.test(await text("#home-health")));
   await shot("home-first-use");
 
@@ -258,9 +260,14 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Ask: answer cites the right email", /Levi Gardens/.test(answer) && /Sources/.test(answer), answer.slice(0, 300));
   await page.click(".msg.bot .feedback button[data-v='-1']");
   check("Feedback is confirmed", await toastSeen(/Thanks/));
+  check("Ask: 'Search in' lists the kinds of sources that exist", await page.evaluate(() =>
+    [...document.querySelectorAll("#scope-filter option")].map((o) => o.textContent).join(",")).then((t) => /Emails/.test(t) && /Calendar/.test(t) && /Slack/.test(t)));
+  await page.selectOption("#scope-filter", "kind:calendar");
   await page.fill("#question", "When is the supplier visit?"); await page.press("#question", "Enter");
   await until(async () => (await page.$$(".msg.bot .feedback")).length === 2, 30000, 300);
   check("Ask: calendar question finds the calendar", /Calendar|Supplier visit/.test(await text(".msg.bot:last-of-type")));
+  check("Ask: 'Calendar only' searched only the calendar", !/Email:/.test(await text(".msg.bot:last-of-type .sources")));
+  await page.selectOption("#scope-filter", "");
   await shot("ask-answers");
 
   // ------------------------------------------------------------------ 11. A team member only sees what they're allowed to
@@ -292,18 +299,32 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
   await until(async () => /Everything is working|need your attention|Almost ready/.test(await text("#home-health")), 10000, 300);
   check("Home: setup checklist complete (hidden)", (await text("#home-setup")).trim() === "");
+  check("Home: questions-per-day chart drawn", await until(async () => (await page.$$("#home-q-chart svg path, #home-q-chart svg rect:not(.hit)")).length > 0, 5000, 300));
+  check("Home: questions by person shows who asked", /Administrator/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
+  check("Home: 'Always learning' lists live sources with their last new item", /Always learning/.test(await text("#home-learning")) &&
+    /Gmail[\s\S]*Live/.test(await text("#home-learning")) && /Last new item/.test(await text("#home-learning")));
+  await page.hover("#home-q-chart .hit >> nth=-1");
+  check("Home: hovering a day shows its numbers", await until(async () => /Answered/.test(await page.textContent("#viz-tip")), 3000, 200));
   await shot("home-after-setup");
   await page.click("#nav a[data-page=activity]");
   await page.check("#q-gaps");
   check("Activity: the 👎 question is listed as a gap", /Levi Gardens/.test(await text("#q-list")));
   await shot("activity");
-  await page.click("#nav a[data-page=settings]");
+  await page.click("#nav a[data-page=health]");
   await until(async () => /Claude/.test(await text("#health-list")), 15000, 300);
   const health = await text("#health-list");
   check("Health: every check is listed in plain words", /AI answers/.test(health) && /Search engine/.test(health) && /Connected sources/.test(health));
   check("Health: sources reported as working", /all working/.test(health), health);
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#health-download")]);
   check("Health: report can be downloaded", /knowledgedesk-health/.test(download.suggestedFilename()));
+  await page.click("#nav a[data-page=settings]");
+  check("Settings: company card, Claude key and plan", await until(async () => await page.isVisible("#company-form") && await page.isVisible("#ai-form")
+    && /Plan and billing/.test(await text("#plan-card")) && (await page.inputValue("#company-form input[name=name]")) !== "", 8000, 200));
+  await page.fill("#company-form input[name=name]", "Acme Plumbing Ltd");
+  await page.fill("#company-form input[name=website]", `${SIM}/site/`);
+  await page.click("#company-form button[type=submit]");
+  check("Settings: the logo is found on the company website", await until(async () => await page.isVisible("#company-logo") && await page.isVisible("#logo-preview img"), 15000, 300));
+  check("Sidebar: logo links to the company website", (await page.getAttribute("#company-link", "href")) === `${SIM}/site/`);
   await page.fill("#ai-form input[name=key]", "hello"); await page.click("#ai-form button");
   check("Claude API key: a wrong key gets a clear message", await until(async () => /doesn.t look like a Claude API key \(received: 5 characters\)/.test(await text("#ai-error")), 5000, 200));
   await shot("settings");
@@ -319,7 +340,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 14. Phone layout
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ["home", "ask", "sources", "people", "activity", "settings"]) {
+  for (const p of ["home", "ask", "sources", "people", "activity", "health", "settings"]) {
     await page.click(`#nav a[data-page=${p}]`); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
     const emojis = await emojisOnPage();

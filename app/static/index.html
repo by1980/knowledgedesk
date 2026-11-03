@@ -60,7 +60,10 @@
   <section id="app-view" class="hidden">
     <aside class="sidebar">
       <a class="brand-mark" href="#home"><span class="logo-tile"></span><b>KnowledgeDesk</b></a>
-      <div class="company muted small" id="company-name"></div>
+      <a class="company-block" id="company-link" target="_blank" rel="noopener" title="Open the company website">
+        <img id="company-logo" class="hidden" alt="">
+        <span id="company-name"></span>
+      </a>
       <nav id="nav" aria-label="Main"></nav>
       <div class="sidebar-foot">
         <button id="user-name" class="side-user" title="My account"></button>
@@ -74,19 +77,24 @@
 
       <!-- ---------------------------------------------------------- Home -->
       <main id="page-home" class="page hidden">
-        <div class="page-head"><div><h1 id="home-title">Home</h1><p class="muted">Your company's knowledge at a glance.</p></div></div>
+        <div class="page-head"><div><h1 id="home-title">Home</h1><p class="muted">Your company's knowledge at a glance.</p></div>
+          <label class="period">Period <select id="home-days"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select></label></div>
         <div id="home-health"></div>
         <div id="home-setup"></div>
+        <div class="kpis" id="home-kpis"></div>
+        <div class="card"><div class="toolbar"><div><h2>Questions per day</h2><p class="muted small" id="q-chart-sub"></p></div></div>
+          <div id="home-q-chart"></div></div>
         <div class="grid2">
-          <div class="card" id="home-kb"></div>
-          <div class="card" id="home-activity"></div>
+          <div class="card"><h2>Questions by department</h2><div id="home-by-dept"></div></div>
+          <div class="card"><h2>Questions by person</h2><div id="home-by-person"></div></div>
         </div>
+        <div class="card" id="home-learning"></div>
       </main>
 
       <!-- ---------------------------------------------------------- Ask -->
       <main id="page-ask" class="page page-ask hidden">
         <div class="ask-head">
-          <label class="scope">Search in <select id="dept-filter"><option value="">Everything I can see</option></select></label>
+          <label class="scope" id="scope-label">Search in <select id="scope-filter"></select></label>
           <button id="new-chat" class="btn"><svg class="ic"><use href="#i-plus"/></svg>New conversation</button>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
@@ -282,14 +290,33 @@
       </main>
 
       <!-- ---------------------------------------------------------- Settings -->
-      <main id="page-settings" class="page hidden">
-        <div class="page-head"><div><h1>Settings</h1></div></div>
+      <main id="page-health" class="page hidden">
+        <div class="page-head"><div><h1>Health</h1><p class="muted">Is everything working? Each part of KnowledgeDesk, checked live.</p></div></div>
         <div class="card" id="health-card">
           <div class="toolbar"><h2>Health check</h2>
             <span class="row tight"><button class="btn" id="health-refresh"><svg class="ic"><use href="#i-refresh"/></svg>Check again</button>
               <button class="btn" id="health-download">Download report</button></span></div>
           <div id="health-list"></div>
           <details id="problems"><summary class="muted small">Recent problems</summary><div id="problem-list"></div></details>
+        </div>
+      </main>
+
+      <main id="page-settings" class="page hidden">
+        <div class="page-head"><div><h1>Settings</h1></div></div>
+        <div class="card" id="company-card">
+          <h2>Company</h2>
+          <form id="company-form">
+            <div class="grid3">
+              <label>Company name <input name="name" dir="auto" required></label>
+              <label class="span2">Website <input name="website" placeholder="www.yourcompany.com" dir="ltr"></label>
+            </div>
+            <span class="label">Logo</span>
+            <div class="logo-row"><div class="logo-preview" id="logo-preview"></div>
+              <div class="row tight"><button class="btn" type="button" id="logo-find">Get it from the website</button>
+                <label class="btn" style="margin:0">Upload a logo<input type="file" id="logo-file" accept=".png,.jpg,.jpeg,.svg,.webp,.gif" hidden></label></div></div>
+            <div class="row"><button class="btn primary" type="submit">Save</button></div>
+            <p class="error" id="company-error" role="alert"></p>
+          </form>
         </div>
         <div class="card" id="ai-card">
           <div class="toolbar"><h2>Claude API key</h2><span id="ai-state"></span></div>
@@ -298,6 +325,11 @@
             spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" aria-label="Claude API key">
             <button class="btn primary" type="submit">Save and test</button></form>
           <p class="error" id="ai-error" role="alert"></p>
+        </div>
+        <div class="card" id="plan-card">
+          <div class="toolbar"><h2>Plan and billing</h2><span class="badge info">Self-hosted</span></div>
+          <p class="muted">This installation runs on your own computer, so there's no subscription to manage here. When KnowledgeDesk is offered
+            online, your plan, monthly billing and AI usage will be managed on this page.</p>
         </div>
       </main>
     </div>

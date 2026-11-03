@@ -236,11 +236,22 @@ def meta_object(object_id: str, request: Request):
 
 # ---------------------------------------------------------------- a small company website
 SITE = {
-    "": ("Acme Plumbing – Haifa", '<a href="/site/services">Services</a> <a href="/site/about/">About</a>'
+    "": ("Acme Plumbing – Haifa", '<a href="/site/"><img src="/site/logo.png" alt="Acme logo"></a><a href="/site/services">Services</a> <a href="/site/about/">About</a>'
          "<p>Acme Plumbing is a family plumbing company serving Haifa and the Krayot since 1998.</p>"),
     "services": ("Services", "<p>Emergency service 24/7: call 1-700-555-555. We fix leaks, burst pipes and boilers.</p>"),
     "about": ("About us", "<p>Founded by Moshe Cohen. 12 technicians, 3 vans, licensed by the Ministry of Labor.</p>"),
 }
+
+
+@app.get("/site/logo.png")
+def site_logo():
+    from PIL import Image, ImageDraw
+
+    im = Image.new("RGBA", (120, 40), (0, 0, 0, 0))
+    ImageDraw.Draw(im).rectangle([4, 8, 116, 32], fill=(20, 60, 160, 255))
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return Response(buf.getvalue(), media_type="image/png")
 
 
 @app.get("/site/{page:path}")

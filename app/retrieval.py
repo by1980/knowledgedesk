@@ -18,6 +18,7 @@ _ACCESS = """
             WHERE dd.document_id = d.id AND dd.department_id = ANY(%(user_depts)s)
         )
     )
+    AND (%(kinds)s::text[] IS NULL OR d.kind = ANY(%(kinds)s))
     AND (
         %(only_dept)s::int IS NULL
         OR (%(include_company)s AND d.company_wide)
@@ -73,7 +74,7 @@ def _keyword_query(text: str) -> str:
 
 
 def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: int | None = None,
-           include_company: bool = True, k: int | None = None) -> list[dict]:
+           include_company: bool = True, k: int | None = None, kinds: list[str] | None = None) -> list[dict]:
     params = {
         "qvec": embeddings.embed_query(question),
         "tsq": _keyword_query(question),
@@ -81,6 +82,7 @@ def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: i
         "user_depts": user_depts,
         "only_dept": only_dept,
         "include_company": include_company,
+        "kinds": kinds or None,
         "k": k or settings.top_k,
     }
     with conn() as c:

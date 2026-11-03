@@ -120,7 +120,7 @@ function docBadge(d) {
 
 // ================================================================== start, login, navigation
 const ADMIN_PAGES = [["home", "Home", "home"], ["ask", "Ask", "ask"], ["sources", "Sources", "sources"], ["people", "People", "people"],
-  ["activity", "Activity", "activity"], ["settings", "Settings", "settings"]];
+  ["activity", "Activity", "activity"], ["health", "Health", "check"], ["settings", "Settings", "settings"]];
 const MEMBER_PAGES = [["ask", "Ask", "ask"], ["library", "Library", "library"]];
 const LOADERS = {};
 
@@ -131,7 +131,7 @@ function initials(name) { return (name || "?").split(/\s+/).filter(Boolean).slic
 async function boot() {
   try { appStatus = await (await fetch("/api/status")).json(); } catch { appStatus = { company: "", license: {} }; }
   $("#login-company").textContent = appStatus.company || "";
-  $("#company-name").textContent = appStatus.company || "";
+  drawBrand();
   $("#app-version").textContent = appStatus.version ? `Version ${appStatus.version}` : "";
   if (!token) return showView("#login-view");
   try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
@@ -148,6 +148,14 @@ async function boot() {
     toast("Account connected. Importing now – you can follow the progress on this page.");
   }
   route();
+}
+function drawBrand() {
+  $("#company-name").textContent = appStatus.company || "";
+  const logo = $("#company-logo");
+  logo.classList.toggle("hidden", !appStatus.logo);
+  if (appStatus.logo) { logo.src = appStatus.logo; logo.alt = appStatus.company || "Company logo"; logo.className = `tone-${appStatus.logo_tone || "dark"}`; }
+  const link = $("#company-link");
+  if (appStatus.website) link.href = appStatus.website; else link.removeAttribute("href");
 }
 function updateBanner() {
   const lic = appStatus.license || {};
@@ -201,28 +209,93 @@ $("#user-name").addEventListener("click", () => {
   };
 });
 
+// ================================================================== charts
+const tip = Object.assign(document.createElement("div"), { id: "viz-tip" });
+document.body.append(tip);
+document.addEventListener("mouseover", (e) => {
+  const hit = e.target.closest?.(".hit");
+  document.querySelectorAll(".hover-band.on").forEach((b) => b.classList.remove("on"));
+  if (hit) hit.closest("svg").querySelector(`[data-band="${hit.dataset.i}"]`)?.classList.add("on");
+});
+document.addEventListener("mousemove", (e) => {
+  const t = e.target.closest?.("[data-tip]");
+  if (!t) { tip.style.display = "none"; return; }
+  tip.innerHTML = t.dataset.tip;
+  tip.style.display = "block";
+  const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+  tip.style.left = `${x}px`; tip.style.top = `${e.clientY + 14}px`;
+});
+function niceMax(v) {
+  if (v <= 4) return 4;
+  const p = 10 ** Math.floor(Math.log10(v)); const m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+}
+const shortDay = (d) => new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+// Columns, optionally stacked. series: [{ key, label, color }], bottom first.
+function columnChart(rows, series, { height = 190, title = "" } = {}) {
+  const W = 760, H = height, L = 34, R = 6, T = 8, B = 24;
+  const totals = rows.map((r) => series.reduce((a, sr) => a + (r[sr.key] || 0), 0));
+  const max = niceMax(Math.max(...totals, 1));
+  const band = (W - L - R) / rows.length, bw = Math.max(2, Math.min(24, band * 0.62));
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const ticks = [0, max / 2, max];
+  const every = Math.ceil(rows.length / 8);
+  let bars = "", hits = "", xs = "", bands = "";
+  rows.forEach((r, i) => {
+    const x = L + band * i + (band - bw) / 2;
+    let base = 0;
+    const live = series.filter((sr) => r[sr.key] > 0);
+    live.forEach((sr, j) => {
+      const v = r[sr.key];
+      const y0 = y(base), y1 = y(base + v) + (j ? 2 : 0); // 2px surface gap between stacked segments
+      const h = Math.max(0, y0 - y1);
+      const top = j === live.length - 1, rr = Math.min(4, h, bw / 2);
+      bars += top ? `<path d="M${x},${y0}V${y1 + rr}Q${x},${y1} ${x + rr},${y1}H${x + bw - rr}Q${x + bw},${y1} ${x + bw},${y1 + rr}V${y0}Z" fill="var(${sr.color})"/>`
+        : `<rect x="${x}" y="${y1}" width="${bw}" height="${h}" fill="var(${sr.color})"/>`;
+      base += v;
+    });
+    const tipHtml = `<b>${esc(shortDay(r.day))}</b>` + series.map((sr) => `<div><i style="background:var(${sr.color})"></i>${esc(sr.label)}: ${num(r[sr.key])}</div>`).join("");
+    bands += `<rect class="hover-band" data-band="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
+    hits += `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}" data-tip="${esc(tipHtml)}"/>`;
+    // label every few days, counted back from today so the latest day is always labeled and labels never collide
+    if ((rows.length - 1 - i) % every === 0) xs += `<text x="${L + band * i + band / 2}" y="${H - 6}" text-anchor="middle">${esc(shortDay(r.day))}</text>`;
+  });
+  const grid = ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/>`).join("");
+  const yl = ticks.map((t) => `<text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${num(t)}</text>`).join("");
+  const legend = series.length > 1 ? `<div class="legend">${series.map((sr) => `<span><i style="background:var(${sr.color})"></i>${esc(sr.label)}</span>`).join("")}</div>` : "";
+  const table = `<details class="viz-table"><summary>View as table</summary><table><tr><th>Day</th>${series.map((sr) => `<th>${esc(sr.label)}</th>`).join("")}</tr>
+    ${rows.map((r) => `<tr><td>${esc(shortDay(r.day))}</td>${series.map((sr) => `<td>${num(r[sr.key])}</td>`).join("")}</tr>`).join("")}</table></details>`;
+  return `<div class="viz">${legend}<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}"><g class="grid">${grid}</g>
+    <g class="axis">${yl}${xs}</g>${bands}${bars}${hits}</svg>${table}</div>`;
+}
+function hbarChart(rows, empty) {
+  if (!rows.length) return `<div class="empty">${esc(empty)}</div>`;
+  const max = Math.max(...rows.map((r) => r.n), 1);
+  return `<div class="viz"><div class="hbars">${rows.map((r) => `<span class="name" title="${esc(r.name)}">${esc(r.name)}</span>
+    <span class="track"><span class="bar" style="display:block;width:${(r.n / max) * 100}%" data-tip="${esc(`<b>${esc(r.name)}</b>${plural(r.n, "question", "questions")}`)}"></span></span>
+    <span class="val">${num(r.n)}</span>`).join("")}</div></div>`;
+}
+
 // ================================================================== Home (admins)
 LOADERS.home = async function loadHome() {
   const first = (me.name || "").split(" ")[0];
   $("#home-title").textContent = first ? `Hi ${first}` : "Home";
-  const [setup, health, overview] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health"), getJSON("/api/overview")]);
+  const days = Number($("#home-days").value);
+  const [setup, health, a] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health"), getJSON(`/api/admin/analytics?days=${days}`)]);
 
   const issues = health.checks.filter((c) => !["ok", "info"].includes(c.state));
   const bad = issues.some((c) => c.state === "bad");
-  $("#home-health").innerHTML = !issues.length
-    ? `<div class="health-banner ok">${ic("check")}<b>Everything is working.</b></div>`
-    : `<div class="health-banner ${bad ? "bad" : "warn"}">${ic(bad ? "error" : "clock")}<div>
-        <b>${bad ? "Some things need your attention" : "Almost ready"}</b>
-        <ul>${issues.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul>
-        <a href="#settings">Open the health check</a></div></div>`;
+  $("#home-health").innerHTML = !issues.length ? "" : `<div class="health-banner ${bad ? "bad" : "warn"}">${ic(bad ? "error" : "clock")}<div>
+      <b>${bad ? "Some things need your attention" : "Almost ready"}</b>
+      <ul>${issues.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul>
+      <a href="#health">Open Health</a></div></div>`;
 
   const steps = [
-    [setup.has_sources, "Connect your company's information", "Email, calendar, Drive, your website, documents.", "#sources", "Connect sources"],
+    [setup.has_sources, "Connect your company's information", "Email, calendar, Drive, Slack, your website, documents.", "#sources", "Connect sources"],
     [setup.has_team, "Add your team", "Create departments and add the people who will ask questions.", "#people", "Add people"],
     [setup.has_asked, "Ask your first question", "See how KnowledgeDesk answers from your own information.", "#ask", "Ask a question"],
   ];
-  const done = steps.filter((s) => s[0]).length;
-  const nextIndex = steps.findIndex((s) => !s[0]);
+  const done = steps.filter((x) => x[0]).length, nextIndex = steps.findIndex((x) => !x[0]);
   $("#home-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
       <span class="muted small">${done} of ${steps.length} done</span></div>
     <ol class="steps">${steps.map(([ok, title, text, href, label], i) => `<li class="${ok ? "done" : ""}">
@@ -230,16 +303,52 @@ LOADERS.home = async function loadHome() {
       <div><div class="step-title"><b>${title}</b></div><div class="muted small">${text}</div></div>
       ${ok ? badge("ok", "Done") : `<a class="btn ${nextIndex === i ? "primary" : ""}" href="${href}">${label}</a>`}</li>`).join("")}</ol></div>`;
 
-  $("#home-kb").innerHTML = `<h2>What can be searched</h2>
-    ${overview.total ? `<div class="chips">${knowledgeChips(overview.ready)}</div>` : '<p class="muted">Nothing yet.</p>'}
-    ${overview.importing ? `<p class="status-detail">${badge("busy", "Preparing for search")} ${plural(overview.importing, "item", "items")} in line${overview.eta ? `, about ${esc(overview.eta)} left` : ""}.</p>` : ""}
-    <div class="row">${overview.total ? '<a class="btn primary" href="#ask">Ask a question</a>' : ""}<a class="btn" href="#sources">Manage sources</a></div>`;
-  $("#home-activity").innerHTML = `<h2>Questions</h2>
-    <div class="grid2"><div><div class="big-number">${num(setup.questions_week)}</div><div class="muted small">asked this week</div></div>
-    <div><div class="big-number">${num(setup.gaps)}</div><div class="muted small">without a good answer (30 days)</div></div></div>
-    <div class="row"><a class="btn" href="#activity">See all questions</a></div>`;
-  if (overview.importing || issues.some((c) => c.state === "busy")) poll(LOADERS.home, 8000);
+  const t = a.totals;
+  const rate = t.asked_period ? Math.round((t.answered_period / t.asked_period) * 100) : null;
+  $("#home-kpis").innerHTML = [
+    ["Searchable items", num(t.searchable), `${num(t.added_week)} added this week`],
+    ["New today", num(t.added_today), "emails, files, messages and pages"],
+    ["Questions this week", num(t.asked_week), `${num(t.asked_period)} in the last ${days} days`],
+    ["Answered well", rate == null ? "–" : `${rate}%`, rate == null ? "no questions yet" : "found an answer and no thumbs-down"],
+  ].map(([label, value, sub]) => `<div class="kpi"><div class="label">${label}</div><div class="big-number">${value}</div><div class="sub">${sub}</div></div>`).join("");
+
+  const qRows = a.per_day.map((r) => ({ day: r.day, answered: r.asked - r.unanswered, unanswered: r.unanswered }));
+  $("#q-chart-sub").textContent = `${num(t.asked_period)} questions in the last ${days} days`;
+  $("#home-q-chart").innerHTML = t.asked_period ? columnChart(qRows, [
+    { key: "answered", label: "Answered", color: "--series-1" }, { key: "unanswered", label: "No answer or not helpful", color: "--series-2" }],
+    { title: "Questions per day" }) : '<div class="empty">No questions yet. Once people start asking, you\'ll see the trend here.</div>';
+  $("#home-by-dept").innerHTML = hbarChart(a.by_department, "No questions yet.");
+  $("#home-by-person").innerHTML = hbarChart(a.by_person, "No questions yet.");
+  drawLearning(a);
+  if (issues.some((c) => c.state === "busy")) poll(LOADERS.home, 15000);
 };
+$("#home-days").addEventListener("change", () => LOADERS.home());
+
+const LEARN_LABEL = { gmail: "Gmail", gcal: "Google Calendar", gdrive: "Google Drive", ms_mail: "Outlook mail", ms_cal: "Outlook calendar",
+  ms_drive: "OneDrive", slack: "Slack", website: "Website", whatsapp_business: "WhatsApp Business", imap: "Mailbox", ics: "Calendar" };
+function drawLearning(a) {
+  const t = a.totals;
+  const rows = a.freshness.map((k) => {
+    const [icon] = SERVICE_INFO[k.type] || ["file"];
+    const state = k.last_error ? badge("bad", "Needs attention") : !k.enabled ? badge("", "Paused") : badge("ok", "Live");
+    const next = k.last_sync ? Math.max(0, a.check_every_minutes - Math.round((Date.now() - new Date(k.last_sync)) / 60000)) : 0;
+    return `<div class="learn-row"><span class="icon-tile sm">${ic(icon)}</span>
+      <div><div class="who">${esc(LEARN_LABEL[k.type] || k.name)} ${state}</div>
+        <div class="meta" dir="auto">${esc(k.account || (k.type === "website" ? k.name : ""))}</div></div>
+      <div class="right">${k.last_new ? `Last new item ${ago(k.last_new)}` : "Nothing new yet"}${k.added_today ? ` · <b>${num(k.added_today)}</b> today` : ""}
+        <br>${k.type === "whatsapp_business" ? "Messages arrive instantly" : k.last_sync ? `Checked ${ago(k.last_sync)} · next check ${next ? `in ~${next} min` : "now"}` : "First import running"}</div></div>`;
+  });
+  if (a.uploads.last_new) rows.push(`<div class="learn-row"><span class="icon-tile sm">${ic("upload")}</span>
+      <div><div class="who">Uploaded files ${badge("ok", "Added")}</div><div class="meta">Documents, interviews and chats added by hand</div></div>
+      <div class="right">Last added ${ago(a.uploads.last_new)}${a.uploads.added_today ? ` · <b>${num(a.uploads.added_today)}</b> today` : ""}</div></div>`);
+  $("#home-learning").innerHTML = `<div class="learn-head"><div><h2>Always learning</h2>
+      <p class="muted small" style="margin:0">Every connected source is checked every ${a.check_every_minutes} minutes, and anything new – emails, events, files,
+      messages, pages – is added automatically. Questions without a good answer show you what's still missing.</p></div>
+      <div class="learn-stats"><div><div class="big-number">${num(t.added_today)}</div><div class="muted small">new today</div></div>
+      <div><div class="big-number">${num(t.added_week)}</div><div class="muted small">new this week</div></div></div></div>
+    <div style="margin-top:12px">${rows.join("") || '<div class="empty">Nothing connected yet. <a href="#sources">Connect your first source</a></div>'}</div>
+    ${t.added_week || a.growth.some((g) => g.added) ? `<h3 style="margin:18px 0 8px">New items per day</h3>${columnChart(a.growth, [{ key: "added", label: "New items", color: "--series-1" }], { height: 140, title: "New items per day" })}` : ""}`;
+}
 
 // ================================================================== Ask
 const chat = { history: [], busy: false };
@@ -249,13 +358,19 @@ const EXAMPLES = {
   interview: "How do we handle a new customer order?", whatsapp: "What was decided in the team chat recently?",
   slack: "What was discussed in Slack this week?",
 };
+const SCOPE_KINDS = [["email", "email", "Emails"], ["documents", "file", "Documents and files"], ["calendar", "calendar", "Calendar"],
+  ["slack", "slack", "Slack"], ["whatsapp", "whatsapp", "WhatsApp"], ["web", "web", "Websites"], ["interview", "interview", "Interviews"]];
 LOADERS.ask = async function loadAsk() {
-  if (!$("#dept-filter").dataset.filled) {
-    const mine = me.role === "admin" ? departments : me.departments;
-    $("#dept-filter").innerHTML = `<option value="">Everything I can see</option>` +
-      mine.map((d) => `<option value="${d.id}">${esc(d.name)} only</option>`).join("");
-    $("#dept-filter").dataset.filled = "1";
-  }
+  let o = { ready: {} };
+  try { o = await getJSON("/api/overview"); } catch {}
+  const kinds = SCOPE_KINDS.filter(([key]) => o.ready[key]);
+  const mine = me.role === "admin" ? departments : me.departments;
+  const sel = $("#scope-filter"), current = sel.value;
+  sel.innerHTML = `<option value="">All sources</option>` +
+    (kinds.length > 1 ? `<optgroup label="Only">${kinds.map(([, kind, label]) => `<option value="kind:${kind}">${label}</option>`).join("")}</optgroup>` : "") +
+    (mine.length ? `<optgroup label="Department">${mine.map((d) => `<option value="dept:${d.id}">${esc(d.name)}</option>`).join("")}</optgroup>` : "");
+  if ([...sel.options].some((x) => x.value === current)) sel.value = current;
+  $("#scope-label").classList.toggle("hidden", sel.options.length < 2);
   if (!chat.history.length) await drawWelcome();
   $("#question").focus();
 };
@@ -319,10 +434,11 @@ $("#ask-form").addEventListener("submit", async (e) => {
   qBox.value = ""; qBox.style.height = "auto";
   addMessage("user", esc(question));
   const bot = addMessage("bot", `<div class="thinking"><span class="spinner"></span><span>Searching your company's information…</span></div>`);
-  const dept = $("#dept-filter").value;
+  const scope = $("#scope-filter").value;
   let text = "", sources = [], qid = null, failed = "";
   try {
-    const res = await api("/api/ask", { method: "POST", json: { question, history: chat.history, department_id: dept ? Number(dept) : null } });
+    const res = await api("/api/ask", { method: "POST", json: { question, history: chat.history, department_id: scope.startsWith("dept:") ? Number(scope.slice(5)) : null,
+      kinds: scope.startsWith("kind:") ? [scope.slice(5)] : [] } });
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
     for (;;) {
       const { value, done } = await reader.read();
@@ -1026,9 +1142,46 @@ $("#q-gaps").addEventListener("change", drawQuestions);
 
 // ================================================================== Settings
 let lastHealth = null;
+LOADERS.health = () => drawHealth();
 LOADERS.settings = async function loadSettings() {
-  await Promise.all([drawHealth(), drawAiKey()]);
+  const st = await (await fetch("/api/status")).json();
+  appStatus = { ...appStatus, ...st };
+  const f = $("#company-form");
+  f.name.value = st.company || ""; f.website.value = st.website || "";
+  drawLogoPreview();
+  await drawAiKey();
 };
+function drawLogoPreview() {
+  $("#logo-preview").innerHTML = appStatus.logo ? `<img src="${esc(appStatus.logo)}" class="tone-${esc(appStatus.logo_tone || "dark")}" alt="Logo">` : "No logo yet";
+}
+async function refreshBrand() {
+  appStatus = { ...appStatus, ...(await (await fetch("/api/status")).json()) };
+  drawBrand(); drawLogoPreview();
+}
+$("#company-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = e.target; $("#company-error").textContent = "";
+  busy($("button[type=submit]", f), "Saving…", async () => {
+    try {
+      const r = await (await api("/api/admin/company", { method: "PUT", json: { name: f.name.value, website: f.website.value } })).json();
+      await refreshBrand();
+      toast(r.logo_found === false ? "Saved. No logo was found on the website – you can upload it." : "Saved.");
+    } catch (err) { $("#company-error").textContent = err.message; }
+  });
+});
+$("#logo-find").addEventListener("click", (e) => busy(e.target, "Looking…", async () => {
+  $("#company-error").textContent = "";
+  try { await api("/api/admin/company/logo/find", { method: "POST" }); await refreshBrand(); toast("Logo updated from the website."); }
+  catch (err) { $("#company-error").textContent = err.message; }
+}));
+$("#logo-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const body = new FormData(); body.append("file", file);
+  $("#company-error").textContent = "";
+  try { await api("/api/admin/company/logo", { method: "POST", body }); await refreshBrand(); toast("Logo uploaded."); }
+  catch (err) { $("#company-error").textContent = err.message; }
+  e.target.value = "";
+});
 const HEALTH_ICON = { ok: "check", busy: "clock", warn: "alert", bad: "error", info: "info" };
 async function drawHealth() {
   $("#health-list").innerHTML = '<div class="row tight muted"><span class="spinner"></span> Checking…</div>';

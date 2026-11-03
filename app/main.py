@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, embeddings, license, llm, oauth, retrieval, worker
+from . import auth, branding, embeddings, license, llm, oauth, retrieval, worker
 from .config import settings
 from .connectors import base as connector_base
 from .connectors import calendar_ics, email_imap
@@ -54,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.8"
+APP_VERSION = "0.9"
 
 
 def _ensure_secret_key() -> None:
@@ -80,6 +80,7 @@ def startup() -> None:
         log.info("Merged %d duplicate connected account(s)", merged)
     if settings.run_worker:
         worker.start()
+        threading.Thread(target=branding.ensure_defaults, daemon=True).start()
     log.info("KnowledgeDesk started for %s", settings.company_name)
 
 
@@ -97,7 +98,10 @@ app = FastAPI(title="KnowledgeDesk", lifespan=lifespan)
 @app.get("/api/status")
 def status():
     lic = license.status()
-    return {"company": settings.company_name, "license": lic.__dict__ | {"allows_use": lic.allows_use},
+    b = branding.get()
+    return {"company": b["name"], "website": b["website"],
+            "logo": f"/api/brand/logo?v={b['logo_version']}" if b["logo"] else "", "logo_tone": b["logo_tone"],
+            "license": lic.__dict__ | {"allows_use": lic.allows_use},
             "llm_configured": bool(llm.api_key()) or settings.fake_llm, "version": APP_VERSION}
 
 
@@ -127,6 +131,7 @@ def me(user: dict = Depends(auth.current_user)):
 class AskIn(BaseModel):
     question: str
     department_id: int | None = None
+    kinds: list[str] = []  # limit to some kinds of sources, e.g. ["email"]
     history: list[dict] = []
 
 
@@ -158,7 +163,8 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
         raise HTTPException(403, "You are not a member of that department")
 
     history = _clean_history(body.history)
-    scope = {"is_admin": is_admin, "user_depts": dept_ids, "only_dept": body.department_id}
+    scope = {"is_admin": is_admin, "user_depts": dept_ids, "only_dept": body.department_id,
+             "kinds": [k for k in body.kinds if k in KINDS] or None}
     hits = retrieval.search(question, **scope)
     # A follow-up ("and for VIP customers?") may need the previous question too. The new question
     # always leads; results for "previous + new" only fill in behind it.
@@ -199,6 +205,9 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
         yield json.dumps({"type": "done", "question_id": qid}) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+KINDS = {"email", "file", "calendar", "slack", "whatsapp", "web", "interview"}
 
 
 class FeedbackIn(BaseModel):
@@ -777,6 +786,115 @@ def oauth_callback(state: str = "", code: str = "", error: str = "", error_descr
     for cid in created:
         _sync_in_background(cid)
     return RedirectResponse(f"/?connected={len(created)}#sources", status_code=303)
+
+
+# ---------------------------------------------------------------- company branding
+
+@app.get("/api/brand/logo")
+def brand_logo():
+    path = branding.logo_path()
+    if not path:
+        raise HTTPException(404, "No logo")
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
+
+
+class CompanyIn(BaseModel):
+    name: str
+    website: str = ""
+
+
+@app.put("/api/admin/company")
+def save_company(body: CompanyIn, _: dict = Depends(auth.admin_user)):
+    from .connectors.website import WebsiteError, start_url
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Type the company name.")
+    website = ""
+    if body.website.strip():
+        try:
+            website = start_url(body.website)
+        except WebsiteError as e:
+            raise HTTPException(400, str(e))
+    old = branding.get()
+    branding.save(name=name, website=website)
+    found = None
+    if website and (website != old["website"] or not old["logo"]):
+        try:
+            found = branding.find_logo(website)
+        except Exception:  # noqa: BLE001
+            found = False
+    return {"ok": True, "logo_found": found}
+
+
+@app.post("/api/admin/company/logo")
+def upload_logo(file: UploadFile = File(...), _: dict = Depends(auth.admin_user)):
+    data = file.file.read(branding.MAX_LOGO_BYTES + 1)
+    if len(data) > branding.MAX_LOGO_BYTES:
+        raise HTTPException(400, "The logo must be smaller than 2 MB.")
+    ext = Path(file.filename or "logo.png").suffix
+    if ext.lower() not in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"):
+        raise HTTPException(400, "Use a PNG, JPG, SVG or WEBP image.")
+    branding.store_logo(data, ext)
+    return {"ok": True}
+
+
+@app.post("/api/admin/company/logo/find")
+def refind_logo(_: dict = Depends(auth.admin_user)):
+    website = branding.get()["website"]
+    if not website:
+        raise HTTPException(400, "Add the company website first.")
+    try:
+        found = branding.find_logo(website)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Couldn't read the website: {e}")
+    if not found:
+        raise HTTPException(400, "No logo found on the website. Upload it instead.")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- dashboard numbers
+
+@app.get("/api/admin/analytics")
+def analytics(days: int = 30, _: dict = Depends(auth.admin_user)):
+    days = max(7, min(days, 180))
+    with conn() as c:
+        per_day = c.execute(
+            "SELECT to_char(g.day, 'YYYY-MM-DD') AS day, count(q.id) AS asked, "
+            " count(q.id) FILTER (WHERE NOT q.found_sources OR q.feedback = -1) AS unanswered "
+            "FROM generate_series(current_date - (%(d)s - 1), current_date, interval '1 day') AS g(day) "
+            "LEFT JOIN questions q ON q.created_at::date = g.day::date GROUP BY g.day ORDER BY g.day", {"d": days}).fetchall()
+        by_department = c.execute(
+            "SELECT coalesce(d.name, 'No department') AS name, count(DISTINCT q.id) AS n FROM questions q "
+            "LEFT JOIN user_departments ud ON ud.user_id = q.user_id LEFT JOIN departments d ON d.id = ud.department_id "
+            "WHERE q.created_at > now() - make_interval(days => %(d)s) GROUP BY 1 ORDER BY 2 DESC LIMIT 8", {"d": days}).fetchall()
+        by_person = c.execute(
+            "SELECT coalesce(nullif(u.name, ''), u.email, 'Removed user') AS name, count(*) AS n FROM questions q "
+            "LEFT JOIN users u ON u.id = q.user_id WHERE q.created_at > now() - make_interval(days => %(d)s) "
+            "GROUP BY 1 ORDER BY 2 DESC LIMIT 8", {"d": days}).fetchall()
+        growth = c.execute(
+            "SELECT to_char(g.day, 'YYYY-MM-DD') AS day, count(d.id) AS added "
+            "FROM generate_series(current_date - (%(d)s - 1), current_date, interval '1 day') AS g(day) "
+            "LEFT JOIN documents d ON d.created_at::date = g.day::date GROUP BY g.day ORDER BY g.day", {"d": days}).fetchall()
+        totals = c.execute(
+            "SELECT (SELECT count(*) FROM documents WHERE status='ready') AS searchable, "
+            " (SELECT count(*) FROM documents WHERE created_at > now() - interval '24 hours') AS added_today, "
+            " (SELECT count(*) FROM documents WHERE created_at > now() - interval '7 days') AS added_week, "
+            " (SELECT count(*) FROM questions WHERE created_at > now() - interval '7 days') AS asked_week, "
+            " (SELECT count(*) FROM questions WHERE created_at > now() - make_interval(days => %(d)s)) AS asked_period, "
+            " (SELECT count(*) FROM questions WHERE created_at > now() - make_interval(days => %(d)s) "
+            "    AND found_sources AND coalesce(feedback, 0) >= 0) AS answered_period", {"d": days}).fetchone()
+        freshness = c.execute(
+            "SELECT k.id, k.type, k.name, k.enabled, k.last_sync, k.last_error, "
+            " (SELECT max(d.created_at) FROM documents d WHERE d.connector_id = k.id) AS last_new, "
+            " (SELECT count(*) FROM documents d WHERE d.connector_id = k.id AND d.created_at > now() - interval '24 hours') AS added_today, "
+            " (SELECT a.email FROM oauth_accounts a WHERE a.id::text = k.config->>'account_id') AS account "
+            "FROM connectors k ORDER BY k.type, k.id").fetchall()
+        uploads = c.execute("SELECT max(created_at) AS last_new, count(*) FILTER (WHERE created_at > now() - interval '24 hours') AS added_today "
+                            "FROM documents WHERE source IN ('upload', 'folder')").fetchone()
+    return {"days": days, "per_day": per_day, "by_department": by_department, "by_person": by_person, "growth": growth,
+            "totals": totals, "freshness": freshness, "uploads": uploads,
+            "check_every_minutes": settings.connector_sync_minutes}
 
 
 # ---------------------------------------------------------------- admin home: setup progress and health
