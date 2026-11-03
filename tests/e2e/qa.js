@@ -422,7 +422,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Health: a wrong AI key gets a clear message", await until(async () => /doesn.t look like a Claude API key \(received: 5 characters\)/.test(await text("#ai-error")), 5000, 200));
   await page.evaluate(() => document.querySelector("#ai-card").classList.add("hidden"));
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#health-download")]);
-  check("Health: report can be downloaded", /knowledgedesk-health/.test(download.suggestedFilename()));
+  check("Health: report can be downloaded", /cortex-health/.test(download.suggestedFilename()));
   await page.click("#nav a[data-page=settings]");
   check("Settings: only company and plan – no technical key box", !(await page.$("#page-settings #ai-form")) && await until(async () => await page.isVisible("#company-form")
     && /Plan and billing/.test(await text("#plan-card")) && (await page.inputValue("#company-form input[name=name]")) !== "", 8000, 200));
@@ -437,7 +437,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#nav a[data-page=sources]");
   await page.waitForSelector(`${m} [data-disconnect]`);
   await page.click(`${m} [data-disconnect]`);
-  check("Disconnect asks for confirmation and explains the effect", /removed from KnowledgeDesk/.test(await text("#dialog[open]")));
+  check("Disconnect asks for confirmation and explains the effect", /removed from Cortex/.test(await text("#dialog[open]")));
   await page.click("#dialog[open] [data-yes]");
   check("Disconnect: account removed", await until(async () => (await page.$$(`${m} .account`)).length === 0, 15000, 500));
   check("…and the big Connect button is back", (await text(`${m} [data-open-connect]`)).trim() === "Connect Microsoft account");
@@ -455,7 +455,11 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   // ------------------------------------------------------------------ 15. Marketing page
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(APP + "/welcome");
-  check("Marketing page: explains the product", /Ask your company/.test(await text("h1")) && (await page.$$(".logo-chip")).length >= 10);
+  check("Marketing page: clear hero with the Cortex name and connector logos", /One question away/.test(await text("h1")) && /Cortex/.test(await text(".logo"))
+    && (await page.$$(".strip-logos span")).length >= 10);
+  check("Marketing page: the example answer appears with its sources", await until(async () => (await page.$$("#answer-sources .src")).length > 0, 8000, 300));
+  await page.click("#tabs .tab >> nth=4");
+  check("Marketing page: team tabs switch the example", /Instagram/.test(await text("#team-card")));
   check("Marketing page: product screenshots load", await page.evaluate(async () => (await Promise.all([...document.images].map((i) => fetch(i.src).then((r) => r.ok && /image/.test(r.headers.get("content-type")))))).every(Boolean)));
   check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/");
   await page.setViewportSize({ width: 390, height: 844 });

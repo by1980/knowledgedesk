@@ -1,8 +1,8 @@
-/* KnowledgeDesk – design system: tokens, components, pages. */
+/* Cortex – design system: tokens, components, pages. */
 :root {
   --bg: #f7f8fa; --surface: #ffffff; --surface-2: #f2f4f7; --sidebar: #fbfbfc; --text: #101828; --text-2: #344054;
   --muted: #667085; --line: #e4e7ec; --line-2: #d0d5dd;
-  --accent: #2f5bea; --accent-hover: #2349c9; --accent-text: #ffffff; --accent-soft: #eef2fe;
+  --accent: #4f46e5; --accent-hover: #4338ca; --accent-text: #ffffff; --accent-soft: #eef2ff;
   --ok: #067647; --ok-soft: #ecfdf3; --ok-line: #abefc6;
   --busy: #b54708; --busy-soft: #fffaeb; --busy-line: #fedf89;
   --bad: #b42318; --bad-soft: #fef3f2; --bad-line: #fecdca;
@@ -12,7 +12,7 @@
   :root {
     --bg: #0c111d; --surface: #161b26; --surface-2: #1f242f; --sidebar: #111622; --text: #f5f5f6; --text-2: #cecfd2;
     --muted: #94969c; --line: #2a303c; --line-2: #333a47;
-    --accent: #6b8cf6; --accent-hover: #87a2f8; --accent-text: #0c111d; --accent-soft: #1d2a4d;
+    --accent: #818cf8; --accent-hover: #a5b4fc; --accent-text: #0c111d; --accent-soft: #24234f;
     --ok: #47cd89; --ok-soft: #0e2a1d; --ok-line: #145c3a;
     --busy: #fdb022; --busy-soft: #2e2210; --busy-line: #5c4310;
     --bad: #f97066; --bad-soft: #2f1615; --bad-line: #6a2620;
@@ -42,9 +42,9 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-r
   background: var(--surface-2); color: var(--text-2); border: 1px solid var(--line); }
 .icon-tile.sm { width: 28px; height: 28px; border-radius: 7px; }
 .brand-tile { background: var(--surface); }
-.logo-tile { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); flex: none; position: relative; }
-.logo-tile::before { content: ""; position: absolute; inset: 0; background: center / 16px no-repeat
-  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M7 4v16M7 12l9-8M9.5 10l7 10'/%3E%3C/svg%3E"); }
+.logo-tile { width: 28px; height: 28px; border-radius: 8px; flex: none; background: center / contain no-repeat url("/static/cortex.svg");
+  box-shadow: 0 2px 6px -2px rgba(79, 70, 229, .5); }
+.brand-mark b { font-weight: 700; letter-spacing: -.01em; }
 
 /* ---------- form controls */
 input, select, textarea { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line-2);

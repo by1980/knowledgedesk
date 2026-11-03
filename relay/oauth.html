@@ -1,9 +1,9 @@
 <!doctype html>
 <!--
-  KnowledgeDesk sign-in return page.
+  Cortex sign-in return page.
   Put this ONE file on your company website, e.g. https://connect.yourcompany.com/oauth.html
   (any https address you control works). Google and Microsoft send the customer's browser here after
-  they approve; this page forwards the browser back to the customer's own KnowledgeDesk server.
+  they approve; this page forwards the browser back to the customer's own Cortex server.
   It contains no secrets and stores nothing.
 -->
 <html lang="en">
@@ -28,7 +28,7 @@
         if (!/^https?:\/\/[A-Za-z0-9.\-]+(:\d{1,5})?$/.test(target)) throw new Error("bad target");
         window.location.replace(target + "/oauth/callback" + window.location.search);
       } catch (e) {
-        msg.textContent = "This link is not valid. Please start the connection again from KnowledgeDesk.";
+        msg.textContent = "This link is not valid. Please start the connection again from Cortex.";
       }
     })();
   </script>

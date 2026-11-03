@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# KnowledgeDesk installer. Works on macOS (with Docker Desktop) and Linux.
+# Cortex installer. Works on macOS (with Docker Desktop) and Linux.
 # Usage:  ./install.sh
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -56,7 +56,7 @@ $SUDO docker compose up -d --build
 PORT="$(grep -E '^PORT=' .env | cut -d= -f2 || true)"
 PORT="${PORT:-8000}"
 echo
-echo "KnowledgeDesk is starting."
+echo "Cortex is starting."
 echo "The first start downloads the AI search and speech models (a few GB), so wait 5-15 minutes."
 echo "Then open:  http://localhost:${PORT}"
 echo "To watch progress:  $SUDO docker compose logs -f app   (press Ctrl+C to stop watching)"

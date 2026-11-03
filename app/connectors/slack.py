@@ -1,6 +1,6 @@
 """Slack connector (connected with "Connect Slack workspace").
 
-Reads public channels (joining them automatically) and private channels the KnowledgeDesk app was
+Reads public channels (joining them automatically) and private channels the Cortex app was
 added to. Messages are grouped into one document per channel per day, with people's names and
 thread replies, so answers can say "in #sales on 3 March, Dana wrote…". Nothing is ever posted.
 """

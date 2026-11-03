@@ -69,7 +69,7 @@ def authorize(request: Request, redirect_uri: str, state: str):
     # A tiny consent screen with an Allow button, like the real thing
     return HTMLResponse(f"""<!doctype html><title>Sign in – {provider} (simulated)</title>
       <body style="font-family:system-ui;max-width:420px;margin:12vh auto">
-      <h2>{provider} (simulated)</h2><p>KnowledgeDesk wants to read your mail, calendar and files.</p>
+      <h2>{provider} (simulated)</h2><p>Cortex wants to read your mail, calendar and files.</p>
       <a id="allow" href="{redirect_uri}?code=sim-code&state={state}">Allow</a> ·
       <a id="deny" href="{redirect_uri}?error=access_denied&state={state}">Cancel</a></body>""")
 
@@ -245,7 +245,7 @@ def _fb_ok(request: Request, token: str = "fb-long") -> bool:
 @app.get("/graph.facebook.com/v23.0/oauth/access_token")
 def fb_token(request: Request):
     q = request.query_params
-    if q.get("grant_type") == "client_credentials":  # KnowledgeDesk checking a pasted App ID + secret
+    if q.get("grant_type") == "client_credentials":  # Cortex checking a pasted App ID + secret
         if not q.get("client_id", "").isdigit() or q.get("client_secret") == "wrong":
             return JSONResponse({"error": {"message": "Error validating client secret.", "code": 1}}, 400)
         return {"access_token": "app-token", "token_type": "bearer"}

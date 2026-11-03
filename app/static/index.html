@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KnowledgeDesk</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f5bea'/%3E%3Cpath d='M10 9v14M10 16l8-7M12.5 14l6.5 9' stroke='white' stroke-width='3' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
+  <title>Cortex – your company's knowledge</title>
+  <link rel="icon" href="/static/cortex.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -52,20 +52,20 @@
   <!-- ============================================================ Login -->
   <section id="login-view" class="login hidden">
     <form id="login-form" class="card login-card">
-      <div class="brand-mark big"><span class="logo-tile"></span><b>KnowledgeDesk</b></div>
+      <div class="brand-mark big"><span class="logo-tile"></span><b>Cortex</b></div>
       <p class="muted" id="login-company"></p>
       <label>Email <input name="email" type="email" required autocomplete="username"></label>
       <label>Password <input name="password" type="password" required autocomplete="current-password"></label>
       <button type="submit" class="btn primary wide">Log in</button>
       <p class="error" id="login-error" role="alert"></p>
-      <p class="muted small center"><a href="/welcome">What is KnowledgeDesk?</a></p>
+      <p class="muted small center"><a href="/welcome">What is Cortex?</a></p>
     </form>
   </section>
 
   <!-- ============================================================ App -->
   <section id="app-view" class="hidden">
     <aside class="sidebar">
-      <a class="brand-mark" href="#home"><span class="logo-tile"></span><b>KnowledgeDesk</b></a>
+      <a class="brand-mark" href="#home"><span class="logo-tile"></span><b>Cortex</b></a>
       <a class="company-block" id="company-link" target="_blank" rel="noopener" title="Open the company website">
         <img id="company-logo" class="hidden" alt="">
         <span id="company-name"></span>
@@ -92,7 +92,7 @@
           <div id="home-q-chart"></div></div>
         <div class="grid2">
           <div class="card"><h2>Questions by department</h2><p class="muted small">Which teams ask the most – by the department of the person asking.</p><div id="home-by-dept"></div></div>
-          <div class="card"><h2>Questions by person</h2><p class="muted small">Who uses KnowledgeDesk the most.</p><div id="home-by-person"></div></div>
+          <div class="card"><h2>Questions by person</h2><p class="muted small">Who uses Cortex the most.</p><div id="home-by-person"></div></div>
         </div>
         <div class="card" id="home-learning"></div>
       </main>
@@ -122,7 +122,7 @@
       <!-- ---------------------------------------------------------- Sources -->
       <main id="page-sources" class="page hidden">
         <div class="page-head"><div><h1>Sources</h1>
-          <p class="muted">Everything KnowledgeDesk can search. Connect a source once – new emails, events, files and pages are picked up automatically.</p></div></div>
+          <p class="muted">Everything Cortex can search. Connect a source once – new emails, events, files and pages are picked up automatically.</p></div></div>
         <div class="card" id="overview-card">
           <div class="toolbar"><div><h2>Connection hub</h2><p class="muted small" style="margin:-6px 0 0">Every source in one place. Click a tile to manage it, or Connect to add it.</p></div>
             <form id="find-form" class="search-box" role="search"><svg class="ic"><use href="#i-search"/></svg>
@@ -346,7 +346,7 @@
 
       <!-- ---------------------------------------------------------- Settings -->
       <main id="page-health" class="page hidden">
-        <div class="page-head"><div><h1>Health</h1><p class="muted">Is everything working? Each part of KnowledgeDesk, checked live.</p></div></div>
+        <div class="page-head"><div><h1>Health</h1><p class="muted">Is everything working? Each part of Cortex, checked live.</p></div></div>
         <div class="card" id="health-card">
           <div class="toolbar"><h2>Health check</h2>
             <span class="row tight"><button class="btn" id="health-refresh"><svg class="ic"><use href="#i-refresh"/></svg>Check again</button>
@@ -383,7 +383,7 @@
         </div>
         <div class="card" id="plan-card">
           <div class="toolbar"><h2>Plan and billing</h2><span class="badge info">Self-hosted</span></div>
-          <p class="muted">This installation runs on your own computer, so there's no subscription to manage here. When KnowledgeDesk is offered
+          <p class="muted">This installation runs on your own computer, so there's no subscription to manage here. When Cortex is offered
             online, your plan, monthly billing and AI usage will be managed on this page.</p>
         </div>
       </main>

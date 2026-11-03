@@ -1,4 +1,4 @@
-// KnowledgeDesk web interface – plain JavaScript, no build step.
+// Cortex web interface – plain JavaScript, no build step.
 "use strict";
 
 // ================================================================== basics
@@ -32,7 +32,7 @@ async function api(path, opts = {}) {
   if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
   let res;
   try { res = await fetch(path, { ...opts, headers }); }
-  catch { throw new Error("Can't reach KnowledgeDesk. Check that it's running, then try again."); }
+  catch { throw new Error("Can't reach Cortex. Check that it's running, then try again."); }
   if (res.status === 401 && path !== "/api/login") { logout(); throw new Error("Please log in again."); }
   if (!res.ok) {
     let msg = `Something went wrong (${res.status}).`;
@@ -325,7 +325,7 @@ LOADERS.home = async function loadHome() {
   const steps = [
     [setup.has_sources, "Connect your company's information", "Email, calendar, Drive, Slack, your website, documents.", "#sources", "Connect sources"],
     [setup.has_team, "Add your team", "Create departments and add the people who will ask questions.", "#people", "Add people"],
-    [setup.has_asked, "Ask your first question", "See how KnowledgeDesk answers from your own information.", "#ask", "Ask a question"],
+    [setup.has_asked, "Ask your first question", "See how Cortex answers from your own information.", "#ask", "Ask a question"],
   ];
   const done = steps.filter((x) => x[0]).length, nextIndex = steps.findIndex((x) => !x[0]);
   $("#home-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
@@ -374,7 +374,7 @@ function drawLearning(a) {
       <div><div class="who">Uploaded files ${badge("ok", "Added")}</div><div class="meta">Documents, interviews and chats added by hand</div></div>
       <div class="right">Last added ${ago(a.uploads.last_new)}${a.uploads.added_today ? ` · <b>${num(a.uploads.added_today)}</b> today` : ""}</div></div>`);
   $("#home-learning").innerHTML = `<div class="learn-head"><div><h2>Keeping up to date</h2>
-      <p class="muted small" style="margin:0">KnowledgeDesk checks your connected sources every ${a.check_every_minutes} minutes and adds anything new by itself –
+      <p class="muted small" style="margin:0">Cortex checks your connected sources every ${a.check_every_minutes} minutes and adds anything new by itself –
       you don't need to do anything. Each row shows when that source last brought in something new.</p></div>
       <div class="learn-stats"><div><div class="big-number">${num(t.added_today)}</div><div class="muted small">new today</div></div>
       <div><div class="big-number">${num(t.added_week)}</div><div class="muted small">new this week</div></div></div></div>
@@ -606,7 +606,7 @@ const oauthOf = (card) => CARD_PROVIDER[card] || card;
 const PROVIDER_SERVICES = {
   google: [["mail", "Gmail", "all mail except spam, trash and promotions"], ["calendar", "Google Calendar", ""], ["files", "Google Drive", ""]],
   microsoft: [["mail", "Outlook mail", "all mail in Inbox and Sent"], ["calendar", "Outlook calendar", ""], ["files", "OneDrive", ""]],
-  slack: [["messages", "Slack channels", "public channels, plus private channels you add the KnowledgeDesk app to"]],
+  slack: [["messages", "Slack channels", "public channels, plus private channels you add the Cortex app to"]],
   meta: [["social", "Facebook Pages and their Instagram accounts", "you choose which ones on Facebook's page"]],
   youtube: [["youtube", "YouTube channel", "videos, views, likes and comments"]],
 };
@@ -640,7 +640,7 @@ function sourceStatus(k) {
   const checked = k.last_sync ? `<span class="muted small">Checked ${ago(k.last_sync)}</span>` : "";
   let note = k.last_note ? `<div class="status-detail">${esc(k.last_note)}</div>` : "";
   if (k.type === "slack" && k.channels != null) note += `<div class="status-detail">Reading ${plural(k.channels, "channel", "channels")}.${k.private_not_added
-    ? ` ${plural(k.private_not_added, "private channel isn't", "private channels aren't")} included – in Slack, open the channel → its name → Integrations → Add apps → KnowledgeDesk.` : ""}</div>`;
+    ? ` ${plural(k.private_not_added, "private channel isn't", "private channels aren't")} included – in Slack, open the channel → its name → Integrations → Add apps → Cortex.` : ""}</div>`;
   const searchable = ready ? `${plural(ready, one, many)} searchable` : "";
   if (k.last_error && !k.syncing)
     return `<div class="status-line">${badge("bad", "Needs attention")} ${checked}</div><div class="status-detail bad">${linkify(k.last_error)}</div>
@@ -727,7 +727,7 @@ function connectFromTile(type) {
 }
 function websiteDialog() {
   const f = openDialog(`<h2>Add your website</h2>
-    <p class="muted small">KnowledgeDesk reads every page of the site and checks for changes by itself.</p>
+    <p class="muted small">Cortex reads every page of the site and checks for changes by itself.</p>
     <label>Website address <input name="url" placeholder="www.yourcompany.com" dir="ltr" autocomplete="off"></label>
     <div data-vis>${visibilityPicker([], true, "Who can find its pages?")}</div>
     <p class="error" role="alert"></p>
@@ -875,7 +875,7 @@ function drawProvider(provider) {
   $$("[data-disconnect]", card).forEach((b) => b.onclick = async () => {
     const list = accounts[b.dataset.disconnect];
     const ok = await confirmBox({ title: `Disconnect ${list[0].config.username || "this " + noun}?`, confirm: "Disconnect", danger: true,
-      text: `Everything imported from this ${noun} will be removed from KnowledgeDesk, and its sign-in will be forgotten. Nothing is deleted in the ${noun} itself.` });
+      text: `Everything imported from this ${noun} will be removed from Cortex, and its sign-in will be forgotten. Nothing is deleted in the ${noun} itself.` });
     if (!ok) return;
     await busy(b, "Disconnecting…", async () => {
       try { for (const k of list) await api(`/api/connectors/${k.id}`, { method: "DELETE" }); toast("Disconnected."); } catch (err) { toast(err.message, true); }
@@ -892,11 +892,11 @@ function drawProvider(provider) {
 const SETUP_STEPS = {
   meta: (r) => `<ol class="setup-steps">
       <li>Open <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> (log in with your Facebook account) and click <b>Create app</b>.</li>
-      <li>Name it <b>KnowledgeDesk</b>. For the use case choose <b>Other</b>, then app type <b>Business</b>, and click <b>Create app</b>.</li>
+      <li>Name it <b>Cortex</b>. For the use case choose <b>Other</b>, then app type <b>Business</b>, and click <b>Create app</b>.</li>
       <li>On the app's dashboard, find <b>Facebook Login for Business</b> and click <b>Set up</b>.</li>
       <li>In the left menu open <b>Facebook Login for Business → Settings</b>. In <b>Valid OAuth Redirect URIs</b> paste this address, then <b>Save changes</b>:
         ${copyRow("Return address", r)}</li>
-      <li>Open <b>Facebook Login for Business → Configurations → Create configuration</b>. Name: KnowledgeDesk. Login variation: <b>General</b>.
+      <li>Open <b>Facebook Login for Business → Configurations → Create configuration</b>. Name: Cortex. Login variation: <b>General</b>.
         Access token: <b>User access token</b>. Assets: tick <b>Pages</b> and <b>Instagram accounts</b>. Permissions: tick
         <i>pages_show_list, pages_read_engagement, pages_read_user_content, instagram_basic, instagram_manage_insights, business_management</i>.
         Click <b>Create</b>, then copy the <b>Configuration ID</b>.</li>
@@ -912,16 +912,16 @@ const SETUP_STEPS = {
     </ol>`,
   microsoft: (r) => `<ol class="setup-steps">
       <li>Open <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">entra.microsoft.com → App registrations</a> → <b>New registration</b>.</li>
-      <li>Name: KnowledgeDesk. Account types: <b>any organizational directory and personal Microsoft accounts</b>. Redirect URI: platform <b>Web</b>: ${copyRow("Return address", r)}</li>
+      <li>Name: Cortex. Account types: <b>any organizational directory and personal Microsoft accounts</b>. Redirect URI: platform <b>Web</b>: ${copyRow("Return address", r)}</li>
       <li>Copy the <b>Application (client) ID</b>. Then <b>Certificates &amp; secrets → New client secret</b> and copy its <b>Value</b>.</li>
       <li><b>API permissions → Add → Microsoft Graph → Delegated</b>: Mail.Read, Calendars.Read, Files.Read.All, User.Read, offline_access.</li>
     </ol>`,
   slack: (r) => `<ol class="setup-steps">
-      <li>Open <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App → From scratch</b>, name KnowledgeDesk.</li>
+      <li>Open <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App → From scratch</b>, name Cortex.</li>
       <li><b>OAuth &amp; Permissions</b>: add the redirect URL ${copyRow("Return address", r)} and the bot scopes channels:read, channels:history, channels:join, groups:read, groups:history, users:read.</li>
       <li><b>Basic Information</b>: copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
     </ol>
-    ${/^https:/.test(r) ? "" : `<div class="warn-box">${ic("alert")} Slack only accepts <b>https</b> return addresses, so Slack can be connected once KnowledgeDesk runs online.</div>`}`,
+    ${/^https:/.test(r) ? "" : `<div class="warn-box">${ic("alert")} Slack only accepts <b>https</b> return addresses, so Slack can be connected once Cortex runs online.</div>`}`,
 };
 async function setupNeededDialog(card, then = null) {
   const provider = oauthOf(card);
@@ -929,7 +929,7 @@ async function setupNeededDialog(card, then = null) {
   let info = { redirect_url: oauthState.redirect_url, apps: {} };
   try { info = await getJSON("/api/oauth/apps"); } catch {}
   const f = openDialog(`<h2>Set up ${name} sign-in (one time)</h2>
-    <p class="muted">${name} needs to know about KnowledgeDesk before anyone can connect. It's free and takes about 10 minutes. Follow the steps, then paste what you copied below.</p>
+    <p class="muted">${name} needs to know about Cortex before anyone can connect. It's free and takes about 10 minutes. Follow the steps, then paste what you copied below.</p>
     ${SETUP_STEPS[provider](info.redirect_url)}
     <div class="grid2">
       <label>${provider === "meta" ? "App ID" : provider === "microsoft" ? "Application (client) ID" : "Client ID"}
@@ -961,11 +961,11 @@ function openConnectPanel(provider, only = null, inDialog = false) {
   const slot = inDialog ? openDialog(`<h2>Connect ${esc(TILE_TITLE[provider] || PROVIDER_NAME[provider])}</h2><div data-slot></div>`).querySelector("[data-slot]")
     : $(`.provider-card[data-provider=${provider}] .pc-panel`);
   slot.innerHTML = `<div class="panel">
-    <span class="label">What should KnowledgeDesk read?</span>
+    <span class="label">What should Cortex read?</span>
     ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" ${!only || only.includes(value) ? "checked" : ""}> ${label}
       ${hint ? `<span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
     ${visibilityPicker([], false)}
-    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, posts, changes or deletes anything.
+    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. Cortex only reads – it never sends, posts, changes or deletes anything.
       ${oauthOf(provider) === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}
       ${provider === "meta" ? "On Facebook, pick your business Page <b>and</b> its Instagram account when asked, and leave every permission switched on." : ""}
       ${provider === "youtube" ? "Sign in with the Google account that owns the channel. If you already connected Gmail with that account, it stays connected." : ""}</p>
@@ -1076,14 +1076,14 @@ function drawWhatsApp() {
         <div>${k.last_error ? `${badge("bad", "Needs attention")}<div class="status-detail bad">${esc(k.last_error)}</div>`
           : `<div class="status-line">${badge("ok", "Connected")} <span class="state-text ok small">${k.documents ? `${plural(k.events, "message", "messages")} so far` : "Waiting for the first message"}</span></div>`}
           ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} Meta can only deliver messages to a public <b>https</b> address. On this computer
-            (${esc(location.origin)}) messages won't arrive – this starts working once KnowledgeDesk runs online.</div>`}
+            (${esc(location.origin)}) messages won't arrive – this starts working once Cortex runs online.</div>`}
           <details><summary class="small">Webhook details for Meta</summary>
             ${copyRow("Callback URL", `${location.origin}/webhooks/whatsapp/${k.id}`)}${copyRow("Verify token", k.config.verify_token || "")}
             <p class="muted small">In your Meta app: WhatsApp → Configuration → Webhook → Edit, paste both, then subscribe to <b>messages</b>
               (and <b>smb_message_echoes</b> if the number also uses the WhatsApp Business app).</p></details></div><div></div></div></div>`).join("");
   $$("#wa-list [data-items]").forEach((b) => b.onclick = () => itemsDialog(conns.find((k) => k.id === Number(b.dataset.items))));
   $$("[data-wa-del]").forEach((b) => b.onclick = async () => {
-    if (!await confirmBox({ title: "Disconnect this WhatsApp number?", text: "Its conversations will be removed from KnowledgeDesk. Nothing changes in WhatsApp.", confirm: "Disconnect", danger: true })) return;
+    if (!await confirmBox({ title: "Disconnect this WhatsApp number?", text: "Its conversations will be removed from Cortex. Nothing changes in WhatsApp.", confirm: "Disconnect", danger: true })) return;
     await api(`/api/connectors/${b.dataset.waDel}`, { method: "DELETE" }); toast("Disconnected."); refreshSources();
   });
 }
@@ -1100,7 +1100,7 @@ function openWhatsAppPanel(inDialog = false) {
       <li>Optional, for extra security: <b>App settings → Basic → App secret</b>.</li>
     </ol>
     ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} This page runs at ${esc(location.origin)}. Meta can only deliver messages to a public
-      <b>https</b> address, so messages won't arrive here yet. You can still save the connection now – it starts working once KnowledgeDesk runs online.</div>`}
+      <b>https</b> address, so messages won't arrive here yet. You can still save the connection now – it starts working once Cortex runs online.</div>`}
     <div class="grid3">
       <label>Phone number ID <input name="phone_number_id" autocomplete="off" inputmode="numeric"></label>
       <label class="span2">Access token <input name="access_token" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"></label>
@@ -1294,7 +1294,7 @@ function userDialog(u) {
       <input name="password" type="text" autocomplete="off" ${u ? "" : "required minlength=8"}></label>
     <label>Role <select name="role"><option value="member">Team member – finds information for their departments</option>
       <option value="learner">New employee – sees only the Learning Center</option>
-      <option value="admin">Admin – sees everything and manages KnowledgeDesk</option></select></label>
+      <option value="admin">Admin – sees everything and manages Cortex</option></select></label>
     <span class="label">Departments</span>
     <div>${departments.map((d) => `<label class="check"><input type="checkbox" name="dept" value="${d.id}" ${u?.departments.some((x) => x.id === d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("") || '<span class="muted small">No departments yet.</span>'}</div>
     ${u ? `<label class="check" style="margin-top:8px"><input type="checkbox" name="active" ${u.active ? "checked" : ""}> Can log in</label>` : ""}
@@ -1313,7 +1313,7 @@ function userDialog(u) {
       try {
         await api(u ? `/api/users/${u.id}` : "/api/users", { method: u ? "PUT" : "POST", json: body });
         if (u) { closeDialog(); toast("Saved."); LOADERS.people(); return; }
-        const details = `KnowledgeDesk – ${appStatus.company || "our company"}\nAddress: ${location.origin}\nEmail: ${body.email}\nPassword: ${body.password}`;
+        const details = `Cortex – ${appStatus.company || "our company"}\nAddress: ${location.origin}\nEmail: ${body.email}\nPassword: ${body.password}`;
         const d = openDialog(`<h2>${esc(body.name)} was added</h2>
           <p class="muted">Send them these login details. They can change the password after logging in (click their name at the bottom left).</p>
           <textarea rows="4" readonly data-details>${esc(details)}</textarea>
@@ -1424,7 +1424,7 @@ $("#health-download").addEventListener("click", () => {
   const report = { generated: new Date().toISOString(), company: appStatus.company, browser: navigator.userAgent, ...lastHealth };
   const a = Object.assign(document.createElement("a"), {
     href: URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" })),
-    download: `knowledgedesk-health-${new Date().toISOString().slice(0, 10)}.json` });
+    download: `cortex-health-${new Date().toISOString().slice(0, 10)}.json` });
   a.click();
 });
 

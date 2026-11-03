@@ -11,7 +11,7 @@ SKIP_EXT = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".css", ".js", ".z
             ".woff", ".woff2", ".pdf", ".xml", ".json", ".avif")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/124.0 Safari/537.36 KnowledgeDesk",
+                  "Chrome/124.0 Safari/537.36 Cortex",
     "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "he,en;q=0.8",
 }

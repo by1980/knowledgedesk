@@ -1,4 +1,4 @@
-"""KnowledgeDesk web server: API + web interface."""
+"""Cortex web server: API + web interface."""
 import json
 
 import httpx
@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.4"
+APP_VERSION = "0.9.5"
 
 
 def _ensure_secret_key() -> None:
@@ -83,7 +83,7 @@ def startup() -> None:
     if settings.run_worker:
         worker.start()
         threading.Thread(target=branding.ensure_defaults, daemon=True).start()
-    log.info("KnowledgeDesk started for %s", settings.company_name)
+    log.info("Cortex started for %s", settings.company_name)
 
 
 @asynccontextmanager
@@ -92,7 +92,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="KnowledgeDesk", lifespan=lifespan)
+app = FastAPI(title="Cortex", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------- public
@@ -943,8 +943,8 @@ def _message_page(title: str, text: str) -> HTMLResponse:
     from html import escape
 
     return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>KnowledgeDesk</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:16px">
-<h2>{escape(title)}</h2><p>{escape(text)}</p><p><a href="/">Back to KnowledgeDesk</a></p></body>""")
+<title>Cortex</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:16px">
+<h2>{escape(title)}</h2><p>{escape(text)}</p><p><a href="/">Back to Cortex</a></p></body>""")
 
 
 @app.get("/oauth/callback")
@@ -1135,7 +1135,7 @@ def _resources_check(waiting: int) -> dict:
     if (mem and mem < 3.5) or cpus < 2:
         state = "warn"
         detail += (" That's too little: give Docker more (Docker Desktop → Settings → Resources: "
-                   "at least 4 CPUs and 8 GB memory), then restart KnowledgeDesk.")
+                   "at least 4 CPUs and 8 GB memory), then restart Cortex.")
     elif avg is not None and avg > 15 and waiting:
         state = "warn"
         detail += (f" Items are slow to prepare (slowest: {slowest[1]} \"{slowest[2][:50]}\", {slowest[0]:.0f} s). "
@@ -1327,5 +1327,5 @@ def index():
 
 @app.get("/welcome")
 def marketing_page():
-    """The public page that explains KnowledgeDesk and leads to the product."""
+    """The public page that explains Cortex and leads to the product."""
     return FileResponse(STATIC / "site" / "index.html")

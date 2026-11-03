@@ -1,4 +1,4 @@
-# KnowledgeDesk
+# Cortex
 
 A private "ask the company" assistant for small and medium businesses. It is installed on the
 customer's own server. Employees ask questions in plain language (Hebrew, English or any other
@@ -125,7 +125,7 @@ This needs a one-time setup by you, the vendor (below).
 
 ## Setting up one-click sign-in (vendor, once, free)
 
-You register "KnowledgeDesk" once with Google and once with Microsoft. Every customer then uses
+You register "Cortex" once with Google and once with Microsoft. Every customer then uses
 that same registration.
 
 **The return address.** After someone approves, Google and Microsoft send the browser to a fixed
@@ -139,21 +139,21 @@ address that you register.
 Register **both** addresses with Google and with Microsoft.
 
 ### Google (console.cloud.google.com)
-1. Create a project named `KnowledgeDesk`.
+1. Create a project named `Cortex`.
 2. **APIs & Services → Library:** enable **Gmail API**, **Google Calendar API** and **Google Drive API**.
-3. **Google Auth Platform → Branding:** app name `KnowledgeDesk`, your support email, your domain
+3. **Google Auth Platform → Branding:** app name `Cortex`, your support email, your domain
    and privacy policy link. **Audience:** *External*, then **Publish app** (status *In production*).
    In *Testing* status, connections stop working after 7 days.
 4. **Clients → Create client → Web application.** Under *Authorized redirect URIs*, add both return
    addresses. Copy the **Client ID** and **Client secret**.
 5. Until Google verifies the app, users see "Google hasn't verified this app" and click **Advanced →
-   Go to KnowledgeDesk**. Up to 100 accounts can connect this way. Calendar-only verification is
+   Go to Cortex**. Up to 100 accounts can connect this way. Calendar-only verification is
    free. Gmail and Drive access beyond 100 accounts requires Google's paid security assessment. A
    Google Workspace customer can instead mark the app as trusted (Admin console → Security → API
    controls → App access control).
 
 ### Microsoft (entra.microsoft.com)
-1. **App registrations → New registration:** name `KnowledgeDesk`. Supported account types:
+1. **App registrations → New registration:** name `Cortex`. Supported account types:
    *Accounts in any organizational directory and personal Microsoft accounts*. Redirect URI:
    platform **Web**, `http://localhost:8000/oauth/callback`. Then add the other return address
    under **Authentication**.
@@ -167,7 +167,7 @@ Register **both** addresses with Google and with Microsoft.
 ### Slack (api.slack.com/apps)
 Slack only accepts **https** return addresses, so Slack needs the return page on your website
 (`relay/oauth.html`). `http://localhost` doesn't work for Slack.
-1. **Create New App → From scratch:** name it `KnowledgeDesk` and pick your own workspace.
+1. **Create New App → From scratch:** name it `Cortex` and pick your own workspace.
 2. **OAuth & Permissions:**
    - Under *Redirect URLs*, add your return address, for example
      `https://connect.yourcompany.com/oauth.html`.
@@ -178,14 +178,14 @@ Slack only accepts **https** return addresses, so Slack needs the return page on
 4. Under **Basic Information**, copy the **Client ID** and **Client Secret** into `.env`
    (`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`) or into `app/vendor_oauth.json`.
 
-KnowledgeDesk reads all public channels and private channels the app was added to, including
+Cortex reads all public channels and private channels the app was added to, including
 thread replies. It never posts anything.
 
 ### Facebook and Instagram (developers.facebook.com)
 One "Connect Facebook account" step reads the customer's Facebook Pages and the Instagram business
 accounts linked to them: posts, captions, likes, comments, shares and follower counts. Like Slack, it
 needs the **https** return page.
-1. **My Apps → Create app**, use case **Other**, type **Business**, name `KnowledgeDesk`.
+1. **My Apps → Create app**, use case **Other**, type **Business**, name `Cortex`.
 2. Add the **Facebook Login for Business** product. Under *Settings*, add your return address to
    *Valid OAuth Redirect URIs*.
 3. **App settings → Basic:** add your privacy policy link and app icon. Copy the **App ID** and
