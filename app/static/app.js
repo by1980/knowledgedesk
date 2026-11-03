@@ -121,12 +121,56 @@ function docBadge(d) {
 }
 
 // ================================================================== start, login, navigation
-const ADMIN_PAGES = [["home", "Home", "home"], ["ask", "Ask", "ask"], ["sources", "Sources", "sources"], ["people", "People", "people"],
-  ["learning", "Learning Center", "learn"], ["conversations", "Conversations", "chat"], ["health", "Health", "check"], ["settings", "Settings", "settings"]];
-const MEMBER_PAGES = [["ask", "Ask", "ask"], ["conversations", "Conversations", "chat"], ["library", "Library", "library"], ["learning", "Learning Center", "learn"]];
-// New employees: only their learning path, and questions answered from it
-const LEARNER_PAGES = [["learning", "Learning Center", "learn"], ["ask", "Ask", "ask"], ["conversations", "Conversations", "chat"]];
-const pagesFor = (u) => u.role === "admin" ? ADMIN_PAGES : u.role === "learner" ? LEARNER_PAGES : MEMBER_PAGES;
+// Two sides, one switch at the top of the sidebar: Chat (ask and your conversations) and Brain (the company's knowledge)
+const CHAT_PAGES = [["ask", "Ask", "ask"], ["conversations", "All conversations", "chat"]];
+const BRAIN_PAGES = {
+  admin: [["home", "Home", "home"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
+    ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
+  member: [["brain", "Brain", "brain"], ["learning", "Learning Center", "learn"]],
+  learner: [["learning", "Learning Center", "learn"]],   // new employees: only their learning path
+};
+const HOME_PAGE = { admin: "home", member: "ask", learner: "learning" };
+const brainPagesFor = (u) => BRAIN_PAGES[u.role] || BRAIN_PAGES.member;
+const pagesFor = (u) => [...CHAT_PAGES, ...brainPagesFor(u)];
+const modeOf = (page) => CHAT_PAGES.some(([id]) => id === page) ? "chat" : "brain";
+let navMode = null;
+function drawNav(mode) {
+  navMode = mode;
+  $$("#mode-switch button").forEach((b) => { const on = b.dataset.mode === mode; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
+  $("#nav").innerHTML = mode === "chat"
+    ? `<button type="button" class="nav-new" id="nav-new">${ic("plus")}<span>New chat</span></button>
+       <a href="#conversations" data-page="conversations">${ic("chat")}<span>All conversations</span></a>
+       <div class="chat-history" id="chat-history"></div>`
+    : brainPagesFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("");
+  if (mode === "chat") {
+    $("#nav-new").onclick = () => { if (location.hash !== "#ask") location.hash = "#ask"; setTimeout(newChat, 0); };
+    loadChatHistory();
+  }
+}
+$$("#mode-switch button").forEach((b) => b.onclick = () => {
+  const mode = b.dataset.mode;
+  if (mode === navMode) return;
+  location.hash = mode === "chat" ? "#ask" : `#${(HOME_PAGE[me.role] !== "ask" ? HOME_PAGE[me.role] : null) || brainPagesFor(me)[0][0]}`;
+});
+// Your recent conversations, grouped like in other AI chats
+async function loadChatHistory() {
+  const box = $("#chat-history");
+  if (!box) return;
+  let rows = [];
+  try { rows = await getJSON("/api/conversations?limit=40"); } catch {}
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const groups = [["Today", 0], ["Yesterday", 1], ["Previous 7 days", 7], ["Previous 30 days", 30], ["Older", Infinity]];
+  const byGroup = new Map(groups.map(([g]) => [g, []]));
+  for (const c of rows) {
+    const d = new Date(c.updated_at); d.setHours(0, 0, 0, 0);
+    const age = Math.round((today - d) / 86400000);
+    byGroup.get(groups.find(([, max]) => age <= max)[0]).push(c);
+  }
+  box.innerHTML = rows.length ? [...byGroup].filter(([, list]) => list.length).map(([g, list]) => `<div class="hist-group">${g}</div>` +
+    list.map((c) => `<a href="#" class="hist ${chat.cid === c.id ? "active" : ""}" data-open-conv="${c.id}" title="${esc(c.title)}" dir="auto">${esc(c.title || "Conversation")}</a>`).join("")).join("")
+    : '<div class="hist-empty">Your conversations will appear here.</div>';
+  $$("[data-open-conv]", box).forEach((a) => a.onclick = (e) => { e.preventDefault(); openConversation(Number(a.dataset.openConv)).catch((err) => toast(err.message, true)); });
+}
 const ROLE_LABEL = { admin: "Admin", learner: "New employee" };
 const LOADERS = {};
 
@@ -152,8 +196,7 @@ async function boot() {
   try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
   await refreshDepartments();
   drawMe();
-  const pages = pagesFor(me);
-  $("#nav").innerHTML = pages.map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("");
+  navMode = null;
   updateBanner();
   showView("#app-view");
   const connected = new URLSearchParams(location.search).get("connected");
@@ -190,7 +233,8 @@ function route() {
   clearTimeout(pagePoll);
   const pages = pagesFor(me);
   let name = location.hash.slice(1);
-  if (!pages.some(([id]) => id === name)) name = pages[0][0];
+  if (!pages.some(([id]) => id === name)) name = HOME_PAGE[me.role] || "ask";
+  if (modeOf(name) !== navMode) drawNav(modeOf(name));
   $$(".page").forEach((p) => p.classList.toggle("hidden", p.id !== `page-${name}`));
   $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === name));
   LOADERS[name]?.().catch((err) => toast(err.message, true));
@@ -337,12 +381,7 @@ LOADERS.home = async function loadHome() {
 
   const t = a.totals;
   const rate = t.asked_period ? Math.round((t.answered_period / t.asked_period) * 100) : null;
-  $("#home-kpis").innerHTML = [
-    ["Items in the knowledge base", num(t.searchable), "Emails, files, events, messages and pages it can answer from"],
-    ["Added in the last 24 hours", num(t.added_today), `New items brought in automatically (${num(t.added_week)} this week)`],
-    ["Questions this week", num(t.asked_week), `Asked by your team (${num(t.asked_period)} in the last ${days} days)`],
-    ["Questions answered", rate == null ? "–" : `${rate}%`, rate == null ? "Shows once people start asking" : "Got an answer from your information, and nobody marked it unhelpful"],
-  ].map(([label, value, sub]) => `<div class="kpi"><div class="label">${label}</div><div class="big-number">${value}</div><div class="sub">${sub}</div></div>`).join("");
+  $("#home-kpis").innerHTML = pulseCards(a, days, rate);
 
   const qRows = a.per_day.map((r) => ({ day: r.day, answered: r.asked - r.unanswered, unanswered: r.unanswered }));
   $("#q-chart-sub").textContent = `How many questions your team asked each day. Orange means no answer was found or someone marked it unhelpful. Usually information that's missing.`;
@@ -355,6 +394,59 @@ LOADERS.home = async function loadHome() {
   if (issues.some((c) => c.state === "busy")) poll(LOADERS.home, 15000);
 };
 $("#home-days").addEventListener("change", () => LOADERS.home());
+
+// Three cards at the top of Home: what Cortex learned, what people asked, and how it's all connected
+function pulseCards(a, days, rate) {
+  const t = a.totals;
+  // 1. Knowledge added: one square per day, darker = more new items
+  const grow = a.growth.slice(-30);
+  const added = grow.reduce((s, g) => s + g.added, 0);
+  const max = Math.max(1, ...grow.map((g) => g.added));
+  const level = (n) => !n ? 0 : Math.min(4, Math.ceil((n / max) * 4));
+  const squares = grow.map((g) => `<i class="lv${level(g.added)}" title="${new Date(g.day).toLocaleDateString(undefined, { day: "numeric", month: "short" })}: ${plural(g.added, "new item", "new items")}"></i>`).join("");
+  // 2. Questions: the last 7 days as a smooth line, and who asks most
+  const week = a.per_day.slice(-7);
+  const W = 300, H = 74, peak = Math.max(1, ...week.map((d) => d.asked));
+  const pts = week.map((d, i) => [10 + (i * (W - 20)) / Math.max(1, week.length - 1), H - 8 - (d.asked / peak) * (H - 22)]);
+  let path = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], cx = (x0 + x1) / 2; path += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`; }
+  const area = `${path} L${pts[pts.length - 1][0]},${H} L${pts[0][0]},${H} Z`;
+  const last = pts[pts.length - 1];
+  const asked7 = week.reduce((s, d) => s + d.asked, 0);
+  const people = a.by_person.slice(0, 3).map((p) => `<span class="pchip"><span class="avatar xs">${esc(initials(p.name))}</span>${esc(p.name.split(" ")[0])} <b>${num(p.n)}</b></span>`).join("");
+  // 3. Connections: your sources, flowing into Cortex, serving your teams
+  const types = [...new Set(a.freshness.map((k) => k.type))];
+  const shown = types.slice(0, 3).map((ty) => brandTile(ty, (SERVICE_INFO[ty] || ["file"])[0], "sm")).join("");
+  const teams = departments.slice(0, 3).map((d) => `<span class="team-dot" title="${esc(d.name)}">${esc(initials(d.name))}</span>`).join("");
+  return `<div class="pulse-card">
+      <div class="pulse-head"><span class="pulse-label">Knowledge added</span><span class="pulse-num">${ic("activity")}${num(added)}</span></div>
+      <div class="pulse-sub">New items learned, last ${grow.length} days</div>
+      <div class="heat" role="img" aria-label="New items per day">${squares}</div>
+    </div>
+    <div class="pulse-card">
+      <div class="pulse-head"><span class="pulse-label">Questions asked</span><span class="pulse-num">${num(asked7)}</span></div>
+      <div class="pulse-sub">Last 7 days${rate != null ? ` · ${rate}% answered` : ""}</div>
+      <svg class="spark" viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Questions per day, last 7 days">
+        <defs><linearGradient id="spark-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+        <path d="${area}" fill="url(#spark-fill)"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="${last[0]}" cy="${last[1]}" r="3.6" fill="var(--accent)"/>
+        ${week.map((d, i) => `<text x="${pts[i][0]}" y="${H + 13}" text-anchor="middle">${new Date(d.day).toLocaleDateString(undefined, { weekday: "narrow" })}</text><title>${d.day}: ${d.asked}</title>`).join("")}
+      </svg>
+      <div class="pchips">${people || '<span class="muted small">No questions yet</span>'}</div>
+    </div>
+    <div class="pulse-card">
+      <div class="pulse-head"><span class="pulse-label">Connections</span><span class="pulse-num">${num(t.searchable)}</span></div>
+      <div class="pulse-sub">Items your team can ask about</div>
+      <div class="flow">
+        <a class="flow-end" href="#sources" title="Sources">${shown || ic("plus")}${types.length > 3 ? `<span class="more">+${types.length - 3}</span>` : ""}</a>
+        <span class="flow-dots"><i></i><i></i><i></i></span>
+        <span class="flow-core"><img src="/static/cortex.svg" alt="Cortex"></span>
+        <span class="flow-dots"><i></i><i></i><i></i></span>
+        <a class="flow-end" href="#people" title="Teams">${teams || `<span class="team-dot">${ic("people")}</span>`}${departments.length > 3 ? `<span class="more">+${departments.length - 3}</span>` : ""}</a>
+      </div>
+      <div class="flow-labels"><span>Sources</span><span>Cortex</span><span>Teams</span></div>
+    </div>`;
+}
 
 const LEARN_LABEL = { gmail: "Gmail", gcal: "Google Calendar", gdrive: "Google Drive", ms_mail: "Outlook mail", ms_cal: "Outlook calendar",
   ms_drive: "OneDrive", slack: "Slack", meta_social: "Facebook and Instagram", youtube: "YouTube", website: "Website", whatsapp_business: "WhatsApp Business", imap: "Mailbox", ics: "Calendar" };
@@ -434,6 +526,7 @@ function leaveWelcome() {
 function newChat() {
   if (chat.busy) return;
   chat.history = []; chat.cid = null;
+  $$("#chat-history .hist.active").forEach((a) => a.classList.remove("active"));
   $("#messages").innerHTML = "";
   getJSON("/api/overview").then(drawWelcome).catch(() => drawWelcome({ ready: {}, total: 0 }));
   qBox.value = ""; qBox.style.height = "auto"; qBox.focus();
@@ -575,6 +668,7 @@ $("#ask-form").addEventListener("submit", async (e) => {
     return;
   }
   answerEl.innerHTML = renderAnswer(text, sources);
+  loadChatHistory();
   if (!/\[\[file:\d+\]\]/.test(text)) {
     const files = sources.filter((s) => isFile(s) && text.includes(`[${s.n}]`));
     if (files.length === 1) answerEl.insertAdjacentHTML("beforeend", fileCard(files[0]));
@@ -603,7 +697,7 @@ async function openConversation(id) {
     chat.history.push({ role: "user", content: m.question }, { role: "assistant", content: m.answer || "" });
   }
   location.hash = "#ask";
-  setTimeout(() => scrollChat(true), 50);
+  setTimeout(() => { scrollChat(true); loadChatHistory(); }, 50);
 }
 // Someone else's conversation (admins): read only
 function viewConversation(c) {
@@ -650,7 +744,7 @@ LOADERS.conversations = async function loadConversations() {
     if (!await confirmBox({ title: "Delete this conversation?", text: "It will be removed from your conversations.", confirm: "Delete", danger: true })) return;
     await api(`/api/conversations/${b.dataset.delConv}`, { method: "DELETE" });
     if (chat.cid === Number(b.dataset.delConv)) { chat.cid = null; chat.history = []; $("#messages").innerHTML = ""; }
-    toast("Deleted."); LOADERS.conversations();
+    toast("Deleted."); LOADERS.conversations(); loadChatHistory();
   });
 };
 $$("#conv-scope button").forEach((b) => b.onclick = () => {
@@ -712,9 +806,7 @@ async function pagedDocs(container, params, { manage = false, pageSize = 25, emp
   return { rows, total };
 }
 
-LOADERS.library = async () => pagedDocs($("#lib-list"), { reset: true, query: { q: $("#lib-search").value, status: "ready" } },
-  { empty: "Nothing to show yet. Your admin is still adding the company's information." });
-$("#lib-search").addEventListener("input", debounce(() => LOADERS.library()));
+
 
 
 // Real service logos, so every connection is recognisable at a glance
@@ -1650,3 +1742,121 @@ $("#learn-add").addEventListener("click", () => {
   $("[data-close]", f).onclick = () => { closeDialog(); LOADERS.learning(); };
   load();
 });
+
+
+// ================================================================== Brain: browse everything like a drive
+const APP_FOLDERS = {
+  gmail: ["Gmail", "#EA4335"], gcal: ["Google Calendar", "#4285F4"], gdrive: ["Google Drive", "#1FA463"],
+  ms_mail: ["Outlook", "#0A64C9"], ms_cal: ["Outlook calendar", "#0A64C9"], ms_drive: ["OneDrive", "#0364B8"],
+  slack: ["Slack", "#4A154B"], meta_social: ["Facebook & Instagram", "#1877F2"], youtube: ["YouTube", "#E62117"],
+  website: ["Websites", "#64748B"], whatsapp_business: ["WhatsApp Business", "#1DA851"], imap: ["Mailbox", "#475467"], ics: ["Calendar link", "#475467"],
+  "upload:file": ["Uploaded files", "#4F46E5"], "upload:interview": ["Interviews", "#9333EA"], "upload:whatsapp": ["WhatsApp chats", "#1DA851"],
+  "upload:social": ["LinkedIn", "#0A66C2"],
+};
+const APP_LOGO = { "upload:whatsapp": "whatsapp", "upload:social": "linkedin", whatsapp_business: "whatsapp" };
+const TYPE_ICON = { email: "mail", file: "file", calendar: "calendar", slack: "ask", whatsapp: "chat", web: "globe", social: "share", interview: "mic" };
+const brainState = { folder: null, offset: 0, items: [], total: 0, selected: null, data: null };
+
+function folderIcon(key, color, big = true) {
+  const logo = APP_LOGO[key] || key;
+  const badge = BRAND_SVG[logo] || SOURCE_BRAND[logo] ? `<span class="folder-badge">${(SOURCE_BRAND[logo] || [logo]).slice(0, 1).map((m) => `<svg viewBox="0 0 24 24">${BRAND_SVG[m]}</svg>`).join("")}</span>` : "";
+  return `<span class="folder ${big ? "" : "sm"}" style="--fc:${color}"><svg viewBox="0 0 64 50" aria-hidden="true">
+      <path d="M2 7a4 4 0 0 1 4-4h15.5a4 4 0 0 1 3 1.4L28 8h30a4 4 0 0 1 4 4v3H2z" fill="var(--fc)" opacity=".72"/>
+      <rect x="2" y="12" width="60" height="36" rx="4" fill="var(--fc)"/><rect x="2" y="12" width="60" height="5" rx="2" fill="#fff" opacity=".14"/></svg>${badge}</span>`;
+}
+function folderFor(key) {
+  const d = brainState.data;
+  const app = d.apps.find((f) => f.key === key);
+  if (app) { const [label, color] = APP_FOLDERS[key] || [app.label || key, "#64748B"];
+    return { key, label: app.label || label, color, count: app.count, query: key.startsWith("upload:") ? { source: "uploads", kind: key.slice(7) } : { ctype: key } }; }
+  const t = d.types.find((f) => "type:" + f.key === key);
+  if (t) return { key, label: t.label, color: "#4F46E5", count: t.count, query: { kind: t.key }, icon: TYPE_ICON[t.key] };
+  return null;
+}
+LOADERS.brain = async function loadBrain() {
+  brainState.data = await getJSON("/api/brain");
+  drawBrainSide();
+  if (brainState.folder && !folderFor(brainState.folder.key)) brainState.folder = null;
+  await drawBrainView(true);
+};
+function drawBrainSide() {
+  const d = brainState.data;
+  const item = (key, label, count, iconHtml) => `<a href="#" class="fs-item ${(brainState.folder?.key || "") === key ? "active" : ""}" data-folder="${key}">${iconHtml}<span class="grow">${esc(label)}</span><span class="fs-count">${num(count)}</span></a>`;
+  $("#brain-side").innerHTML = item("", "Company Brain", d.total, `<img src="/static/cortex.svg" alt="" class="fs-logo">`)
+    + (d.apps.length ? `<div class="fs-group">Connected apps</div>` + d.apps.map((f) => { const ff = folderFor(f.key); return item(f.key, ff.label, f.count, folderIcon(f.key, ff.color, false)); }).join("") : "")
+    + (d.types.length ? `<div class="fs-group">By type</div>` + d.types.map((f) => item("type:" + f.key, f.label, f.count, `<span class="fs-ic">${ic(TYPE_ICON[f.key] || "file")}</span>`)).join("") : "");
+  $$("#brain-side [data-folder]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openFolder(a.dataset.folder); });
+}
+function openFolder(key) {
+  brainState.folder = key ? folderFor(key) : null;
+  brainState.selected = null;
+  $("#brain-search").value = "";
+  $("#brain-preview").classList.add("hidden");
+  drawBrainSide();
+  drawBrainView(true);
+}
+async function drawBrainView(reset) {
+  const d = brainState.data, f = brainState.folder, q = $("#brain-search").value.trim();
+  $("#brain-crumbs").innerHTML = `<a href="#" data-folder="">${ic("brain")}Company Brain</a>${f ? `<span class="sep">›</span><b>${esc(f.label)}</b>` : ""}${q ? `<span class="sep">›</span><span>Search: “${esc(q)}”</span>` : ""}`;
+  $$("#brain-crumbs [data-folder]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openFolder(""); });
+  const view = $("#brain-view");
+  if (!f && !q) {   // the top level: one folder per connected app, then by type
+    const tile = (ff) => `<a href="#" class="folder-tile" data-folder="${ff.key}">${ff.icon ? `<span class="folder" style="--fc:${ff.color}"><svg viewBox="0 0 64 50"><path d="M2 7a4 4 0 0 1 4-4h15.5a4 4 0 0 1 3 1.4L28 8h30a4 4 0 0 1 4 4v3H2z" fill="var(--fc)" opacity=".72"/><rect x="2" y="12" width="60" height="36" rx="4" fill="var(--fc)"/></svg><span class="folder-glyph">${ic(ff.icon)}</span></span>` : folderIcon(ff.key, ff.color)}
+      <span class="ft-name">${esc(ff.label)}</span><span class="ft-count">${num(ff.count)}</span></a>`;
+    view.innerHTML = !d.total ? `<div class="empty">Nothing here yet. ${me.role === "admin" ? '<a href="#sources">Connect your first source</a>' : "Your admin is still adding the company's information."}</div>`
+      : (d.apps.length ? `<h3 class="fv-title">Connected apps</h3><div class="folder-grid">${d.apps.map((a) => tile(folderFor(a.key))).join("")}</div>` : "")
+      + (d.types.length ? `<h3 class="fv-title">By type</h3><div class="folder-grid">${d.types.map((t) => tile(folderFor("type:" + t.key))).join("")}</div>` : "");
+    $$("#brain-view [data-folder]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openFolder(a.dataset.folder); });
+    $("#brain-status").innerHTML = `${ic("brain")}<span>Company Brain</span><span class="grow"></span><span>${plural(d.total, "item", "items")}</span>`;
+    return;
+  }
+  if (reset) { brainState.offset = 0; brainState.items = []; }
+  const params = new URLSearchParams({ ...(f ? f.query : {}), q, sort: "date", limit: 50, offset: brainState.offset });
+  const res = await api(`/api/documents?${params}`);
+  const rows = await res.json();
+  brainState.total = Number(res.headers.get("X-Total-Count") || rows.length);
+  brainState.items.push(...rows);
+  brainState.offset += rows.length;
+  const when = (r) => { const t = r.doc_date || r.updated_at; return t ? new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : ""; };
+  const who = (r) => { const m = r.metadata || {}; const clean = (x) => (x || "").replace(/<[^>]*>/g, "").split(",")[0].trim();
+    return r.kind === "email" ? `${esc(clean(m.from))}${m.to ? ` → ${esc(clean(m.to))}` : ""}` : esc((APP_FOLDERS[r.connector_type] || [r.source === "connector" ? "" : "Uploaded"])[0]); };
+  view.innerHTML = brainState.items.length ? `<div class="file-list">${brainState.items.map((r) => `<a href="#" class="fl-row ${brainState.selected === r.id ? "active" : ""}" data-item="${r.id}">
+      ${r.connector_type && BRAND_SVG[APP_LOGO[r.connector_type] || r.connector_type] ? brandTile(r.connector_type, "file", "sm") : `<span class="icon-tile sm">${ic(KIND_ICON[r.kind] || "file")}</span>`}
+      <span class="fl-main"><span class="fl-title" dir="auto">${esc(r.kind === "email" ? r.title.replace(/^Email:\s*/, "") : r.title)}</span><span class="fl-meta" dir="auto">${who(r)}</span></span>
+      ${isFile(r) ? `<i class="ftype">${esc(r.filename.split(".").pop().toUpperCase())}</i>` : ""}
+      <span class="fl-date">${when(r)}</span></a>`).join("")}</div>
+      ${brainState.items.length < brainState.total ? `<div class="fl-more"><button class="btn" type="button" id="brain-more">Show more</button></div>` : ""}`
+    : `<div class="empty">${q ? "Nothing matches your search." : "This folder is empty."}</div>`;
+  $$("#brain-view [data-item]").forEach((a) => a.onclick = (e) => { e.preventDefault(); showPreview(Number(a.dataset.item)); });
+  $("#brain-more")?.addEventListener("click", () => drawBrainView(false));
+  $("#brain-status").innerHTML = `${f ? folderIcon(f.key, f.color, false) : ic("search")}<span>${f ? esc(f.label) : "Search"}</span><span class="grow"></span><span>${plural(brainState.total, "item", "items")}</span>`;
+}
+$("#brain-search").addEventListener("input", debounce(() => drawBrainView(true)));
+
+async function showPreview(id) {
+  brainState.selected = id;
+  $$("#brain-view .fl-row").forEach((r) => r.classList.toggle("active", Number(r.dataset.item) === id));
+  const p = await getJSON(`/api/documents/${id}/preview`);
+  const m = p.metadata || {};
+  const when = p.doc_date || p.updated_at;
+  const rows = [["From", m.from], ["To", m.to], ["Cc", m.cc], ["Date", when && new Date(when).toLocaleString()],
+    ["In", m.email_subject && `Attached to “${m.email_subject}”`], ["Source", (APP_FOLDERS[p.connector_type] || [p.source === "connector" ? "" : "Uploaded"])[0]],
+    ["Who can find it", p.company_wide ? "Everyone" : (p.departments || []).join(", ")]].filter(([, v]) => v);
+  const file = isFile(p);
+  const pane = $("#brain-preview");
+  pane.classList.remove("hidden");
+  pane.innerHTML = `<div class="pv-head"><span class="pv-icon">${file ? `<span class="file-icon" style="--fc:${FILE_COLORS[p.filename.split(".").pop().toUpperCase()] || "var(--accent)"}">${esc(p.filename.split(".").pop().toUpperCase().slice(0, 4))}</span>` : `<span class="icon-tile">${ic(KIND_ICON[p.kind] || "file")}</span>`}</span>
+      <button class="btn link small pv-close" type="button" aria-label="Close preview" title="Close">${ic("x")}</button></div>
+    <h3 class="pv-title" dir="auto">${esc(p.title)}</h3>
+    <dl class="pv-meta">${rows.map(([k, v]) => `<dt>${k}</dt><dd dir="auto">${esc(String(v))}</dd>`).join("")}</dl>
+    <div class="pv-actions">
+      <a class="btn small" href="#" data-doc="${p.id}">Open</a>
+      ${file ? `<a class="btn small" href="#" data-doc="${p.id}" data-download>${ic("download")}Download</a>` : ""}
+      <button class="btn small primary" type="button" data-ask-about>${ic("ask")}Ask about this</button></div>
+    <div class="pv-text" dir="auto">${p.text ? esc(p.text) : '<span class="muted">No text preview for this item.</span>'}</div>`;
+  $(".pv-close", pane).onclick = () => { pane.classList.add("hidden"); brainState.selected = null; $$("#brain-view .fl-row.active").forEach((r) => r.classList.remove("active")); };
+  $("[data-ask-about]", pane).onclick = () => {
+    location.hash = "#ask";
+    setTimeout(() => { newChat(); qBox.value = `About "${p.title}": `; qBox.focus(); qBox.dispatchEvent(new Event("input")); }, 50);
+  };
+}

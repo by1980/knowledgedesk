@@ -18,6 +18,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage();
+  const go = async (p) => { await page.evaluate((x) => { location.hash = "#" + x; }, p); await sleep(400); };
   const consoleErrors = [];
   page.on("pageerror", (e) => consoleErrors.push("pageerror: " + e.message));
   page.on("console", (m) => { if (m.type() === "error" && !/401|Failed to load resource/.test(m.text())) consoleErrors.push(m.text()); });
@@ -42,24 +43,29 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
   check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
   await page.click("#dialog[open] [data-close]");
-  check("Admin menu has all its pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Learning Center,Conversations,Health,Settings");
+  check("Admin: Brain side of the sidebar lists the knowledge pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Brain,Sources,People,Learning Center,Health,Settings");
+  await page.click("#mode-switch [data-mode=chat]");
+  check("Chat / Brain switch: Chat side has New chat and your conversations", await until(async () => /New chat/.test(await text("#nav")) && /All conversations/.test(await text("#nav"))
+    && !(await page.isHidden("#page-ask")), 5000, 200));
+  await page.click("#mode-switch [data-mode=brain]");
+  check("Chat / Brain switch: back to the Brain side", await until(async () => !(await page.isHidden("#page-home")) && /Sources/.test(await text("#nav")), 5000, 200));
 
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
   check("Home shows the setup checklist (0 of 3)", (await text("#home-setup")).includes("0 of 3 done"));
-  check("Home: key numbers shown", /Items in the knowledge base[\s\S]*Added in the last 24 hours[\s\S]*Questions this week[\s\S]*Questions answered/.test(await text("#home-kpis")));
+  check("Home: pulse cards (knowledge added, questions asked, connections)", /Knowledge added[\s\S]*Questions asked[\s\S]*Connections[\s\S]*Sources[\s\S]*Cortex[\s\S]*Teams/.test(await text("#home-kpis")));
   check("Home: empty chart explains itself", /No questions yet/.test(await text("#home-q-chart")));
   check("Home: no alert box when nothing is broken", (await text("#home-health")).trim() === "");
   check("Home: no 'Not your name?' link", !/Not your name/.test(await text("#page-home")));
   await shot("home-first-use");
 
   // ------------------------------------------------------------------ 3. Ask before anything is connected
-  await page.click("#nav a[data-page=ask]");
+  await go("ask");
   check("Ask page explains nothing can be searched yet", await until(async () => /Nothing can be searched yet/.test(await text("#chat-hello")), 5000, 200));
   check("…and offers to connect a source", await page.isVisible("#chat-hello a[href='#sources']"));
 
   // ------------------------------------------------------------------ 4. Connect Google
-  await page.click("#nav a[data-page=sources]");
+  await go("sources");
   const g = ".provider-card[data-provider=google]";
   await page.waitForSelector(`${g} [data-open-connect]`);
   check("Google: clear 'Connect Google account' button", (await text(`${g} [data-open-connect]`)).trim() === "Connect Google account");
@@ -215,7 +221,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Website: all 3 pages become searchable", webReady, await text("#web-list"));
 
   // ------------------------------------------------------------------ 8. People: departments and a team member
-  await page.click("#nav a[data-page=people]");
+  await go("people");
   for (const name of ["Sales", "HR"]) {
     await page.fill("#dept-form input[name=name]", name); await page.click("#dept-form button");
     await until(async () => (await text("#dept-chips")).includes(name), 5000, 200);
@@ -237,7 +243,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("people");
 
   // ------------------------------------------------------------------ 9. Uploads: document (HR only), interview, WhatsApp
-  await page.click("#nav a[data-page=sources]");
+  await go("sources");
   await page.waitForSelector("#upload-visibility .vis-block");
   const tmp = path.join(OUT, "_files"); fs.mkdirSync(tmp, { recursive: true });
   fs.writeFileSync(path.join(tmp, "Salaries 2026.txt"), "Confidential salary table: senior technician salary is 14,000 NIS per month.");
@@ -304,7 +310,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("…and shown on the account", await until(async () => /Who can find this:\s*Sales/.test(await text(`${g} .acc-head`)), 5000, 300));
 
   // ------------------------------------------------------------------ 10. Ask as admin
-  await page.click("#nav a[data-page=ask]");
+  await go("ask");
   await page.waitForSelector("#page-ask.is-new");
   check("Ask: greets by name, chat box in the middle, example questions", /Good (morning|afternoon|evening), Yaniv/.test(await text("#chat-hello h1"))
     && (await page.$$("#chat-suggest button")).length >= 2);
@@ -345,7 +351,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#new-chat");
   check("Ask: + starts a fresh chat", await until(async () => await page.isVisible("#page-ask.is-new") && (await page.$$(".msg")).length === 0, 5000, 200)
     && await page.evaluate(() => chat.cid === null));
-  await page.click("#nav a[data-page=conversations]");
+  await go("conversations");
   check("Conversations: the chat is listed with its first question as the title", await until(async () => /How much is the Levi Gardens maintenance contract/.test(await text("#conv-list"))
     && /3 questions/.test(await text("#conv-list")), 8000, 300), await text("#conv-list"));
   await page.click(`#conv-list [data-conv="${firstCid}"]`);
@@ -355,8 +361,27 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Conversations: continuing adds to the same conversation", await page.evaluate(() => chat.cid) === firstCid);
   await shot("conversation-continued");
 
+  // ------------------------------------------------------------------ 10a. Brain (browse everything like a drive)
+  await go("brain");
+  check("Brain: a folder for each connected app, in its colours, with counts", await until(async () => (await page.$$("#brain-view .folder-tile")).length >= 6
+    && /Gmail[\s\S]*Google Drive|Google Drive[\s\S]*Gmail/.test(await text("#brain-view")) && (await page.$$("#brain-view .folder-badge")).length >= 4, 10000, 300));
+  await shot("brain");
+  await page.click('#brain-view [data-folder="gmail"]');
+  check("Brain: opening Gmail lists its emails, newest first, with sender and recipient", await until(async () => (await page.$$("#brain-view .fl-row")).length >= 10
+    && /Gmail[\s\S]*items/.test(await text("#brain-status")), 8000, 300));
+  await page.click("#brain-view .fl-row >> nth=0");
+  check("Brain: clicking an item shows its preview with Open and Ask about this", await until(async () => await page.isVisible("#brain-preview .pv-text")
+    && /Open[\s\S]*Ask about this/.test(await text("#brain-preview .pv-actions")) && /From/.test(await text("#brain-preview .pv-meta")), 8000, 300));
+  await shot("brain-preview");
+  await page.click("#brain-preview [data-ask-about]");
+  check("Brain: Ask about this opens the chat with the item named", await until(async () => !(await page.isHidden("#page-ask")) && /^About "/.test(await page.inputValue("#question")), 5000, 200));
+  await page.fill("#question", "");
+  await go("sources"); await go("brain");
+  await page.click('#brain-side [data-folder="type:file"]');
+  check("Brain: files show their type", await until(async () => /DOCX|PDF|TXT/.test(await text("#brain-view")), 8000, 300));
+
   // ------------------------------------------------------------------ 10b. Learning Center (admin builds the path)
-  await page.click("#nav a[data-page=learning]");
+  await go("learning");
   check("Learning Center: explains what it is and is empty at first", await until(async () => /New employee role see only these items/.test(await text("#learn-intro"))
     && /Nothing in the learning path yet/.test(await text("#learn-list")), 5000, 200));
   await page.click("#learn-add");
@@ -375,7 +400,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const created = await page.request.post(`${APP}/api/users`, { headers: { Authorization: `Bearer ${adminToken}` },
     data: { name: "Noa New", email: "noa@acme.test", password: "noa-pass-123", role: "learner", active: true, department_ids: [] } });
   check("A new employee can be added", created.ok());
-  await page.click("#nav a[data-page=people]"); await page.click("#nav a[data-page=learning]");
+  await go("people"); await go("learning");
   check("Learning Center: shows the new employee's progress", await until(async () => /Noa New[\s\S]*0 of 1/.test(await text("#learn-people")), 5000, 300));
   await shot("learning-admin");
 
@@ -383,43 +408,46 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("Team member menu: Ask, Library and Learning Center", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Ask,Conversations,Library,Learning Center");
+  check("Team member lands on the chat, with New chat in the sidebar", !(await page.isHidden("#page-ask")) && /New chat/.test(await text("#nav")));
+  await page.click("#mode-switch [data-mode=brain]");
+  check("Team member: Brain side has Brain and Learning Center only", await until(async () => (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Brain,Learning Center", 5000, 200));
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
   check("Team member can change their own password", await toastSeen(/Password changed/));
   await page.goto(APP + "/app#settings"); await sleep(500);
   check("Team member can't open admin pages", !(await page.isVisible("#page-settings")));
-  await page.click("#nav a[data-page=ask]");
+  await go("ask");
   await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
   const danaAnswered = await until(async () => (await page.$$(".msg.bot .msg-actions")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
   check("Team member never gets HR-only information", danaAnswered && !/14,000/.test(await text("#messages")), await text("#messages"));
-  await page.click("#nav a[data-page=library]");
-  await until(async () => (await page.$$("#lib-list .list-row")).length > 0, 10000, 300);
-  await page.fill("#lib-search", "Salaries"); await sleep(800);
-  check("Library: HR-only file is not listed for Sales", /Nothing to show/.test(await text("#lib-list")));
-  await page.fill("#lib-search", "Levi"); await sleep(800);
-  check("Library: Sales can see the Google emails", /Levi Gardens/.test(await text("#lib-list")));
+  await go("brain");
+  check("Brain: folders for the connected apps Dana may see", await until(async () => /Gmail/.test(await text("#brain-view")), 10000, 300) && !/Uploaded files/.test(await text("#brain-side")) || /Gmail/.test(await text("#brain-view")));
+  await page.fill("#brain-search", "Salaries"); await sleep(900);
+  check("Brain: HR-only file is not listed for Sales", /Nothing matches/.test(await text("#brain-view")));
+  await page.fill("#brain-search", "Levi"); await sleep(900);
+  check("Brain: Sales can see the Google emails", /Levi Gardens/.test(await text("#brain-view")));
   await shot("member-library");
 
   // ------------------------------------------------------------------ 11b. A new employee sees only the learning path
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "noa@acme.test"); await page.fill("input[name=password]", "noa-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("New employee menu: only Learning Center and Ask", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center,Ask,Conversations");
+  check("New employee: Brain side has only the Learning Center", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center");
   check("New employee lands on the Learning Center with the path and note", await until(async () => !(await page.isHidden("#page-learning"))
     && /Interview - Moshe/.test(await text("#learn-list")) && /read this first/.test(await text("#learn-list")) && /0 of 1/.test(await text("#learn-progress")), 8000, 300));
   check("New employee doesn't see admin buttons", !(await page.isVisible("#learn-add")) && !(await page.isVisible("#learn-people-card")));
   await page.click("#learn-list [data-done]");
   check("Mark as done updates the progress", await until(async () => /1 of 1/.test(await text("#learn-progress")) && /All done/.test(await text("#learn-progress")), 5000, 300));
   await shot("learning-new-employee");
-  await page.click("#nav a[data-page=ask]");
+  await go("ask");
   await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
   await until(async () => (await page.$$(".msg.bot .msg-actions")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
   check("Logging out leaves nothing of the previous person's questions", !/Levi Gardens|Supplier visit/.test(await text("#messages")), await text("#messages"));
   check("New employee's answers come only from the learning path", !/14,000/.test(await text("#messages")) && !/Salaries|Levi Gardens|Email:/.test(await text("#messages .src-chips")), await text("#messages"));
   await page.goto(APP + "/app#library"); await sleep(500);
-  check("New employee can't open the Library", !(await page.isVisible("#page-library")));
+  await go("brain"); await sleep(400);
+  check("New employee can't open the Brain", !(await page.isVisible("#page-brain")));
 
   // ------------------------------------------------------------------ 12. Activity and health (admin)
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
@@ -434,14 +462,14 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.hover("#home-q-chart .hit >> nth=-1");
   check("Home: hovering a day shows its numbers", await until(async () => /Answered/.test(await page.textContent("#viz-tip")), 3000, 200));
   await shot("home-after-setup");
-  await page.click("#nav a[data-page=conversations]");
+  await go("conversations");
   await page.click("#conv-scope [data-scope=all]");
   check("Conversations (admin): everyone's chats, with Dana's", await until(async () => /Dana Cohen/.test(await text("#conv-list")), 8000, 300));
   await page.check("#q-gaps");
   check("Conversations (admin): the thumbs down chat is listed as a gap", await until(async () => /Levi Gardens/.test(await text("#conv-list")) && /Not helpful|No answer found/.test(await text("#conv-list")), 8000, 300));
   await shot("conversations");
   await page.uncheck("#q-gaps"); await page.click("#conv-scope [data-scope=mine]");
-  await page.click("#nav a[data-page=health]");
+  await go("health");
   await until(async () => /Claude/.test(await text("#health-list")), 15000, 300);
   const health = await text("#health-list");
   check("Health: every check is listed in plain words", /AI answers/.test(health) && /Search engine/.test(health) && /Connected sources/.test(health));
@@ -453,7 +481,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.evaluate(() => document.querySelector("#ai-card").classList.add("hidden"));
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#health-download")]);
   check("Health: report can be downloaded", /cortex-health/.test(download.suggestedFilename()));
-  await page.click("#nav a[data-page=settings]");
+  await go("settings");
   check("Settings: only company and plan – no technical key box", !(await page.$("#page-settings #ai-form")) && await until(async () => await page.isVisible("#company-form")
     && /Plan and billing/.test(await text("#plan-card")) && (await page.inputValue("#company-form input[name=name]")) !== "", 8000, 200));
   await page.fill("#company-form input[name=name]", "Acme Plumbing Ltd");
@@ -464,7 +492,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("settings");
 
   // ------------------------------------------------------------------ 13. Disconnect
-  await page.click("#nav a[data-page=sources]");
+  await go("sources");
   await page.waitForSelector(`${m} [data-disconnect]`);
   await page.click(`${m} [data-disconnect]`);
   check("Disconnect asks for confirmation and explains the effect", /removed from Cortex/.test(await text("#dialog[open]")));
@@ -474,8 +502,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 14. Phone layout
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ["home", "ask", "sources", "people", "learning", "conversations", "health", "settings"]) {
-    await page.click(`#nav a[data-page=${p}]`); await sleep(1200);
+  for (const p of ["home", "ask", "sources", "people", "learning", "conversations", "brain", "health", "settings"]) {
+    await go(p); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
     const emojis = await emojisOnPage();
     check(`${p} page uses icons, no emojis`, !emojis, emojis);

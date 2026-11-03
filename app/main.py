@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.11"
+APP_VERSION = "0.9.12"
 
 
 def _ensure_secret_key() -> None:
@@ -649,10 +649,14 @@ def _can_see(c, user: dict, doc_id: int) -> bool:
 @app.get("/api/documents")
 def list_documents(response: Response, user: dict = Depends(auth.current_user), q: str = "",
                    source: str = "", connector_id: int | None = None, status: str = "", kind: str = "",
-                   limit: int = 1000, offset: int = 0):
-    """source: "uploads" = files added by hand or from synced folders. Total count is in X-Total-Count."""
+                   ctype: str = "", sort: str = "", limit: int = 1000, offset: int = 0):
+    """source: "uploads" = files added by hand or from synced folders; ctype: everything from one kind of connected
+    app (e.g. all Gmail accounts); sort=date: newest first by the item's own date. Total count is in X-Total-Count."""
     where = [VISIBLE]
     params = {**_visible_params(user), "limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
+    if ctype:
+        where.append("d.connector_id IN (SELECT id FROM connectors WHERE type = %(ctype)s)")
+        params["ctype"] = ctype
     if q.strip():
         where.append("(d.title ILIKE %(q)s OR d.filename ILIKE %(q)s OR EXISTS (SELECT 1 FROM chunks ch "
                      "WHERE ch.document_id = d.id AND ch.tsv @@ plainto_tsquery('simple', %(qt)s)))")
@@ -675,15 +679,67 @@ def list_documents(response: Response, user: dict = Depends(auth.current_user), 
         total = c.execute(f"SELECT count(*) AS n FROM documents d WHERE {sql_where}", params).fetchone()["n"]
         rows = c.execute(
             "SELECT d.id, d.title, d.filename, d.kind, d.source, d.company_wide, d.status, d.error, "
-            " d.metadata, d.created_at, d.updated_at, d.connector_id, "
+            " d.metadata, d.created_at, d.updated_at, d.doc_date, d.connector_id, "
+            " (SELECT k.type FROM connectors k WHERE k.id = d.connector_id) AS connector_type, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) "
             "   FROM document_departments dd JOIN departments dp ON dp.id=dd.department_id "
             "   WHERE dd.document_id=d.id), '[]') AS departments "
-            f"FROM documents d WHERE {sql_where} ORDER BY d.updated_at DESC LIMIT %(limit)s OFFSET %(offset)s",
+            f"FROM documents d WHERE {sql_where} "
+            f"ORDER BY {'coalesce(d.doc_date, d.updated_at) DESC NULLS LAST, d.id DESC' if sort == 'date' else 'd.updated_at DESC'} "
+            "LIMIT %(limit)s OFFSET %(offset)s",
             params,
         ).fetchall()
     response.headers["X-Total-Count"] = str(total)
     return rows
+
+
+# ---------------------------------------------------------------- the Brain: browse everything like a drive
+
+UPLOAD_FOLDERS = {"file": "Uploaded files", "interview": "Interviews", "whatsapp": "WhatsApp chats", "social": "LinkedIn"}
+TYPE_FOLDERS = [("email", "Emails"), ("file", "Documents and files"), ("calendar", "Calendar"), ("slack", "Slack messages"),
+                ("whatsapp", "WhatsApp"), ("web", "Web pages"), ("social", "Social media"), ("interview", "Interviews")]
+
+
+@app.get("/api/brain")
+def brain(user: dict = Depends(auth.current_user)):
+    """The folders of the Brain, with how many items each holds (only what this person may see)."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT k.type AS ctype, d.kind, d.source, count(*) AS n, max(coalesce(d.doc_date, d.updated_at)) AS latest "
+            f"FROM documents d LEFT JOIN connectors k ON k.id = d.connector_id WHERE {VISIBLE} "
+            "GROUP BY k.type, d.kind, d.source", _visible_params(user)).fetchall()
+    apps: dict[str, dict] = {}
+    kinds: dict[str, int] = {}
+    for r in rows:
+        kinds[r["kind"]] = kinds.get(r["kind"], 0) + r["n"]
+        key = r["ctype"] or ("upload:" + r["kind"])
+        f = apps.setdefault(key, {"key": key, "count": 0, "latest": None})
+        f["count"] += r["n"]
+        if r["latest"] and (not f["latest"] or r["latest"] > f["latest"]):
+            f["latest"] = r["latest"]
+    for f in apps.values():
+        if f["key"].startswith("upload:"):
+            f["label"] = UPLOAD_FOLDERS.get(f["key"][7:], "Uploaded files")
+    return {"total": sum(kinds.values()), "apps": sorted(apps.values(), key=lambda f: -f["count"]),
+            "types": [{"key": k, "label": label, "count": kinds[k]} for k, label in TYPE_FOLDERS if kinds.get(k)]}
+
+
+@app.get("/api/documents/{doc_id}/preview")
+def preview_document(doc_id: int, user: dict = Depends(auth.current_user)):
+    """One item's details and the beginning of its text, for the Brain's preview pane."""
+    with conn() as c:
+        if not _can_see(c, user, doc_id):
+            raise HTTPException(404, "Not found")
+        doc = c.execute(
+            "SELECT d.id, d.title, d.filename, d.kind, d.source, d.status, d.metadata, d.created_at, d.updated_at, d.doc_date, "
+            " d.company_wide, (SELECT k.type FROM connectors k WHERE k.id = d.connector_id) AS connector_type, "
+            " coalesce((SELECT json_agg(dp.name) FROM document_departments dd JOIN departments dp ON dp.id=dd.department_id "
+            "   WHERE dd.document_id=d.id), '[]') AS departments "
+            "FROM documents d WHERE d.id=%s", (doc_id,)).fetchone()
+        parts = c.execute("SELECT content FROM chunks WHERE document_id=%s ORDER BY position LIMIT 8", (doc_id,)).fetchall()
+    text = "\n\n".join(p["content"] for p in parts)
+    doc["text"] = text[:6000] + ("…" if len(text) > 6000 else "")
+    return doc
 
 
 def _safe_name(name: str) -> str:

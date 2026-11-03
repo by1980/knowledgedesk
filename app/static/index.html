@@ -46,6 +46,7 @@
     <symbol id="i-up-arrow" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
     <symbol id="i-down-arrow" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
     <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 3.5a3 3 0 0 0-3 3 3 3 0 0 0-2.5 4.5A3.5 3.5 0 0 0 5 17a3 3 0 0 0 4.5 3.5V3.5z"/><path d="M14.5 3.5a3 3 0 0 1 3 3 3 3 0 0 1 2.5 4.5A3.5 3.5 0 0 1 19 17a3 3 0 0 1-4.5 3.5V3.5z"/><path d="M9.5 9H8M9.5 14H7.5M14.5 9H16M14.5 14h2"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
@@ -74,6 +75,10 @@
         <img id="company-logo" class="hidden" alt="">
         <span id="company-name"></span>
       </a>
+      <div class="mode-switch" id="mode-switch" role="tablist" aria-label="Chat or Brain">
+        <button type="button" role="tab" data-mode="chat" title="Chat: ask and see your conversations"><svg class="ic"><use href="#i-chat"/></svg><span>Chat</span></button>
+        <button type="button" role="tab" data-mode="brain" title="Brain: your company's knowledge"><svg class="ic"><use href="#i-brain"/></svg><span>Brain</span></button>
+      </div>
       <nav id="nav" aria-label="Main"></nav>
       <div class="sidebar-foot">
         <button id="user-name" class="side-user" title="My account"></button>
@@ -92,7 +97,7 @@
           <label class="period">Period <select id="home-days"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select></label></div>
         <div id="home-health"></div>
         <div id="home-setup"></div>
-        <div class="kpis" id="home-kpis"></div>
+        <div class="pulse" id="home-kpis"></div>
         <div class="card"><div class="toolbar"><div><h2>Questions per day</h2><p class="muted small" id="q-chart-sub"></p></div></div>
           <div id="home-q-chart"></div></div>
         <div class="grid2">
@@ -126,11 +131,18 @@
       </main>
 
       <!-- ---------------------------------------------------------- Library (team members) -->
-      <main id="page-library" class="page hidden">
-        <div class="page-head"><div><h1>Library</h1><p class="muted">Everything you can search, newest first.</p></div></div>
-        <div class="card">
-          <div class="toolbar"><div class="search-box"><svg class="ic"><use href="#i-search"/></svg><input id="lib-search" type="search" placeholder="Search by title" dir="auto"></div></div>
-          <div id="lib-list"></div>
+      <main id="page-brain" class="page page-brain hidden">
+        <div class="finder">
+          <aside class="finder-side" id="brain-side" aria-label="Folders"></aside>
+          <section class="finder-main">
+            <div class="finder-bar">
+              <div class="crumbs" id="brain-crumbs"></div>
+              <div class="search-box"><svg class="ic"><use href="#i-search"/></svg><input id="brain-search" type="search" placeholder="Search everything" dir="auto"></div>
+            </div>
+            <div class="finder-view" id="brain-view"></div>
+            <div class="finder-status" id="brain-status"></div>
+          </section>
+          <aside class="finder-preview hidden" id="brain-preview" aria-label="Preview"></aside>
         </div>
       </main>
 
