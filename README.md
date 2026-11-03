@@ -71,7 +71,7 @@ cd knowledgedesk
 
 The installer asks for the company name, admin login and Claude API key, creates `.env` with
 random passwords, and starts everything with Docker. The first start downloads the AI models
-(a few GB). Then open `http://<server-ip>:8000` and log in as the admin.
+(a few GB). Then open `http://<server-ip>:8000/app` and log in as the admin (`http://<server-ip>:8000` is the Cortex website).
 
 **First setup in the app.** The **Home** page shows a 3-step checklist:
 1. **Sources:** connect Google or Microsoft accounts, add the website, and upload files,

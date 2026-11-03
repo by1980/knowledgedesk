@@ -58,5 +58,5 @@ PORT="${PORT:-8000}"
 echo
 echo "Cortex is starting."
 echo "The first start downloads the AI search and speech models (a few GB), so wait 5-15 minutes."
-echo "Then open:  http://localhost:${PORT}"
+echo "Then open the dashboard:  http://localhost:${PORT}/app   (the website is at http://localhost:${PORT})"
 echo "To watch progress:  $SUDO docker compose logs -f app   (press Ctrl+C to stop watching)"

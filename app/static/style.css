@@ -430,3 +430,4 @@ dialog:has(.setup-steps) { width: min(680px, calc(100vw - 32px)); }
 .icon-tile.brand.duo { width: auto; padding: 0 6px; gap: 4px; }
 .tile.off .icon-tile.brand svg { filter: grayscale(.15); }
 .center { text-align: center; }
+a.side-link { text-decoration: none; }

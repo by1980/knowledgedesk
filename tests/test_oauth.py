@@ -167,7 +167,7 @@ def connect(client, admin, provider):
     target = json.loads(base64.urlsafe_b64decode(state + "=="))["r"]
     assert target == "http://192.168.1.20:8000"
     r = client.get("/oauth/callback", params={"state": state, "code": "good-code"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"].startswith("/?connected=3"), r.text
+    assert r.status_code == 303 and r.headers["location"].startswith("/app?connected=3"), r.text
     return q
 
 

@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.6"
+APP_VERSION = "0.9.7"
 
 
 def _ensure_secret_key() -> None:
@@ -944,7 +944,7 @@ def _message_page(title: str, text: str) -> HTMLResponse:
 
     return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Cortex</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:16px">
-<h2>{escape(title)}</h2><p>{escape(text)}</p><p><a href="/">Back to Cortex</a></p></body>""")
+<h2>{escape(title)}</h2><p>{escape(text)}</p><p><a href="/app">Back to Cortex</a></p></body>""")
 
 
 @app.get("/oauth/callback")
@@ -958,7 +958,7 @@ def oauth_callback(state: str = "", code: str = "", error: str = "", error_descr
         return _message_page("Not connected", str(e))
     for cid in created:
         _sync_in_background(cid)
-    return RedirectResponse(f"/?connected={len(created)}#sources", status_code=303)
+    return RedirectResponse(f"/app?connected={len(created)}#sources", status_code=303)
 
 
 # ---------------------------------------------------------------- company branding
@@ -1321,11 +1321,17 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/")
+def marketing_page():
+    """The website: explains Cortex and leads to the dashboard."""
+    return FileResponse(STATIC / "site" / "index.html")
+
+
+@app.get("/app")
 def index():
+    """The dashboard."""
     return FileResponse(STATIC / "index.html")
 
 
 @app.get("/welcome")
-def marketing_page():
-    """The public page that explains Cortex and leads to the product."""
-    return FileResponse(STATIC / "site" / "index.html")
+def old_marketing_address():
+    return RedirectResponse("/", status_code=301)

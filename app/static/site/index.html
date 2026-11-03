@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cortex | Your company already knows</title>
+<title>Cortex | Ask your business anything</title>
 <meta name="description" content="Cortex learns everything your business knows: emails, files, chats, meetings and social channels. Ask it anything, have it find anything, and let it do the work.">
 <link rel="icon" href="/static/cortex.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -68,7 +68,7 @@
   .badge { display: inline-flex; align-items: center; gap: 10px; padding: 7px 16px 7px 8px; border-radius: 999px; font-size: 14px; color: var(--ink-2);
     background: rgba(255,255,255,.05); border: 1px solid var(--line-2); backdrop-filter: blur(6px); }
   .badge b { padding: 3px 10px; border-radius: 999px; font-size: 12px; color: #fff; background: linear-gradient(135deg, var(--indigo), var(--violet)); }
-  .hero h1 { font-size: clamp(40px, 6.1vw, 82px); font-weight: 900; letter-spacing: -.05em; line-height: 1.02; }
+  .hero h1 { font-size: clamp(40px, 6vw, 78px); font-weight: 900; letter-spacing: -.05em; line-height: 1.02; }
   .hero h1 span.line { white-space: nowrap; }
   @media (max-width: 760px) { .hero h1 span.line { white-space: normal; } }
   .hero .lead { max-width: 760px; font-size: clamp(17px, 1.9vw, 21px); }
@@ -261,10 +261,10 @@
   <div class="wrap nav">
     <a class="logo" href="#top"><img src="/static/cortex.svg" alt="">Cortex</a>
     <nav class="nav-links" aria-label="Main">
-      <a href="#what">What it does</a><a href="#learns">How it learns</a><a href="#teams">Teams</a><a href="#trust">Security</a>
+      <a href="#what">Features</a><a href="#learns">How it learns</a><a href="#teams">Teams</a><a href="#trust">Security</a>
     </nav>
-    <div class="nav-cta"><a class="login" href="/">Log in</a>
-      <a class="btn glow sm" href="/#home"><span class="hide-sm">Open the dashboard</span><span class="show-sm">Dashboard</span></a></div>
+    <div class="nav-cta"><a class="login" href="/app">Log in</a>
+      <a class="btn glow sm" href="/app#home"><span class="hide-sm">Open the dashboard</span><span class="show-sm">Dashboard</span></a></div>
   </div>
 </header>
 
@@ -273,11 +273,10 @@
   <section class="hero">
     <div class="glow-bg"></div><div class="grid-bg"></div>
     <div class="wrap">
-      <h1><span class="line">Your company already knows.</span><br><span class="grad line">Now it can tell you.</span></h1>
+      <h1><span class="line">Ask your business anything.</span><br><span class="grad line">Get the answer in seconds.</span></h1>
       <p class="lead">Cortex connects to your email, files, chats, calendar and social accounts. Your team asks a question and gets the answer with its source, finds any document or message in one search, and gets briefings, summaries and drafts written from your own information.</p>
       <div class="ctas">
-        <a class="btn glow" href="/#home">See how it works <svg><use href="#i-arrow"/></svg></a>
-        <a class="btn glass" href="#what">What it does</a>
+        <a class="btn glow" href="/app#home">See how it works <svg><use href="#i-arrow"/></svg></a>
       </div>
 
       <div class="brain" aria-hidden="true">
@@ -344,7 +343,7 @@
           <div class="stat"><b class="grad">10 min</b><span>between checks for new information</span></div>
           <div class="stat"><b class="grad">15+</b><span>tools and file types</span></div>
         </div>
-        <div><a class="btn glass" href="/#sources">See the Connection hub <svg><use href="#i-arrow"/></svg></a></div>
+        <div><a class="btn glass" href="/app#sources">See the Connection hub <svg><use href="#i-arrow"/></svg></a></div>
       </div>
       <div class="feed reveal" aria-hidden="true"><div class="feed-track" id="feed"></div></div>
     </div>
@@ -356,7 +355,7 @@
       <div class="center-head reveal"><h2>See what your team <span class="grad">needs to know.</span></h2>
         <p class="lead">Every source and its status, what your team asks every day, and the questions nobody could answer yet.</p></div>
       <div class="screens reveal"><div class="screen"><img src="/static/site/img/home.png" alt="The Cortex dashboard" width="2880" height="1800" loading="lazy"></div></div>
-      <div class="screen-cta"><a class="btn glow" href="/#home">Open the dashboard <svg><use href="#i-arrow"/></svg></a></div>
+      <div class="screen-cta"><a class="btn glow" href="/app#home">Open the dashboard <svg><use href="#i-arrow"/></svg></a></div>
     </div>
   </section>
 
@@ -408,7 +407,7 @@
         <img src="/static/cortex.svg" alt="" width="64" height="64" style="filter:drop-shadow(0 0 30px rgba(168,85,247,.8))">
         <h2>Stop asking around. <span class="grad">Ask Cortex.</span></h2>
         <p class="lead">Connect your first tool in minutes. Ask your first question today.</p>
-        <div class="ctas"><a class="btn glow" href="/#home">Open the dashboard <svg><use href="#i-arrow"/></svg></a>
+        <div class="ctas"><a class="btn glow" href="/app#home">Open the dashboard <svg><use href="#i-arrow"/></svg></a>
           <a class="btn glass" href="https://by1labs.com" target="_blank" rel="noopener">Talk to us</a></div>
       </div>
     </div>
@@ -419,7 +418,7 @@
   <div class="wrap">
     <a class="logo" href="#top" style="font-size:18px"><img src="/static/cortex.svg" alt="" style="width:26px;height:26px">Cortex</a>
     <span>Built by <a href="https://by1labs.com" target="_blank" rel="noopener">BY1 Labs</a>. © <span id="year">2026</span></span>
-    <span><a href="#what">What it does</a> · <a href="#trust">Security</a> · <a href="/">Log in</a></span>
+    <span><a href="#what">Features</a> · <a href="#trust">Security</a> · <a href="/app">Log in</a></span>
   </div>
 </footer>
 

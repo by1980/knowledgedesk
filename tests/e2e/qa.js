@@ -29,7 +29,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const toastSeen = async (re) => until(async () => re.test(await page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "))), 8000, 200);
 
   // ------------------------------------------------------------------ 1. Login
-  await page.goto(APP);
+  await page.goto(APP + "/app");
   await page.waitForSelector("#login-view:not(.hidden)");
   await page.fill("input[name=email]", "admin@acme.test"); await page.fill("input[name=password]", "wrong-password");
   await page.click("#login-form button");
@@ -37,7 +37,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("login-error");
   await page.fill("input[name=password]", "admin-pass-123"); await page.click("#login-form button");
   await page.waitForSelector("#app-view:not(.hidden)");
-  check("Admin lands on Home", /#home|\/$/.test(page.url()) && await page.isVisible("#page-home"));
+  check("Admin lands on Home", /#home|\/app$/.test(page.url()) && await page.isVisible("#page-home"));
   check("Home greets by first name, guessed from the email when no name is set", await until(async () => /^Hi Admin/.test((await text("#home-title")).trim()), 5000, 200));
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
   check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
@@ -138,7 +138,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click(`${m} [data-open-connect]`); await page.check(`${m} .panel .vis-everyone`); await page.click(`${m} [data-go]`);
   await page.waitForURL(/login\.microsoftonline\.com/); await page.click("#deny");
   check("Cancelling sign-in explains what happened", /cancelled/.test(await page.textContent("body")));
-  await page.goto(APP + "/#sources");
+  await page.goto(APP + "/app#sources");
   await page.waitForSelector(`${m} .account`);
   check("WhatsApp: has its own card with an import button", await page.isVisible("#wa-upload"));
 
@@ -361,7 +361,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
   check("Team member can change their own password", await toastSeen(/Password changed/));
-  await page.goto(APP + "/#settings"); await sleep(500);
+  await page.goto(APP + "/app#settings"); await sleep(500);
   check("Team member can't open admin pages", !(await page.isVisible("#page-settings")));
   await page.click("#nav a[data-page=ask]");
   await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
@@ -391,7 +391,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await until(async () => (await page.$$(".msg.bot .feedback")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
   check("Logging out leaves nothing of the previous person's questions", !/Levi Gardens|Supplier visit/.test(await text("#messages")), await text("#messages"));
   check("New employee's answers come only from the learning path", !/14,000/.test(await text("#messages")) && !/Salaries|Levi Gardens|Email:/.test(await text("#messages .sources")), await text("#messages"));
-  await page.goto(APP + "/#library"); await sleep(500);
+  await page.goto(APP + "/app#library"); await sleep(500);
   check("New employee can't open the Library", !(await page.isVisible("#page-library")));
 
   // ------------------------------------------------------------------ 12. Activity and health (admin)
@@ -454,22 +454,24 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 15. Marketing page
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(APP + "/welcome");
-  check("Marketing page: clear hero headline", /already knows/.test(await text("h1")) && /Cortex/.test(await text(".logo")));
+  await page.goto(APP + "/");
+  check("Marketing page: clear hero headline", /Ask your business anything/.test(await text("h1")) && /Cortex/.test(await text(".logo")));
   check("Marketing page: the brain shows the connected tools", (await page.$$("#net .node")).length >= 10);
   check("Marketing page: the example appears (Ask, Find, Do)", await until(async () => (await page.$$("#out .chip, #out .result")).length > 0, 8000, 300));
   await page.click(".mode[data-mode='2']");
   check("Marketing page: Do shows a finished task", await until(async () => /Briefing ready/.test(await text("#out")), 8000, 300));
   await page.click("#tabs .tab >> nth=4");
   check("Marketing page: team tabs switch the example", /Instagram/.test(await text("#team")));
-  check("Marketing page: See how it works opens the dashboard", (await page.getAttribute(".ctas .btn.glow", "href")) === "/#home");
+  check("Marketing page: See how it works opens the dashboard", (await page.getAttribute(".ctas .btn.glow", "href")) === "/app#home");
   check("Marketing page: no small labels above headlines", (await page.$$(".tag, .badge, .num")).length === 0);
   check("Marketing page: no dashes in the text", !/[–—]/.test(await page.evaluate(() => document.body.innerText)));
   check("Marketing page: product screenshots load", await page.evaluate(async () => (await Promise.all([...document.images].map((i) => fetch(i.src).then((r) => r.ok && /image/.test(r.headers.get("content-type")))))).every(Boolean)));
-  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/#home");
+  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/app#home");
   await page.setViewportSize({ width: 390, height: 844 });
   check("Marketing page fits a phone screen", await noOverflow());
-  check("Login page links to the marketing page", (await (await page.request.get(APP + "/")).text()).includes('href="/welcome"'));
+  check("Dashboard links back to the website (login page and sidebar)", (await (await page.request.get(APP + "/app")).text()).includes('id="to-website" class="side-link" href="/"'));
+  await page.click(".nav-cta .btn"); await page.waitForURL(/\/app/);
+  check("Website button opens the dashboard", await until(async () => await page.isVisible("#app-view") || await page.isVisible("#login-view"), 8000, 300));
 
   check("No JavaScript errors during the whole run", consoleErrors.length === 0, consoleErrors.join(" | "));
   await browser.close();

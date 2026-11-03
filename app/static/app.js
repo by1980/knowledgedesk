@@ -132,7 +132,7 @@ const LOADERS = {};
 
 function showView(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
 // Logging out reloads the page, so nothing of the previous person (their conversation, lists) stays on screen.
-function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; location.replace("/"); }
+function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; location.replace("/app"); }
 // The person's first name: their name, or. If none was set. A guess from their email (yaniv.b@… → Yaniv).
 function firstName(user) {
   const name = (user.name || "").trim();
@@ -158,7 +158,7 @@ async function boot() {
   showView("#app-view");
   const connected = new URLSearchParams(location.search).get("connected");
   if (connected !== null) {
-    window.history.replaceState(null, "", "/#sources");
+    window.history.replaceState(null, "", "/app#sources");
     toast("Account connected. Importing now. You can follow the progress on this page.");
   }
   route();
