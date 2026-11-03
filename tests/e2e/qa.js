@@ -25,6 +25,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const shot = async (name, full = true) => page.screenshot({ path: path.join(OUT, `${String(++shotN).padStart(2, "0")}-${name}.png`), fullPage: full });
   const text = async (sel) => (await page.textContent(sel)) || "";
   const noOverflow = async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  const emojisOnPage = async () => page.evaluate(() => (document.body.innerText.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}]/gu) || []).join(""));
   const toastSeen = async (re) => until(async () => re.test(await page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "))), 8000, 200);
 
   // ------------------------------------------------------------------ 1. Login
@@ -76,7 +77,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Google: Gmail, Calendar and Drive all become searchable", googleReady, await text(`${g} .account`));
   const gtext = await text(`${g} .account`);
   check("Gmail: all 30 emails imported despite a Google slow-down", /30 emails searchable/.test(gtext), gtext);
-  check("Drive: protected file is skipped and explained, not an error", /Skipped 1 item: Locked contract: can't be downloaded/.test(gtext) && !/Problem/.test(gtext), gtext);
+  check("Drive: protected file is skipped and explained, not an error", /Skipped 1 item: Locked contract: can't be downloaded/.test(gtext) && !/Needs attention/.test(gtext), gtext);
   check("Calendar: counted in events (3), not months", /3 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
   await shot("google-connected");
@@ -248,6 +249,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Health: sources reported as working", /all working/.test(health), health);
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#health-download")]);
   check("Health: report can be downloaded", /knowledgedesk-health/.test(download.suggestedFilename()));
+  await page.fill("#ai-form input[name=key]", "hello"); await page.click("#ai-form button");
+  check("Claude API key: a wrong key gets a clear message", await until(async () => /doesn't look like a Claude API key/.test(await text("#ai-error")), 5000, 200));
   await shot("settings");
 
   // ------------------------------------------------------------------ 13. Disconnect
@@ -264,6 +267,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   for (const p of ["home", "ask", "sources", "people", "activity", "settings"]) {
     await page.click(`#nav a[data-page=${p}]`); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
+    const emojis = await emojisOnPage();
+    check(`${p} page uses icons, no emojis`, !emojis, emojis);
     await shot(`phone-${p}`, p !== "sources");
   }
 

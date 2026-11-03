@@ -81,6 +81,14 @@ random passwords, and starts everything with Docker. The first start downloads t
 
 **Settings → Health check** shows whether answers, search, sources and the subscription are working,
 and lists recent problems. **Download report** saves it as a file to send to support.
+**Settings → Claude API key** is where the admin pastes or replaces the key. It is tested before
+it is saved and stored encrypted, and it overrides `ANTHROPIC_API_KEY` in `.env`.
+
+**Importing everything.** Connected mailboxes import **all** mail, except spam, trash, promotions
+and social. Big mailboxes are imported 1,000 messages per round, with a new round every minute
+until everything is in, and the Sources page shows "Importing 1,200 of 8,400". Items are then
+prepared for search one by one. Websites, documents and calendars go first, then emails, newest
+first. You can ask questions while this is still running.
 
 **Updating a customer to a new version:**
 ```bash

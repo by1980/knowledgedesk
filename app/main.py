@@ -33,8 +33,13 @@ class _RecentProblems(logging.Handler):
         super().__init__(level=logging.WARNING)
         self.items: list[dict] = []
 
+    OURS = ("app", "ingest", "worker", "connectors", "db", "folders", "oauth", "uvicorn.error")
+
     def emit(self, record: logging.LogRecord) -> None:
         from datetime import datetime, timezone
+
+        if not record.name.startswith(self.OURS):  # ignore chatter from libraries
+            return
 
         message = record.getMessage()
         if record.exc_info and record.exc_info[1] is not None:
@@ -92,7 +97,7 @@ app = FastAPI(title="KnowledgeDesk", lifespan=lifespan)
 def status():
     lic = license.status()
     return {"company": settings.company_name, "license": lic.__dict__ | {"allows_use": lic.allows_use},
-            "llm_configured": bool(settings.anthropic_api_key) or settings.fake_llm}
+            "llm_configured": bool(llm.api_key()) or settings.fake_llm}
 
 
 class LoginIn(BaseModel):
@@ -230,7 +235,9 @@ def overview(user: dict = Depends(auth.current_user)):
             ready[key] = ready.get(key, 0) + (r["events"] if r["kind"] == "calendar" else r["n"])
         elif r["status"] in ("pending", "processing"):
             importing += r["n"]
-    return {"ready": ready, "total": sum(ready.values()), "importing": importing}
+    left = worker.minutes_left(importing)
+    return {"ready": ready, "total": sum(ready.values()), "importing": importing,
+            "eta": _duration(left) if left else None}
 
 
 # ---------------------------------------------------------------- departments
@@ -577,7 +584,7 @@ def _with_account_emails(rows: list[dict]) -> list[dict]:
 def list_connectors(_: dict = Depends(auth.admin_user)):
     with conn() as c:
         rows = c.execute(
-            "SELECT k.id, k.type, k.name, k.config, k.company_wide, k.enabled, k.last_sync, k.last_error, "
+            "SELECT k.id, k.type, k.name, k.config, k.state, k.company_wide, k.enabled, k.last_sync, k.last_error, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status IN ('pending','processing')) AS indexing, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'ready') AS ready, "
@@ -591,6 +598,9 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
     for r in rows:
         r["config"] = _public_config(r["type"], r["config"])
         r["syncing"] = connector_runner.lock_for(r["id"]).locked()
+        r["progress"] = (r.get("state") or {}).get("progress")
+        r["more"] = bool((r.get("state") or {}).get("more"))
+        r.pop("state", None)
     return _with_account_emails(rows)
 
 
@@ -746,13 +756,51 @@ def setup_progress(_: dict = Depends(auth.admin_user)):
 _ai_check: dict = {"at": 0.0, "result": None}
 
 
+def _duration(minutes: int) -> str:
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, mins = divmod(minutes, 60)
+    return f"{hours} h {mins} min" if hours < 10 else f"{hours} h"
+
+
+class KeyIn(BaseModel):
+    key: str
+
+
+@app.get("/api/admin/ai-key")
+def ai_key_status(_: dict = Depends(auth.admin_user)):
+    key = llm.api_key()
+    return {"set": bool(key), "masked": f"{key[:10]}…{key[-4:]}" if key else "", "check": _check_ai()}
+
+
+@app.put("/api/admin/ai-key")
+def ai_key_save(body: KeyIn, _: dict = Depends(auth.admin_user)):
+    import anthropic
+
+    key = body.key.strip()
+    if not key.startswith("sk-ant-"):
+        raise HTTPException(400, "That doesn't look like a Claude API key. It starts with sk-ant-.")
+    try:
+        anthropic.Anthropic(api_key=key).messages.count_tokens(
+            model=settings.llm_model, messages=[{"role": "user", "content": "ok"}])
+    except anthropic.AuthenticationError:
+        raise HTTPException(400, "Claude didn't accept this key. Check that you copied all of it, or create a new one.")
+    except anthropic.APIStatusError as e:
+        raise HTTPException(400, f"Claude answered with an error: {e.message}")
+    except anthropic.APIConnectionError:
+        raise HTTPException(400, "Couldn't reach Claude. Check the internet connection and try again.")
+    llm.save_api_key(key)
+    _ai_check.update(at=0.0, result=None)
+    return {"ok": True}
+
+
 def _check_ai() -> dict:
     import time
 
     if settings.fake_llm:
         return {"state": "ok", "detail": "Test mode (answers are simulated)."}
-    if not settings.anthropic_api_key:
-        return {"state": "bad", "detail": "No Claude API key. Add ANTHROPIC_API_KEY to the .env file and restart."}
+    if not llm.api_key():
+        return {"state": "bad", "detail": "No Claude API key yet. Paste one in Settings → Claude API key."}
     if time.time() - _ai_check["at"] < 300 and _ai_check["result"]:
         return _ai_check["result"]
     try:
@@ -761,13 +809,19 @@ def _check_ai() -> dict:
     except Exception as e:  # noqa: BLE001
         text = str(e)
         if "401" in text or "authentication" in text.lower():
-            result = {"state": "bad", "detail": "The Claude API key is wrong or was revoked. Create a new one at console.anthropic.com."}
+            result = {"state": "bad", "detail": "The Claude API key is wrong or was revoked. Paste a working key in "
+                                                "Settings → Claude API key (create one at console.anthropic.com)."}
         elif "credit" in text.lower() or "billing" in text.lower():
             result = {"state": "bad", "detail": "The Claude account has no credit left. Add credit at console.anthropic.com."}
         else:
             result = {"state": "warn", "detail": f"Couldn't reach Claude right now ({text[:150]})."}
     _ai_check.update(at=time.time(), result=result)
     return result
+
+
+def _queue() -> dict:
+    with conn() as c:
+        return c.execute("SELECT count(*) FILTER (WHERE status IN ('pending','processing')) AS waiting FROM documents").fetchone()
 
 
 @app.get("/api/admin/health")
@@ -787,8 +841,8 @@ def health(_: dict = Depends(auth.admin_user)):
             "GROUP BY 1 ORDER BY 2 DESC LIMIT 5").fetchall()
         sources = c.execute("SELECT type, name, last_error, last_sync FROM connectors ORDER BY name").fetchall()
     if docs["waiting"]:
-        rate = docs["recent"] / 10 if docs["recent"] else 0
-        eta = f" – about {max(1, round(docs['waiting'] / rate))} min left" if rate else ""
+        left = worker.minutes_left(docs["waiting"])
+        eta = f" – about {_duration(left)} left" if left else " – measuring speed…"
         checks.append({"id": "indexing", "label": "Preparing content for search", "state": "busy",
                        "detail": f"{docs['ready']} items ready, {docs['waiting']} waiting{eta}."})
     else:
@@ -811,9 +865,11 @@ def health(_: dict = Depends(auth.admin_user)):
                    ("warn" if lic.state == "grace" else "bad"),
                    "detail": lic.message or (f"Valid until {lic.expires}." if lic.expires else "Active.")})
     configured = oauth.configured()
-    checks.append({"id": "signin", "label": "One-click Google / Microsoft sign-in",
-                   "state": "ok" if all(configured.values()) else "warn",
-                   "detail": ", ".join(f"{p.title()}: {'set up' if ok else 'not set up'}" for p, ok in configured.items())})
+    missing = [p.title() for p, ok in configured.items() if not ok]
+    checks.append({"id": "signin", "label": "Google / Microsoft sign-in",
+                   "state": "ok" if not missing else "info",
+                   "detail": "Both ready." if not missing else
+                   f"{' and '.join(missing)} sign-in is not set up – needed only to connect {' or '.join(missing)} accounts."})
     overall = "bad" if any(c["state"] == "bad" for c in checks) else \
         "warn" if any(c["state"] in ("warn", "busy") for c in checks) else "ok"
     return {"overall": overall, "checks": checks, "problems": list(reversed(recent_problems.items[-30:])),

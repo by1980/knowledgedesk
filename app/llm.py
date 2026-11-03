@@ -14,12 +14,44 @@ class LLMNotConfigured(RuntimeError):
     pass
 
 
+_key_cache: dict = {"loaded": False, "value": ""}
+
+
+def api_key() -> str:
+    """The Claude API key: the one saved in Settings, otherwise ANTHROPIC_API_KEY from .env."""
+    if not _key_cache["loaded"]:
+        from .connectors.base import decrypt
+        from .db import conn
+
+        try:
+            with conn() as c:
+                row = c.execute("SELECT value FROM meta WHERE key='anthropic_api_key'").fetchone()
+            _key_cache["value"] = decrypt(row["value"]) if row else ""
+        except Exception:  # noqa: BLE001 - fall back to .env
+            _key_cache["value"] = ""
+        _key_cache["loaded"] = True
+    return _key_cache["value"] or settings.anthropic_api_key
+
+
+def save_api_key(key: str) -> None:
+    from .connectors.base import encrypt
+    from .db import conn
+
+    global _client
+    with conn() as c:
+        c.execute("INSERT INTO meta(key, value) VALUES ('anthropic_api_key', %s) "
+                  "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (encrypt(key),))
+    _key_cache.update(loaded=True, value=key)
+    _client = None
+
+
 def client() -> anthropic.Anthropic:
     global _client
-    if not settings.anthropic_api_key:
-        raise LLMNotConfigured("ANTHROPIC_API_KEY is not set in the .env file.")
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    key = api_key()
+    if not key:
+        raise LLMNotConfigured("No Claude API key yet. An admin can add it in Settings.")
+    if _client is None or _client.api_key != key:
+        _client = anthropic.Anthropic(api_key=key)
     return _client
 
 

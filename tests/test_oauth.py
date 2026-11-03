@@ -340,7 +340,7 @@ def test_merge_duplicate_accounts(client):
     with conn() as c:
         keep = c.execute("SELECT id FROM oauth_accounts WHERE email='owner@demo.com'").fetchone()["id"]
         dup = c.execute("INSERT INTO oauth_accounts(provider, email, tokens) VALUES ('google', 'Owner@demo.com', %s) "
-                        "RETURNING id", (encrypt("{}"),)).fetchone()["id"]
+                        "RETURNING id", (encrypt('{"refresh_token": "RT1", "access_token": "AT1", "expires_at": 0}'),)).fetchone()["id"]
         for t in ("gmail", "gcal"):
             c.execute("INSERT INTO connectors(type, name, config, company_wide) VALUES (%s, 'dup', %s, true)",
                       (t, json.dumps({"account_id": dup})))
@@ -350,3 +350,33 @@ def test_merge_duplicate_accounts(client):
     with conn() as c:
         accounts = c.execute("SELECT id FROM oauth_accounts WHERE lower(email)='owner@demo.com'").fetchall()
     assert [a["id"] for a in accounts] == [max(keep, dup)]
+
+
+def test_big_mailbox_is_imported_completely_in_rounds(client):
+    """More mail than one round allows: every round continues where the last stopped, until all is in."""
+    admin = login(client)
+    gmail = _google_rows(client, admin)["gmail"]
+    from app.connectors import runner
+    from app.db import conn
+
+    with conn() as c:
+        c.execute("UPDATE connectors SET state='{}'::jsonb, config = config || '{\"max_messages\": 10}'::jsonb WHERE id=%s",
+                  (gmail["id"],))
+    FAULTS.update(gmail_ids=[f"big{i}" for i in range(25)])
+    rounds = 0
+    while True:
+        runner.sync_connector(gmail["id"])
+        rounds += 1
+        k = next(k for k in client.get("/api/connectors", headers=admin).json() if k["id"] == gmail["id"])
+        if not k["more"] or rounds > 5:
+            break
+        assert k["progress"]["total"] == 25 and k["progress"]["done"] < 25
+    assert rounds == 3 and not k["more"] and k["progress"] is None
+    titles = {d["title"] for d in client.get("/api/documents?limit=1000", headers=admin).json()}
+    assert {f"Email: Note big{i}" for i in range(25)} <= titles
+    # Unfinished imports are picked up again right away, not after 30 minutes
+    with conn() as c:
+        c.execute("UPDATE connectors SET state='{\"more\": true}'::jsonb, last_sync=now() WHERE id=%s", (gmail["id"],))
+        due = c.execute("SELECT id FROM connectors WHERE enabled AND (last_sync < now() - interval '30 minutes' "
+                        "OR (state->>'more')::boolean IS TRUE)").fetchall()
+    assert gmail["id"] in {r["id"] for r in due}

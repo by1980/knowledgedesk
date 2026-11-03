@@ -31,18 +31,23 @@ def _account(sync: Sync) -> int:
 # ------------------------------------------------------------------ Gmail
 
 def sync_gmail(sync: Sync) -> None:
+    """Imports all mail (except spam, trash, promotions and social), newest first, up to `per_run`
+    messages per round; the next round starts a minute later until everything is in. After that,
+    only new mail is fetched."""
     cfg, state = sync.connector["config"], sync.connector["state"]
-    days = int(cfg.get("days") or 365)
-    max_per_run = int(cfg.get("max_messages") or 500)
-    # Skip spam, trash and newsletters; only mail newer than the last sync after the first run.
+    days = int(cfg.get("days") or 0)  # 0 = all mail
+    per_run = int(cfg.get("max_messages") or 1000)
     query = "-in:spam -in:trash -category:promotions -category:social"
-    query += f" after:{state['after']}" if state.get("after") else f" newer_than:{days}d"
+    if state.get("after"):
+        query += f" after:{state['after']}"
+    elif days:
+        query += f" newer_than:{days}d"
     started = int(datetime.now(timezone.utc).timestamp()) - 3600  # overlap; already-imported mail is skipped
 
     with Api(_account(sync)) as api:
         ids, page = [], None
-        while len(ids) < max_per_run:
-            params = {"q": query, "maxResults": 100}
+        while len(ids) < 500_000:
+            params = {"q": query, "maxResults": 500}
             if page:
                 params["pageToken"] = page
             data = api.json(f"{GMAIL}/messages", params)
@@ -50,9 +55,13 @@ def sync_gmail(sync: Sync) -> None:
             page = data.get("nextPageToken")
             if not page:
                 break
-        for mid in ids[:max_per_run]:
-            if sync.exists(f"gmail:{mid}"):
-                continue
+        have = sync.imported_ids()
+        todo = [m for m in ids if f"gmail:{m}" not in have]
+        done_before = len(ids) - len(todo)
+        sync.progress(done_before, len(ids), commit=True)
+        for n, mid in enumerate(todo[:per_run], 1):
+            if n % 20 == 0:
+                sync.progress(done_before + n, len(ids))
             try:
                 raw = api.json(f"{GMAIL}/messages/{mid}", {"format": "raw"})["raw"]
             except ApiError as e:
@@ -61,8 +70,13 @@ def sync_gmail(sync: Sync) -> None:
                     continue
                 raise
             store_message(sync, f"gmail:{mid}", base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
-    if len(ids) < max_per_run:  # everything fetched; next time only newer mail
+    if len(todo) <= per_run:  # everything is in; from now on only newer mail
         state["after"] = started
+        state.pop("more", None)
+        state.pop("progress", None)
+    else:
+        state["more"] = True  # continue with the next round soon
+        state["progress"] = {"done": done_before + per_run, "total": len(ids)}
 
 
 # ------------------------------------------------------------------ Google Calendar
@@ -109,10 +123,11 @@ def sync_gcal(sync: Sync) -> None:
 
 def sync_gdrive(sync: Sync) -> None:
     cfg = sync.connector["config"]
-    max_files = int(cfg.get("max_files") or 3000)
+    max_files = int(cfg.get("max_files") or 5000)
     complete = True
     with Api(_account(sync)) as api:
         page, count = None, 0
+        sync.progress(0, 0, commit=True)
         while True:
             params = {"q": "trashed = false and mimeType != 'application/vnd.google-apps.folder'",
                       "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, webViewLink)",
@@ -127,6 +142,8 @@ def sync_gdrive(sync: Sync) -> None:
                 try:
                     if _drive_file(sync, api, f):
                         count += 1
+                        if count % 10 == 0:
+                            sync.progress(count, count + len(data.get("files", [])))
                 except ApiError as e:
                     if e.status in (400, 403, 404):  # e.g. owner blocked downloading, or too big to export
                         sync.seen.add(f"gdrive:{f['id']}")
@@ -136,6 +153,7 @@ def sync_gdrive(sync: Sync) -> None:
             page = data.get("nextPageToken")
             if not page or not complete:
                 break
+    sync.connector["state"].pop("progress", None)
     if complete:
         sync.remove_unseen()  # files deleted in Drive are removed here too
 

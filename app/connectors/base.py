@@ -61,6 +61,19 @@ class Sync:
         head = "Skipped 1 item" if n == 1 else f"Skipped {n} items"
         return head + ": " + "; ".join(self.skipped[:3]) + (" …" if n > 3 else "")
 
+    def imported_ids(self) -> set[str]:
+        """Everything this source already imported (one query instead of one per item)."""
+        rows = self.c.execute("SELECT external_id FROM documents WHERE connector_id=%s", (self.connector["id"],)).fetchall()
+        return {r["external_id"] for r in rows}
+
+    def progress(self, done: int, total: int, commit: bool = False) -> None:
+        """Shown on the Sources page as "Importing 120 of 2,340"."""
+        self.connector["state"]["progress"] = {"done": done, "total": total}
+        self.c.execute("UPDATE connectors SET state = jsonb_set(state, '{progress}', %s::jsonb) WHERE id=%s",
+                       (json.dumps({"done": done, "total": total}), self.connector["id"]))
+        if commit:
+            self.c.commit()
+
     def exists(self, external_id: str) -> bool:
         """True if this item was already imported (marks it as still present)."""
         row = self.c.execute("SELECT 1 FROM documents WHERE connector_id=%s AND external_id=%s",

@@ -51,7 +51,7 @@ def init_schema(embedding_dim: int) -> None:
             # The search model changed: rebuild the search index from the stored files (automatic, in the background).
             import logging
 
-            logging.getLogger("db").warning("Search model changed to %s: re-indexing everything", settings.embed_model)
+            logging.getLogger("db").info("Search model changed to %s: re-indexing everything", settings.embed_model)
             c.execute("DROP TABLE IF EXISTS chunks")
             c.execute("UPDATE documents SET status='pending', error=NULL")
         c.execute("INSERT INTO meta(key, value) VALUES ('embedding_dim', %s) "

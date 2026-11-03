@@ -33,33 +33,42 @@ def _pages(api: Api, url: str, params: dict | None = None, headers: dict | None 
 # ------------------------------------------------------------------ Outlook mail
 
 def sync_mail(sync: Sync) -> None:
+    """All mail in Inbox and Sent, newest first, in rounds of `per_run`, then only new mail."""
     cfg, state = sync.connector["config"], sync.connector["state"]
-    days = int(cfg.get("days") or 365)
-    max_per_run = int(cfg.get("max_messages") or 500)
+    days = int(cfg.get("days") or 0)  # 0 = all mail
+    per_run = int(cfg.get("max_messages") or 1000)
     started = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    since = state.get("since") or (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    fetched_all = True
+    since = state.get("since") or (
+        (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ") if days else "")
     with Api(_account(sync)) as api:
+        ids = []
         for folder in ("inbox", "sentitems"):
-            params = {"$filter": f"receivedDateTime ge {since}", "$select": "id",
-                      "$orderby": "receivedDateTime desc", "$top": 100}
-            ids = [m["id"] for m in _pages(api, f"{GRAPH}/me/mailFolders/{folder}/messages", params,
-                                           limit=max_per_run + 1)]
-            if len(ids) > max_per_run:
-                fetched_all = False
-            for mid in ids[:max_per_run]:
-                if sync.exists(f"outlook:{mid}"):
+            params = {"$select": "id", "$orderby": "receivedDateTime desc", "$top": 500}
+            if since:
+                params["$filter"] = f"receivedDateTime ge {since}"
+            ids += [(folder, m["id"]) for m in _pages(api, f"{GRAPH}/me/mailFolders/{folder}/messages", params)]
+        have = sync.imported_ids()
+        todo = [(f, m) for f, m in ids if f"outlook:{m}" not in have]
+        done_before = len(ids) - len(todo)
+        sync.progress(done_before, len(ids), commit=True)
+        for n, (folder, mid) in enumerate(todo[:per_run], 1):
+            if n % 20 == 0:
+                sync.progress(done_before + n, len(ids))
+            try:
+                raw = api.bytes(f"{GRAPH}/me/messages/{mid}/$value")
+            except ApiError as e:
+                if e.status in (400, 403, 404):
+                    sync.skip(f"email {mid[:12]}", str(e))
                     continue
-                try:
-                    raw = api.bytes(f"{GRAPH}/me/messages/{mid}/$value")
-                except ApiError as e:
-                    if e.status in (400, 403, 404):
-                        sync.skip(f"email {mid[:12]}", str(e))
-                        continue
-                    raise
-                store_message(sync, f"outlook:{mid}", raw, folder)
-    if fetched_all:
+                raise
+            store_message(sync, f"outlook:{mid}", raw, folder)
+    if len(todo) <= per_run:
         state["since"] = started
+        state.pop("more", None)
+        state.pop("progress", None)
+    else:
+        state["more"] = True
+        state["progress"] = {"done": done_before + per_run, "total": len(ids)}
 
 
 # ------------------------------------------------------------------ Outlook calendar
@@ -98,6 +107,7 @@ def sync_drive(sync: Sync) -> None:
     max_files = int(cfg.get("max_files") or 3000)
     count, complete = 0, True
     with Api(_account(sync)) as api:
+        sync.progress(0, 0, commit=True)
         items = list(_pages(api, f"{GRAPH}/me/drive/root/delta",
                             {"$select": "id,name,file,size,lastModifiedDateTime,deleted,webUrl,parentReference"}))
         shared = list(_pages(api, f"{GRAPH}/me/drive/sharedWithMe"))
@@ -116,6 +126,8 @@ def sync_drive(sync: Sync) -> None:
             if not is_supported(p) or is_audio_video(p) or int(item.get("size") or 0) > MAX_FILE_BYTES:
                 continue
             count += 1
+            if count % 10 == 0:
+                sync.progress(count, len(items))
             ext_id = f"onedrive:{item['id']}"
             version = item.get("lastModifiedDateTime", "")
             if sync.is_current(ext_id, version):
@@ -133,5 +145,6 @@ def sync_drive(sync: Sync) -> None:
                 raise
             sync.upsert(ext_id, p.stem, p.name, data, "file",
                         {"version": version, "link": item.get("webUrl", ""), "drive": "OneDrive"})
+    sync.connector["state"].pop("progress", None)
     if complete:
         sync.remove_unseen()

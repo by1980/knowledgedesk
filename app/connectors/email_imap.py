@@ -70,7 +70,7 @@ def _folders(cfg: dict) -> list[str]:
 def sync(sync: Sync) -> None:
     cfg = sync.connector["config"]
     state = sync.connector["state"]
-    days = int(cfg.get("days") or 365)
+    days = int(cfg.get("days") or 3650)
     max_per_run = int(cfg.get("max_messages") or 500)
     try:
         conn = _connect(cfg)

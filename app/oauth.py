@@ -239,6 +239,8 @@ def access_token(account_id: int) -> str:
             raise RuntimeError("Access was revoked: the saved sign-in can't be read.")
         if tokens.get("access_token") and tokens.get("expires_at", 0) > time.time():
             return tokens["access_token"]
+        if not tokens.get("refresh_token"):
+            raise RuntimeError("Access was revoked: the saved sign-in is incomplete.")
         try:
             fresh = _token_request(row["provider"], {"grant_type": "refresh_token",
                                                      "refresh_token": tokens["refresh_token"]})

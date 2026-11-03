@@ -93,7 +93,8 @@ def sync_due() -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.connector_sync_minutes)
     with conn() as c:
         rows = c.execute(
-            "SELECT id FROM connectors WHERE enabled AND (last_sync IS NULL OR last_sync < %s)", (cutoff,)
+            "SELECT id FROM connectors WHERE enabled AND (last_sync IS NULL OR last_sync < %s "
+            " OR (state->>'more')::boolean IS TRUE) ORDER BY last_sync NULLS FIRST", (cutoff,)
         ).fetchall()
     for r in rows:
         sync_connector(r["id"])

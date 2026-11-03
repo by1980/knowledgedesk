@@ -11,6 +11,7 @@ from . import chunk
 from .extract import extract, is_audio_video
 
 log = logging.getLogger("ingest")
+MAX_PIECES = 400  # about 600,000 characters per item
 
 
 def sha256_file(path: Path) -> str:
@@ -42,7 +43,7 @@ def process_document(doc_id: int) -> None:
             who = _interviewee(meta)
             # Label the transcript so answers can say whose account it is.
             sections = [(f"[Interview with {who}] {t}", f"at {loc}" if loc else "") for t, loc in sections]
-            if settings.summarize_interviews and settings.anthropic_api_key:
+            if settings.summarize_interviews and llm.api_key():
                 transcript = "\n".join(f"[{loc}] {t}" for t, loc in sections)
                 notes = llm.interview_notes(transcript, who)
                 if notes:
@@ -55,6 +56,9 @@ def process_document(doc_id: int) -> None:
                 pieces.append((piece, loc))
         if not pieces:
             raise ValueError("No text could be read from this file (is it a scanned image?).")
+        if len(pieces) > MAX_PIECES:  # e.g. a 100,000-row export: keep the start, note it
+            meta = {**meta, "truncated": True}
+            pieces = pieces[:MAX_PIECES]
 
         # Prefix each chunk with the document title so it carries context on its own.
         vectors = embeddings.embed_passages([f"{doc['title']}\n{p}" for p, _ in pieces])

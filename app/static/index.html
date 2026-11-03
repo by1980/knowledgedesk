@@ -4,15 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>KnowledgeDesk</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f5bea'/%3E%3Cpath d='M10 9v14M10 16l8-7M12.5 14l6.5 9' stroke='white' stroke-width='3' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div id="banner" class="banner hidden" role="status"></div>
+  <!-- Icon set (24×24, 2px stroke) -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></symbol>
+    <symbol id="i-ask" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></symbol>
+    <symbol id="i-sources" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/><path d="M16 3.5a4 4 0 0 1 0 7.5"/><path d="M22 21v-1a6 6 0 0 0-4-5.6"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h5a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-5a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h6z"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6.5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8.5z"/><path d="M14 3v5.5h5.5M8.5 13h7M8.5 17h5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.6-5A8.5 8.5 0 1 1 21 11.5z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9.5"/></symbol>
+    <symbol id="i-tick" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 10v4M12 17.5v.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.01"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3.5L3 10M3 4v6h6M4 13a8 8 0 0 0 14.9 3.5L21 14M21 20v-6h-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14.5 8.5l2 2"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 10v11H3.5V10z"/><path d="M7 10l4.2-7a2 2 0 0 1 3.4 1.8L13.5 10h5.8a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 18 21H7"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><g transform="rotate(180 12 12)"><path d="M7 10v11H3.5V10z"/><path d="M7 10l4.2-7a2 2 0 0 1 3.4 1.8L13.5 10h5.8a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 18 21H7"/></g></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-4 16-4-6.5z"/><path d="M12 13.5 20 4"/></symbol>
+  </svg>
 
   <!-- ============================================================ Login -->
   <section id="login-view" class="login hidden">
     <form id="login-form" class="card login-card">
-      <div class="logo">📚 KnowledgeDesk</div>
+      <div class="brand-mark big"><span class="logo-tile"></span><b>KnowledgeDesk</b></div>
       <p class="muted" id="login-company"></p>
       <label>Email <input name="email" type="email" required autocomplete="username"></label>
       <label>Password <input name="password" type="password" required autocomplete="current-password"></label>
@@ -23,207 +58,219 @@
 
   <!-- ============================================================ App -->
   <section id="app-view" class="hidden">
-    <header class="topbar">
-      <a class="brand" href="#home"><span>📚</span> <b>KnowledgeDesk</b> <span class="muted" id="company-name"></span></a>
+    <aside class="sidebar">
+      <a class="brand-mark" href="#home"><span class="logo-tile"></span><b>KnowledgeDesk</b></a>
+      <div class="company muted small" id="company-name"></div>
       <nav id="nav" aria-label="Main"></nav>
-      <div class="user-menu"><button id="user-name" class="btn link muted" title="My account"></button> <button id="logout" class="btn link">Log out</button></div>
-    </header>
-
-    <!-- ---------------------------------------------------------- Home -->
-    <main id="page-home" class="page hidden">
-      <div class="page-head"><h1 id="home-title">Home</h1><p class="muted">Your company's knowledge at a glance.</p></div>
-      <div id="home-health"></div>
-      <div id="home-setup"></div>
-      <div class="grid2">
-        <div class="card" id="home-kb"></div>
-        <div class="card" id="home-activity"></div>
+      <div class="sidebar-foot">
+        <button id="user-name" class="side-user" title="My account"></button>
+        <button id="logout" class="side-link" title="Log out"><svg class="ic"><use href="#i-logout"/></svg><span>Log out</span></button>
       </div>
-    </main>
+    </aside>
 
-    <!-- ---------------------------------------------------------- Ask -->
-    <main id="page-ask" class="page page-ask hidden">
-      <div class="ask-head">
-        <label class="scope">Search in <select id="dept-filter"><option value="">Everything I can see</option></select></label>
-        <button id="new-chat" class="btn ghost">New conversation</button>
-      </div>
-      <div id="messages" class="messages" aria-live="polite"></div>
-      <form id="ask-form" class="ask-bar">
-        <textarea id="question" rows="1" dir="auto" placeholder="Ask anything about the company…" aria-label="Your question"></textarea>
-        <button type="submit" class="btn primary" id="ask-btn">Ask</button>
-      </form>
-    </main>
+    <div class="main">
+      <div id="banner" class="banner hidden" role="status"></div>
 
-    <!-- ---------------------------------------------------------- Library (members) -->
-    <main id="page-library" class="page hidden">
-      <div class="page-head"><h1>Library</h1><p class="muted">Everything you can search, newest first.</p></div>
-      <div class="card">
-        <div class="toolbar"><input id="lib-search" type="search" placeholder="Search by title…" dir="auto"></div>
-        <div id="lib-list"></div>
-      </div>
-    </main>
-
-    <!-- ---------------------------------------------------------- Sources -->
-    <main id="page-sources" class="page hidden">
-      <div class="page-head"><h1>Sources</h1>
-        <p class="muted">Everything KnowledgeDesk can search. Connect each source once – new emails, events, files and pages are picked up automatically every 30 minutes.</p></div>
-      <div class="card" id="kb-summary"></div>
-
-      <h2 class="section-title">Accounts</h2>
-      <div class="card provider-card" data-provider="google">
-        <div class="pc-head">
-          <svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.8-2.1 5.1-4.4 6.7v5.6h7.1c4.2-3.8 6.6-9.5 6.6-16.3z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.6c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.3-2.9.7-4.2v-5.7H4.5C3 17.1 2 20.4 2 24s1 6.9 2.5 9.9l7.3-5.7z"/><path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 7 4.5 14.1l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/></svg>
-          <div><h3>Google</h3><p class="muted small">Gmail, Google Calendar and Google Drive</p></div>
+      <!-- ---------------------------------------------------------- Home -->
+      <main id="page-home" class="page hidden">
+        <div class="page-head"><div><h1 id="home-title">Home</h1><p class="muted">Your company's knowledge at a glance.</p></div></div>
+        <div id="home-health"></div>
+        <div id="home-setup"></div>
+        <div class="grid2">
+          <div class="card" id="home-kb"></div>
+          <div class="card" id="home-activity"></div>
         </div>
-        <div class="pc-accounts"></div>
-        <div class="pc-connect"></div>
-      </div>
-      <div class="card provider-card" data-provider="microsoft">
-        <div class="pc-head">
-          <svg viewBox="0 0 23 23" width="26" height="26" aria-hidden="true"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M12 1h10v10H12z"/><path fill="#00A4EF" d="M1 12h10v10H1z"/><path fill="#FFB900" d="M12 12h10v10H12z"/></svg>
-          <div><h3>Microsoft 365</h3><p class="muted small">Outlook mail, Outlook calendar and OneDrive</p></div>
+      </main>
+
+      <!-- ---------------------------------------------------------- Ask -->
+      <main id="page-ask" class="page page-ask hidden">
+        <div class="ask-head">
+          <label class="scope">Search in <select id="dept-filter"><option value="">Everything I can see</option></select></label>
+          <button id="new-chat" class="btn"><svg class="ic"><use href="#i-plus"/></svg>New conversation</button>
         </div>
-        <div class="pc-accounts"></div>
-        <div class="pc-connect"></div>
-      </div>
-
-      <h2 class="section-title">Websites</h2>
-      <div class="card" id="web-card">
-        <p class="muted small">Your website, help pages or price pages. Every page is read and kept up to date.</p>
-        <div id="web-list"></div>
-        <form id="web-form" class="inline-form">
-          <input name="url" placeholder="www.yourcompany.com" autocomplete="off" dir="ltr" aria-label="Website address">
-          <button class="btn primary" type="submit">Add website</button>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <form id="ask-form" class="ask-bar">
+          <textarea id="question" rows="1" dir="auto" placeholder="Ask anything about the company…" aria-label="Your question"></textarea>
+          <button type="submit" class="btn primary" id="ask-btn"><svg class="ic"><use href="#i-send"/></svg>Ask</button>
         </form>
-        <div id="web-visibility"></div>
-        <p class="error" id="web-error" role="alert"></p>
-      </div>
+      </main>
 
-      <h2 class="section-title">Files and recordings</h2>
-      <div class="card" id="files-card">
-        <form id="upload-form">
-          <div class="segmented" role="radiogroup" aria-label="What are you adding?">
-            <label><input type="radio" name="kind" value="file" checked><span>📄 Documents</span></label>
-            <label><input type="radio" name="kind" value="interview"><span>🎙 Employee interview</span></label>
-            <label><input type="radio" name="kind" value="whatsapp"><span>💬 WhatsApp chat</span></label>
-          </div>
-          <p class="muted small kind-help" data-kind="file">PDF, Word, Excel, PowerPoint, CSV, text, web pages and saved emails (.eml).</p>
-          <p class="muted small kind-help hidden" data-kind="interview">A recording (audio or video) or a written transcript of a conversation with an employee
-            about how they work. Recordings are turned into text automatically.</p>
-          <p class="muted small kind-help hidden" data-kind="whatsapp">WhatsApp doesn't let apps read chats directly. On the phone: open the chat →
-            tap its name (iPhone) or ⋮ → More (Android) → <b>Export chat</b> (with media to include voice notes), then upload the file here.</p>
-          <div class="grid3 interview-fields hidden">
-            <label>Employee's name <input name="interviewee" dir="auto"></label>
-            <label>Role <input name="role" dir="auto"></label>
-            <label>Date <input name="interview_date" type="date"></label>
-          </div>
-          <label class="dropzone" id="dropzone">
-            <input type="file" name="files" multiple>
-            <span class="dz-text"><b>Choose files</b> or drag them here</span>
-            <span class="dz-files muted small"></span>
-          </label>
-          <div id="upload-visibility"></div>
-          <div class="row"><button class="btn primary" type="submit">Upload</button></div>
-          <p class="error" id="upload-error" role="alert"></p>
-        </form>
-        <div class="toolbar"><h3>Uploaded</h3><input id="files-search" type="search" placeholder="Search uploaded files…" dir="auto"></div>
-        <div id="files-list"></div>
-      </div>
+      <!-- ---------------------------------------------------------- Library (team members) -->
+      <main id="page-library" class="page hidden">
+        <div class="page-head"><div><h1>Library</h1><p class="muted">Everything you can search, newest first.</p></div></div>
+        <div class="card">
+          <div class="toolbar"><div class="search-box"><svg class="ic"><use href="#i-search"/></svg><input id="lib-search" type="search" placeholder="Search by title" dir="auto"></div></div>
+          <div id="lib-list"></div>
+        </div>
+      </main>
 
-      <details class="card more" id="more-sources">
-        <summary><b>Other sources</b> <span class="muted small">– a mailbox from another provider, or a calendar link</span></summary>
-        <div id="manual-list"></div>
-        <form id="conn-form">
-          <input type="hidden" name="id">
-          <div class="segmented" id="conn-types">
-            <label><input type="radio" name="type" value="imap" checked><span>📧 Other mailbox (IMAP)</span></label>
-            <label><input type="radio" name="type" value="ics"><span>📅 Calendar link</span></label>
+      <!-- ---------------------------------------------------------- Sources -->
+      <main id="page-sources" class="page hidden">
+        <div class="page-head"><div><h1>Sources</h1>
+          <p class="muted">Everything KnowledgeDesk can search. Connect a source once – new emails, events, files and pages are picked up automatically.</p></div></div>
+        <div class="card" id="kb-summary"></div>
+
+        <h2 class="section-title">Accounts</h2>
+        <div class="card provider-card" data-provider="google">
+          <div class="pc-head">
+            <span class="brand-tile"><svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.8-2.1 5.1-4.4 6.7v5.6h7.1c4.2-3.8 6.6-9.5 6.6-16.3z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.6c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.3-2.9.7-4.2v-5.7H4.5C3 17.1 2 20.4 2 24s1 6.9 2.5 9.9l7.3-5.7z"/><path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 7 4.5 14.1l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/></svg></span>
+            <div class="grow"><h3>Google Workspace</h3><p class="muted small">Gmail, Google Calendar and Google Drive</p></div>
+            <div class="pc-connect"></div>
           </div>
-          <h3 id="conn-form-title" class="hidden"></h3>
-          <div class="conn-fields" data-for="imap">
-            <p class="muted small">For Gmail and Microsoft 365, use the Accounts section above. This is for other mail providers.</p>
-            <div class="grid3">
-              <label>Name <input name="name" placeholder="e.g. Office mailbox" dir="auto"></label>
-              <label>Email address <input name="username" autocomplete="off"></label>
-              <label>Password <input name="password" type="password" autocomplete="new-password"></label>
-              <label>IMAP server <input name="host" placeholder="mail.yourprovider.com"></label>
-              <label>Port <input name="port" value="993"></label>
-              <label>Folders <input name="folders" value="INBOX"></label>
+          <div class="pc-panel"></div>
+          <div class="pc-accounts"></div>
+        </div>
+        <div class="card provider-card" data-provider="microsoft">
+          <div class="pc-head">
+            <span class="brand-tile"><svg viewBox="0 0 23 23" width="20" height="20" aria-hidden="true"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M12 1h10v10H12z"/><path fill="#00A4EF" d="M1 12h10v10H1z"/><path fill="#FFB900" d="M12 12h10v10H12z"/></svg></span>
+            <div class="grow"><h3>Microsoft 365</h3><p class="muted small">Outlook mail, Outlook calendar and OneDrive</p></div>
+            <div class="pc-connect"></div>
+          </div>
+          <div class="pc-panel"></div>
+          <div class="pc-accounts"></div>
+        </div>
+
+        <h2 class="section-title">Websites</h2>
+        <div class="card" id="web-card">
+          <div class="pc-head"><span class="icon-tile"><svg class="ic"><use href="#i-globe"/></svg></span>
+            <div class="grow"><h3>Websites</h3><p class="muted small">Your website, help or price pages. Every page is read and checked again regularly.</p></div></div>
+          <div id="web-list"></div>
+          <form id="web-form" class="inline-form">
+            <input name="url" placeholder="www.yourcompany.com" autocomplete="off" dir="ltr" aria-label="Website address">
+            <button class="btn primary" type="submit"><svg class="ic"><use href="#i-plus"/></svg>Add website</button>
+          </form>
+          <div id="web-visibility"></div>
+          <p class="error" id="web-error" role="alert"></p>
+        </div>
+
+        <h2 class="section-title">Files and recordings</h2>
+        <div class="card" id="files-card">
+          <form id="upload-form">
+            <div class="segmented" role="radiogroup" aria-label="What are you adding?">
+              <label><input type="radio" name="kind" value="file" checked><span><svg class="ic"><use href="#i-file"/></svg>Documents</span></label>
+              <label><input type="radio" name="kind" value="interview"><span><svg class="ic"><use href="#i-mic"/></svg>Employee interview</span></label>
+              <label><input type="radio" name="kind" value="whatsapp"><span><svg class="ic"><use href="#i-chat"/></svg>WhatsApp chat</span></label>
             </div>
-            <p class="muted small" id="imap-folders"></p>
-          </div>
-          <div class="conn-fields hidden" data-for="ics">
-            <p class="muted small">For a calendar outside the connected accounts. Google: Settings → the calendar → <i>Secret address in iCal format</i>.
-              Outlook: Settings → Calendar → Shared calendars → Publish → ICS link.</p>
-            <div class="grid3">
-              <label>Name <input name="name" placeholder="e.g. Team calendar" dir="auto"></label>
-              <label class="span2">Calendar link <input name="url" type="password" autocomplete="off"></label>
+            <p class="muted small kind-help" data-kind="file">PDF, Word, Excel, PowerPoint, CSV, text, web pages and saved emails (.eml).</p>
+            <p class="muted small kind-help hidden" data-kind="interview">A recording (audio or video) or a written transcript of a conversation with an employee
+              about how they work. Recordings are turned into text automatically.</p>
+            <p class="muted small kind-help hidden" data-kind="whatsapp">WhatsApp doesn't let apps read chats directly. On the phone: open the chat →
+              tap its name (iPhone) or ⋮ → More (Android) → <b>Export chat</b> (with media to include voice notes), then upload the file here.</p>
+            <div class="grid3 interview-fields hidden">
+              <label>Employee's name <input name="interviewee" dir="auto"></label>
+              <label>Role <input name="role" dir="auto"></label>
+              <label>Date <input name="interview_date" type="date"></label>
             </div>
-          </div>
-          <div id="conn-visibility"></div>
-          <div class="row">
-            <button type="button" id="conn-test" class="btn">Test connection</button>
-            <button class="btn primary" type="submit">Save and import</button>
-            <button type="button" id="conn-cancel" class="btn ghost hidden">Cancel</button>
-          </div>
-          <p class="error" id="conn-error" role="alert"></p>
-        </form>
-      </details>
-    </main>
+            <label class="dropzone" id="dropzone">
+              <input type="file" name="files" multiple>
+              <svg class="ic lg"><use href="#i-upload"/></svg>
+              <span class="dz-text"><b>Choose files</b> or drag them here</span>
+              <span class="dz-files muted small"></span>
+            </label>
+            <div id="upload-visibility"></div>
+            <div class="row"><button class="btn primary" type="submit">Upload</button></div>
+            <p class="error" id="upload-error" role="alert"></p>
+          </form>
+          <div class="toolbar"><h3>Uploaded</h3><div class="search-box"><svg class="ic"><use href="#i-search"/></svg><input id="files-search" type="search" placeholder="Search uploaded files" dir="auto"></div></div>
+          <div id="files-list"></div>
+        </div>
 
-    <!-- ---------------------------------------------------------- People -->
-    <main id="page-people" class="page hidden">
-      <div class="page-head"><h1>People</h1>
-        <p class="muted">Team members only find information from their departments and information marked for everyone. Admins see everything.</p></div>
-      <div class="card">
-        <div class="toolbar"><h2>Departments</h2></div>
-        <div id="dept-chips" class="chips"></div>
-        <form id="dept-form" class="inline-form"><input name="name" placeholder="New department, e.g. Sales" dir="auto" aria-label="Department name">
-          <button class="btn primary" type="submit">Add department</button></form>
-        <p class="error" id="dept-error" role="alert"></p>
-      </div>
-      <div class="card">
-        <div class="toolbar"><h2>Team members</h2><button class="btn primary" id="add-user">Add person</button></div>
-        <div id="user-list"></div>
-      </div>
-    </main>
+        <details class="card more" id="more-sources">
+          <summary><b>Other sources</b> <span class="muted small">– a mailbox from another provider, or a calendar link</span></summary>
+          <div id="manual-list"></div>
+          <form id="conn-form">
+            <input type="hidden" name="id">
+            <div class="segmented" id="conn-types">
+              <label><input type="radio" name="type" value="imap" checked><span><svg class="ic"><use href="#i-mail"/></svg>Other mailbox (IMAP)</span></label>
+              <label><input type="radio" name="type" value="ics"><span><svg class="ic"><use href="#i-calendar"/></svg>Calendar link</span></label>
+            </div>
+            <h3 id="conn-form-title" class="hidden"></h3>
+            <div class="conn-fields" data-for="imap">
+              <p class="muted small">For Gmail and Microsoft 365, use Accounts above. This is for other mail providers.</p>
+              <div class="grid3">
+                <label>Name <input name="name" placeholder="e.g. Office mailbox" dir="auto"></label>
+                <label>Email address <input name="username" autocomplete="off"></label>
+                <label>Password <input name="password" type="password" autocomplete="new-password"></label>
+                <label>IMAP server <input name="host" placeholder="mail.yourprovider.com"></label>
+                <label>Port <input name="port" value="993"></label>
+                <label>Folders <input name="folders" value="INBOX"></label>
+              </div>
+              <p class="muted small" id="imap-folders"></p>
+            </div>
+            <div class="conn-fields hidden" data-for="ics">
+              <p class="muted small">For a calendar outside the connected accounts. Google: Settings → the calendar → <i>Secret address in iCal format</i>.
+                Outlook: Settings → Calendar → Shared calendars → Publish → ICS link.</p>
+              <div class="grid3">
+                <label>Name <input name="name" placeholder="e.g. Team calendar" dir="auto"></label>
+                <label class="span2">Calendar link <input name="url" type="password" autocomplete="off"></label>
+              </div>
+            </div>
+            <div id="conn-visibility"></div>
+            <div class="row">
+              <button type="button" id="conn-test" class="btn">Test connection</button>
+              <button class="btn primary" type="submit">Save and import</button>
+              <button type="button" id="conn-cancel" class="btn ghost hidden">Cancel</button>
+            </div>
+            <p class="error" id="conn-error" role="alert"></p>
+          </form>
+        </details>
+      </main>
 
-    <!-- ---------------------------------------------------------- Activity -->
-    <main id="page-activity" class="page hidden">
-      <div class="page-head"><h1>Activity</h1><p class="muted">What people ask. Questions with no answer or a 👎 show what information is missing.</p></div>
-      <div class="stats" id="q-stats"></div>
-      <div class="card">
-        <div class="toolbar"><h2>Questions</h2>
-          <label class="check"><input type="checkbox" id="q-gaps"> Only unanswered or 👎</label></div>
-        <div id="q-list"></div>
-      </div>
-    </main>
+      <!-- ---------------------------------------------------------- People -->
+      <main id="page-people" class="page hidden">
+        <div class="page-head"><div><h1>People</h1>
+          <p class="muted">Team members find information from their departments and information shared with everyone. Admins see everything.</p></div>
+          <button class="btn primary" id="add-user"><svg class="ic"><use href="#i-plus"/></svg>Add person</button></div>
+        <div class="card">
+          <div class="toolbar"><h2>Departments</h2></div>
+          <div id="dept-chips" class="chips"></div>
+          <form id="dept-form" class="inline-form"><input name="name" placeholder="New department, e.g. Sales" dir="auto" aria-label="Department name">
+            <button class="btn" type="submit"><svg class="ic"><use href="#i-plus"/></svg>Add department</button></form>
+          <p class="error" id="dept-error" role="alert"></p>
+        </div>
+        <div class="card">
+          <div class="toolbar"><h2>Team members</h2></div>
+          <div id="user-list"></div>
+        </div>
+      </main>
 
-    <!-- ---------------------------------------------------------- Settings -->
-    <main id="page-settings" class="page hidden">
-      <div class="page-head"><h1>Settings</h1></div>
-      <div class="card" id="health-card">
-        <div class="toolbar"><h2>Health check</h2>
-          <span><button class="btn" id="health-refresh">Check again</button> <button class="btn" id="health-download">Download report</button></span></div>
-        <div id="health-list"></div>
-        <details id="problems"><summary>Recent problems</summary><div id="problem-list"></div></details>
-      </div>
-      <div class="card">
-        <h2>Subscription</h2>
-        <div id="license-info"></div>
-        <form id="license-form" class="inline-form"><input type="file" name="file" required aria-label="License file">
-          <button class="btn" type="submit">Install license file</button></form>
-        <p class="error" id="license-error" role="alert"></p>
-      </div>
-      <div class="card">
-        <h2>Change my password</h2>
-        <form id="pw-form" class="grid3">
-          <label>Current password <input name="current_password" type="password" required autocomplete="current-password"></label>
-          <label>New password <input name="new_password" type="password" required autocomplete="new-password" minlength="8"></label>
-          <div class="align-end"><button class="btn primary" type="submit">Change password</button></div>
-        </form>
-        <p class="error" id="pw-error" role="alert"></p>
-      </div>
-    </main>
+      <!-- ---------------------------------------------------------- Activity -->
+      <main id="page-activity" class="page hidden">
+        <div class="page-head"><div><h1>Activity</h1><p class="muted">What people ask. Unanswered questions and thumbs-down show what information is missing.</p></div></div>
+        <div class="stats" id="q-stats"></div>
+        <div class="card">
+          <div class="toolbar"><h2>Questions</h2>
+            <label class="check"><input type="checkbox" id="q-gaps"> Only unanswered or not helpful</label></div>
+          <div id="q-list"></div>
+        </div>
+      </main>
+
+      <!-- ---------------------------------------------------------- Settings -->
+      <main id="page-settings" class="page hidden">
+        <div class="page-head"><div><h1>Settings</h1></div></div>
+        <div class="card" id="health-card">
+          <div class="toolbar"><h2>Health check</h2>
+            <span class="row tight"><button class="btn" id="health-refresh"><svg class="ic"><use href="#i-refresh"/></svg>Check again</button>
+              <button class="btn" id="health-download">Download report</button></span></div>
+          <div id="health-list"></div>
+          <details id="problems"><summary class="muted small">Recent problems</summary><div id="problem-list"></div></details>
+        </div>
+        <div class="card" id="ai-card">
+          <div class="toolbar"><h2>Claude API key</h2><span id="ai-state"></span></div>
+          <p class="muted small">Answers are written by Claude. Create a key at console.anthropic.com → API Keys, then paste it here. It's tested before it's saved, and stored encrypted.</p>
+          <form id="ai-form" class="inline-form"><input name="key" type="password" placeholder="sk-ant-…" autocomplete="off" aria-label="Claude API key">
+            <button class="btn primary" type="submit">Save and test</button></form>
+          <p class="error" id="ai-error" role="alert"></p>
+        </div>
+        <div class="card">
+          <h2>Subscription</h2>
+          <div id="license-info"></div>
+          <form id="license-form" class="inline-form"><input type="file" name="file" required aria-label="License file">
+            <button class="btn" type="submit">Install license file</button></form>
+          <p class="error" id="license-error" role="alert"></p>
+        </div>
+      </main>
+    </div>
   </section>
 
   <dialog id="dialog"><form method="dialog" id="dialog-form"></form></dialog>
