@@ -72,9 +72,12 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Google: clear 'Connect Google account' button", (await text(`${g} [data-open-connect]`)).trim() === "Connect Google account");
   await shot("sources-empty");
   await page.click(`${g} [data-open-connect]`);
+  check("Google: email starts as 'Only me' (private)", await page.isChecked(`${g} .panel .vis-private`) && /Only me[\s\S]*Everyone/.test(await text(`${g} .panel .circles`)));
+  await page.uncheck(`${g} .panel .vis-private`);
   await page.click(`${g} [data-go]`);
   check("Google: asks who can find it before continuing", /Choose who can find it/.test(await text(`${g} .panel .error`)));
   await page.check(`${g} .panel .vis-everyone`);
+  check("Choosing Everyone clears Only me", !(await page.isChecked(`${g} .panel .vis-private`)));
   await shot("google-connect-panel", false);
   await page.click(`${g} [data-go]`);
   await page.waitForURL(/accounts\.google\.com/);
@@ -95,6 +98,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Calendar: counted in events (3), not months", /3 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
   check("Sources: no 'Ask a question' button on this page", !/Ask a question/.test(await text("#page-sources")));
+  check("Sources: explains who sees what (Only me, Teams, Everyone)", /Only me[\s\S]*Teams[\s\S]*Everyone/.test(await text("#page-sources .circles-guide")));
   await until(async () => /Connected/.test(await text("[data-tile=gmail]")), 15000, 500);
   check("Connection hub: named 'Connection hub'", /Connection hub/.test(await text("#overview-card h2")));
   check("Connection hub: unconnected Outlook tile has a Connect button", await page.isVisible("[data-tile=ms_mail] [data-connect-tile]"));
@@ -410,7 +414,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
   check("Team member lands on the chat, with New chat in the sidebar", !(await page.isHidden("#page-ask")) && /New chat/.test(await text("#nav")));
-  check("Team member sidebar: Chat, Brain and Learning Center", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Chat,Brain,Learning Center");
+  check("Team member sidebar: Chat, Brain, My sources and Learning Center", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Chat,Brain,My sources,Learning Center");
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
@@ -428,6 +432,17 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.fill("#brain-search", "Levi"); await sleep(900);
   check("Brain: Sales can see the Google emails", /Levi Gardens/.test(await text("#brain-view")));
   await shot("member-library");
+
+  await go("mine");
+  check("My sources: team members bring their own accounts and documents", await until(async () => /My sources/.test(await text("#page-mine h1"))
+    && /Connect Google/.test(await text("#page-mine")) && /Add documents/.test(await text("#page-mine")), 5000, 200));
+  await page.click("[data-mine-connect=google]");
+  check("My sources: a team member's account starts as Only me", await until(async () => await page.isChecked("#dialog[open] .vis-private"), 3000, 200));
+  await page.uncheck("#dialog[open] input[name=svc][value=calendar]"); await page.uncheck("#dialog[open] input[name=svc][value=files]");
+  await page.click("#dialog[open] [data-go]");
+  await page.waitForURL(/google\.com/); await page.click("#allow"); await page.waitForURL(/#mine/);
+  check("My sources: Dana's own Gmail is connected and private to her", await until(async () => /Gmail[\s\S]*Only you/.test(await text("#mine-list")), 20000, 500), await text("#mine-list"));
+  await shot("my-sources");
 
   // ------------------------------------------------------------------ 11b. A new employee sees only the learning path
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");

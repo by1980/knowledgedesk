@@ -12,7 +12,9 @@ from .db import conn
 
 _ACCESS = """
     d.status = 'ready' AND (
-        CASE WHEN %(learner)s THEN d.id IN (SELECT document_id FROM learning_items)
+        CASE WHEN d.private THEN d.owner_id = %(me)s AND NOT %(learner)s
+        WHEN d.allowed_emails IS NOT NULL THEN lower(%(me_email)s) = ANY(d.allowed_emails) AND NOT %(learner)s
+        WHEN %(learner)s THEN d.id IN (SELECT document_id FROM learning_items)
         ELSE (
             %(is_admin)s
             OR d.company_wide
@@ -56,7 +58,7 @@ fused AS (
     GROUP BY id
 )
 SELECT c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind,
-       d.metadata, d.updated_at, d.doc_date, f.score
+       d.metadata, d.updated_at, d.doc_date, d.private, f.score
 FROM fused f
 JOIN chunks c ON c.id = f.id
 JOIN documents d ON d.id = c.document_id
@@ -100,11 +102,13 @@ def _names_query(names: list[str]) -> str:
 def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: int | None = None,
            include_company: bool = True, k: int | None = None, kinds: list[str] | None = None,
            learner: bool = False, plan: dict | None = None, mine: list[str] | None = None,
-           own_site: str = "") -> list[dict]:
+           own_site: str = "", user_id: int = 0, user_email: str = "") -> list[dict]:
     """Find the passages that answer the question. With a search plan (from the AI: who, when, which way,
     newest first...) several targeted searches run and their results are combined."""
     params = {
         "learner": learner,
+        "me": user_id,
+        "me_email": user_email,
         "qvec": embeddings.embed_query(question),
         "tsq": _keyword_query(question),
         "is_admin": is_admin,
@@ -134,7 +138,7 @@ _SOCIAL = re.compile(r"\b(instagram|insta|facebook|fb|youtube|linkedin|social|po
 _PLATFORMS = {r"instagram|\binsta\b|אינסטגרם": "Instagram", r"facebook|\bfb\b|פייסבוק": "Facebook",
               r"youtube|יוטיוב": "YouTube", r"linkedin|לינקדאין": "LinkedIn"}
 _SUMMARIES = """
-SELECT c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind, d.metadata, d.updated_at, 1.0 AS score
+SELECT c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind, d.metadata, d.updated_at, d.doc_date, d.private, 1.0 AS score
 FROM chunks c JOIN documents d ON d.id = c.document_id
 WHERE d.kind = 'social' AND d.metadata->>'summary' = 'true' AND {access}
 ORDER BY (d.metadata->>'platform' = ANY(%(named)s::text[])) DESC, d.updated_at DESC, c.id
@@ -227,7 +231,7 @@ WITH docs AS (
     LIMIT 8
 )
 SELECT DISTINCT ON (c.document_id) c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind,
-       d.metadata, d.updated_at, d.doc_date, 1.0 AS score, docs.on_topic, docs.at
+       d.metadata, d.updated_at, d.doc_date, d.private, 1.0 AS score, docs.on_topic, docs.at
 FROM chunks c JOIN documents d ON d.id = c.document_id JOIN docs ON docs.id = d.id
 ORDER BY c.document_id,
          (CASE WHEN %(topic)s <> '' THEN ts_rank_cd(c.tsv, to_tsquery('simple', %(topic)s)) ELSE 0 END) DESC, c.position

@@ -67,7 +67,7 @@ PROVIDERS = {
         "token_url": "https://slack.com/api/oauth.v2.access",
         "base_scopes": [],
         # Read channels (joining public ones automatically) and people's names. Nothing is ever posted.
-        "scopes": {"messages": "channels:read,channels:history,channels:join,groups:read,groups:history,users:read"},
+        "scopes": {"messages": "channels:read,channels:history,channels:join,groups:read,groups:history,users:read,users:read.email"},
         "scope_separator": ",",
         "pkce": False,
         "connector_types": {"messages": "slack"},
@@ -204,7 +204,8 @@ def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
-def start(provider: str, services: list[str], department_ids: list[int], company_wide: bool, origin: str) -> str:
+def start(provider: str, services: list[str], department_ids: list[int], company_wide: bool, origin: str,
+          private: bool = False, owner_id: int | None = None) -> str:
     if provider not in PROVIDERS:
         raise ValueError("Unknown provider")
     client_id, _ = credentials(provider)
@@ -221,7 +222,8 @@ def start(provider: str, services: list[str], department_ids: list[int], company
         for k in [k for k, v in _pending.items() if now - v["created"] > 900]:
             del _pending[k]
         _pending[key] = {"provider": provider, "services": services, "department_ids": department_ids,
-                         "company_wide": company_wide, "verifier": verifier, "origin": origin, "created": now}
+                         "company_wide": company_wide, "private": private, "owner_id": owner_id,
+                         "verifier": verifier, "origin": origin, "created": now}
     # The state carries this installation's address so the relay page knows where to send the browser.
     state = _b64(json.dumps({"k": key, "r": origin}, separators=(",", ":")).encode())
     params = {
@@ -312,28 +314,31 @@ def finish(state: str, code: str) -> list[int]:
     with conn() as c:
         existing = c.execute("SELECT id FROM oauth_accounts WHERE provider=%s AND lower(email)=lower(%s) ORDER BY id",
                              (provider, email)).fetchone() if email else None
+        owner = pending.get("owner_id")
         if existing:  # same account connected again: refresh its access instead of duplicating it
             account_id = existing["id"]
-            c.execute("UPDATE oauth_accounts SET tokens=%s WHERE id=%s", (encrypt(json.dumps(token_blob)), account_id))
+            c.execute("UPDATE oauth_accounts SET tokens=%s, owner_id=coalesce(owner_id, %s) WHERE id=%s",
+                      (encrypt(json.dumps(token_blob)), owner, account_id))
         else:
             account_id = c.execute(
-                "INSERT INTO oauth_accounts(provider, email, tokens) VALUES (%s, %s, %s) RETURNING id",
-                (provider, email, encrypt(json.dumps(token_blob))),
+                "INSERT INTO oauth_accounts(provider, email, tokens, owner_id) VALUES (%s, %s, %s, %s) RETURNING id",
+                (provider, email, encrypt(json.dumps(token_blob)), owner),
             ).fetchone()["id"]
         for service in pending["services"]:
             ctype = PROVIDERS[provider]["connector_types"][service]
-            same = c.execute("SELECT id FROM connectors WHERE type=%s AND config->>'account_id' = %s",
-                             (ctype, str(account_id))).fetchone()
+            same = c.execute("SELECT id FROM connectors WHERE type=%s AND config->>'account_id' = %s AND owner_id IS NOT DISTINCT FROM %s",
+                             (ctype, str(account_id), owner)).fetchone()
             if same:
                 c.execute("UPDATE connectors SET last_error=NULL WHERE id=%s", (same["id"],))
                 created.append(same["id"])
                 continue
+            private = bool(pending.get("private"))
             cid = c.execute(
-                "INSERT INTO connectors(type, name, config, company_wide) VALUES (%s, %s, %s, %s) RETURNING id",
+                "INSERT INTO connectors(type, name, config, company_wide, private, owner_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
                 (ctype, f"{SERVICE_LABEL[service]}: {email}", json.dumps({"account_id": account_id}),
-                 pending["company_wide"]),
+                 pending["company_wide"] and not private, private, owner),
             ).fetchone()["id"]
-            for d in set(pending["department_ids"]):
+            for d in set([] if private else pending["department_ids"]):
                 c.execute("INSERT INTO connector_departments VALUES (%s, %s)", (cid, d))
             created.append(cid)
     return created

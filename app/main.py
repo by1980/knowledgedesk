@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.16"
+APP_VERSION = "0.10.0"
 
 
 def _ensure_secret_key() -> None:
@@ -79,12 +79,32 @@ def _rescan_emails() -> None:
         log.exception("Re-reading saved emails failed")
 
 
+def _privacy_upgrade() -> None:
+    """Once, when updating to the privacy circles: sources connected before belong to the first admin who set them up;
+    their email and calendar become "Only me" (they can share them again any time). Everything else keeps its circle."""
+    with conn() as c:
+        if c.execute("SELECT 1 FROM meta WHERE key='privacy_v1'").fetchone():
+            return
+        admin = c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").fetchone()
+        if admin:
+            c.execute("UPDATE connectors SET owner_id=%s WHERE owner_id IS NULL", (admin["id"],))
+            c.execute("UPDATE oauth_accounts SET owner_id=%s WHERE owner_id IS NULL", (admin["id"],))
+            c.execute("UPDATE connectors SET private=TRUE, company_wide=FALSE WHERE type IN ('gmail','ms_mail','imap','gcal','ms_cal')")
+            c.execute("DELETE FROM connector_departments WHERE connector_id IN (SELECT id FROM connectors WHERE private)")
+            c.execute("UPDATE documents d SET private=k.private, owner_id=k.owner_id, company_wide=k.company_wide FROM connectors k "
+                      "WHERE d.connector_id = k.id")
+            c.execute("DELETE FROM document_departments WHERE document_id IN (SELECT id FROM documents WHERE private)")
+            c.execute("UPDATE documents SET owner_id=uploaded_by WHERE source='upload' AND owner_id IS NULL")
+        c.execute("INSERT INTO meta(key, value) VALUES ('privacy_v1', '1')")
+
+
 def startup() -> None:
     _ensure_secret_key()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     (settings.sources_dir / "_company").mkdir(parents=True, exist_ok=True)
     init_schema(embeddings.dimension())
     auth.ensure_first_admin()
+    _privacy_upgrade()
     merged = oauth.merge_duplicate_accounts()
     if merged:
         log.info("Merged %d duplicate connected account(s)", merged)
@@ -193,17 +213,20 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
     brand = branding.get()
     own_site = re.sub(r"^https?://(www\.)?", "", (brand.get("website") or "").strip()).split("/")[0]
     plan = llm.plan_search(question, history, brand.get("name") or settings.company_name, brand.get("website") or "")
-    hits = retrieval.search(question, **scope, plan=plan, mine=_my_addresses(user), own_site=own_site)
+    hits = retrieval.search(question, **scope, plan=plan, mine=_my_addresses(user), own_site=own_site,
+                            user_id=user["id"], user_email=user["email"])
     # A follow-up ("and for VIP customers?") may need the previous question too. The new question
     # always leads; results for "previous + new" only fill in behind it.
     last_user_q = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
     if last_user_q and not plan:
-        hits = retrieval.fuse(hits, retrieval.search(f"{last_user_q}\n{question}", **scope))
+        hits = retrieval.fuse(hits, retrieval.search(f"{last_user_q}\n{question}", **scope, user_id=user["id"],
+                                                     user_email=user["email"]))
     hits = _with_attachments(hits, user)
     sources = [
         {"n": i, "document_id": h["document_id"], "title": h["title"], "location": h["location"] or "",
          "date": (h.get("doc_date") or h.get("updated_at")).isoformat() if (h.get("doc_date") or h.get("updated_at")) else "",
          "to": (h["metadata"] or {}).get("to", ""), "email_subject": (h["metadata"] or {}).get("email_subject", ""),
+         "private": bool(h.get("private")),
          "kind": h["kind"], "snippet": h["content"][:300], "filename": h.get("filename") or "",
          "url": (h["metadata"] or {}).get("url") or (h["metadata"] or {}).get("link") or ""}
         for i, h in enumerate(hits, 1)
@@ -267,7 +290,7 @@ def _with_attachments(hits: list[dict], user: dict, per_answer: int = 6) -> list
         rows = c.execute(
             "SELECT DISTINCT ON (d.id) coalesce(ch.id, -d.id) AS id, coalesce(ch.content, '(This file has no readable text. "
             "It can still be opened or downloaded.)') AS content, ch.location, d.id AS document_id, d.title, d.filename, "
-            "d.kind, d.metadata, d.updated_at, d.doc_date, 0.0 AS score, e.id AS email_id "
+            "d.kind, d.metadata, d.updated_at, d.doc_date, d.private, 0.0 AS score, e.id AS email_id "
             "FROM documents e JOIN documents d ON d.connector_id = e.connector_id AND d.external_id LIKE e.external_id || ':att:%%' "
             "LEFT JOIN chunks ch ON ch.document_id = d.id "
             f"WHERE e.id = ANY(%(ids)s) AND {VISIBLE} ORDER BY d.id, ch.position",
@@ -290,8 +313,9 @@ def _with_attachments(hits: list[dict], user: dict, per_answer: int = 6) -> list
 def _my_addresses(user: dict) -> list[str]:
     """The company's own email addresses (connected mailboxes and the person asking): "sent" means from one of these."""
     with conn() as c:
-        rows = c.execute("SELECT email FROM oauth_accounts WHERE email LIKE '%%@%%' "
-                         "UNION SELECT config->>'username' FROM connectors WHERE type='imap'").fetchall()
+        rows = c.execute("SELECT email FROM oauth_accounts WHERE email LIKE '%%@%%' AND (owner_id = %(me)s OR owner_id IS NULL) "
+                         "UNION SELECT config->>'username' FROM connectors WHERE type='imap' AND (owner_id = %(me)s OR owner_id IS NULL)",
+                         {"me": user["id"]}).fetchall()
     return sorted({r["email"].lower() for r in rows if r["email"]} | {user["email"].lower()})
 
 
@@ -319,7 +343,9 @@ def list_conversations(user: dict = Depends(auth.current_user), scope: str = "mi
         return c.execute(
             "SELECT c.id, c.title, c.created_at, c.updated_at, c.user_id, u.name AS user_name, u.email AS user_email, "
             " (SELECT count(*) FROM questions x WHERE x.conversation_id=c.id) AS messages, "
-            " (SELECT left(x.answer, 160) FROM questions x WHERE x.conversation_id=c.id ORDER BY x.id DESC LIMIT 1) AS last_answer, "
+            " (SELECT CASE WHEN c.user_id <> %(me)s AND EXISTS (SELECT 1 FROM jsonb_array_elements(x.sources) s "
+            "   WHERE (s->>'private')::boolean) THEN NULL ELSE left(x.answer, 160) END "
+            "  FROM questions x WHERE x.conversation_id=c.id ORDER BY x.id DESC LIMIT 1) AS last_answer, "
             " EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id AND NOT x.found_sources) AS unanswered, "
             " EXISTS (SELECT 1 FROM questions x WHERE x.conversation_id=c.id AND x.feedback = -1) AS not_helpful "
             "FROM conversations c LEFT JOIN users u ON u.id=c.user_id "
@@ -343,7 +369,18 @@ def get_conversation(cid: int, user: dict = Depends(auth.current_user)):
         conv["messages"] = c.execute(
             "SELECT id, question, answer, sources, feedback, found_sources, created_at FROM questions "
             "WHERE conversation_id=%s ORDER BY id", (cid,)).fetchall()
+    if not conv["mine"]:
+        for m in conv["messages"]:
+            _redact(m)
     return conv
+
+
+def _redact(q: dict) -> None:
+    """Someone else's answer that used their private items: show the question, not the answer."""
+    if any((s or {}).get("private") for s in (q.get("sources") or [])):
+        q["answer"] = None
+        q["private_answer"] = True
+    q["sources"] = [s for s in (q.get("sources") or []) if not (s or {}).get("private")]
 
 
 @app.delete("/api/conversations/{cid}")
@@ -632,14 +669,18 @@ def learning_progress(_: dict = Depends(auth.admin_user)):
 
 # Who can see a document: admins everything; new employees (learners) only the learning path;
 # team members what's shared with everyone or their departments, plus the learning path.
-VISIBLE = ("(CASE WHEN %(v_role)s = 'learner' THEN d.id IN (SELECT document_id FROM learning_items) "
+# Private items: only their owner, admins included. Items limited to named people (a private Slack channel's members):
+# only them. New employees: only their learning path. Otherwise: admins, everyone-items, and the person's departments.
+VISIBLE = ("(CASE WHEN d.private THEN d.owner_id = %(v_me)s AND %(v_role)s <> 'learner' "
+           "WHEN d.allowed_emails IS NOT NULL THEN lower(%(v_email)s) = ANY(d.allowed_emails) AND %(v_role)s <> 'learner' "
+           "WHEN %(v_role)s = 'learner' THEN d.id IN (SELECT document_id FROM learning_items) "
            "ELSE (%(v_role)s = 'admin' OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
            "WHERE dd.document_id=d.id AND dd.department_id = ANY(%(v_depts)s)) "
            "OR d.id IN (SELECT document_id FROM learning_items)) END)")
 
 
 def _visible_params(user: dict) -> dict:
-    return {"v_role": user["role"], "v_depts": [d["id"] for d in user["departments"]]}
+    return {"v_role": user["role"], "v_depts": [d["id"] for d in user["departments"]], "v_me": user["id"], "v_email": user["email"]}
 
 
 def _can_see(c, user: dict, doc_id: int) -> bool:
@@ -651,11 +692,13 @@ def _can_see(c, user: dict, doc_id: int) -> bool:
 @app.get("/api/documents")
 def list_documents(response: Response, user: dict = Depends(auth.current_user), q: str = "",
                    source: str = "", connector_id: int | None = None, status: str = "", kind: str = "",
-                   ctype: str = "", sort: str = "", limit: int = 1000, offset: int = 0):
+                   ctype: str = "", sort: str = "", mine: bool = False, limit: int = 1000, offset: int = 0):
     """source: "uploads" = files added by hand or from synced folders; ctype: everything from one kind of connected
     app (e.g. all Gmail accounts); sort=date: newest first by the item's own date. Total count is in X-Total-Count."""
     where = [VISIBLE]
     params = {**_visible_params(user), "limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
+    if mine:
+        where.append("d.owner_id = %(v_me)s AND d.source = 'upload'")
     if ctype:
         where.append("d.connector_id IN (SELECT id FROM connectors WHERE type = %(ctype)s)")
         params["ctype"] = ctype
@@ -680,7 +723,7 @@ def list_documents(response: Response, user: dict = Depends(auth.current_user), 
     with conn() as c:
         total = c.execute(f"SELECT count(*) AS n FROM documents d WHERE {sql_where}", params).fetchone()["n"]
         rows = c.execute(
-            "SELECT d.id, d.title, d.filename, d.kind, d.source, d.company_wide, d.status, d.error, "
+            "SELECT d.id, d.title, d.filename, d.kind, d.source, d.company_wide, d.private, d.status, d.error, "
             " d.metadata, d.created_at, d.updated_at, d.doc_date, d.connector_id, "
             " (SELECT k.type FROM connectors k WHERE k.id = d.connector_id) AS connector_type, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) "
@@ -758,11 +801,14 @@ def upload_documents(
     interviewee: str = Form(""),
     role: str = Form(""),
     interview_date: str = Form(""),
-    admin: dict = Depends(auth.admin_user),
+    private: bool = Form(False),
+    admin: dict = Depends(auth.current_user),
 ):
-    depts = [int(x) for x in department_ids.split(",") if x.strip().isdigit()]
-    if not depts and not company_wide:
-        raise HTTPException(400, "Choose at least one department, or mark the document as company-wide")
+    if admin["role"] == "learner":
+        raise HTTPException(403, "New employees can't add documents yet")
+    depts = [] if private else [int(x) for x in department_ids.split(",") if x.strip().isdigit()]
+    company_wide = company_wide and not private
+    _check_circle(admin, private, company_wide, depts)
     if kind not in ("file", "interview", "whatsapp", "linkedin"):
         raise HTTPException(400, "Unknown document kind")
     meta = {k: v for k, v in {"interviewee": interviewee, "role": role, "interview_date": interview_date}.items() if v}
@@ -788,9 +834,9 @@ def upload_documents(
             if doc_kind == "interview" and interviewee:
                 title = f"Interview - {interviewee}" + (f" ({role})" if role else "")
             doc_id = c.execute(
-                "INSERT INTO documents(title, filename, path, kind, source, company_wide, metadata, uploaded_by) "
-                "VALUES (%s, %s, %s, %s, 'upload', %s, %s, %s) RETURNING id",
-                (title, name, str(dest), doc_kind, company_wide, json.dumps(meta), admin["id"]),
+                "INSERT INTO documents(title, filename, path, kind, source, company_wide, metadata, uploaded_by, private, owner_id) "
+                "VALUES (%s, %s, %s, %s, 'upload', %s, %s, %s, %s, %s) RETURNING id",
+                (title, name, str(dest), doc_kind, company_wide, json.dumps(meta), admin["id"], private, admin["id"]),
             ).fetchone()["id"]
             for d in depts:
                 c.execute("INSERT INTO document_departments VALUES (%s, %s) ON CONFLICT DO NOTHING", (doc_id, d))
@@ -852,6 +898,7 @@ class ConnectorIn(BaseModel):
     config: dict = {}
     department_ids: list[int] = []
     company_wide: bool = False
+    private: bool = False   # "Only me": only the person who connected it
     enabled: bool = True
 
 
@@ -861,8 +908,8 @@ def _check_connector(body: ConnectorIn, old_config: dict | None = None) -> dict:
         raise HTTPException(400, "Unknown connection type")
     if not body.name.strip():
         raise HTTPException(400, "Please give the connection a name")
-    if not body.department_ids and not body.company_wide:
-        raise HTTPException(400, "Choose at least one department, or make it visible to everyone")
+    if not body.department_ids and not body.company_wide and not body.private:
+        raise HTTPException(400, "Choose who can find it: only you, everyone, or at least one department")
     if body.type in connector_runner.OAUTH_TYPES:
         if old_config is None:
             raise HTTPException(400, "Use the Connect Google / Microsoft buttons for this type")
@@ -921,12 +968,34 @@ def _with_account_emails(rows: list[dict]) -> list[dict]:
     return rows
 
 
+def _check_circle(user: dict, private: bool, company_wide: bool, department_ids: list[int]) -> None:
+    """Who may find something: only me, some departments, or everyone. Team members share with their own
+    departments or with everyone; admins with any department."""
+    if not private and not company_wide and not department_ids:
+        raise HTTPException(400, "Choose who can find it: only you, your team, or everyone")
+    if user["role"] != "admin" and not private:
+        own = {d["id"] for d in user["departments"]}
+        if set(department_ids) - own:
+            raise HTTPException(403, "You can share with your own departments, or with everyone")
+
+
+def _may_manage(user: dict, connector: dict) -> bool:
+    """Admins manage the company's sources and their own; everyone manages their own connections."""
+    if connector.get("private") and connector.get("owner_id") != user["id"]:
+        return False
+    return user["role"] == "admin" or connector.get("owner_id") == user["id"]
+
+
 @app.get("/api/connectors")
-def list_connectors(_: dict = Depends(auth.admin_user)):
+def list_connectors(user: dict = Depends(auth.current_user), mine: bool = False):
+    """Admins: the company's sources plus their own private connections. mine=true (anyone): only my own."""
+    if user["role"] != "admin" and not mine:
+        raise HTTPException(403, "Admins only")
+    where = "k.owner_id = %(me)s" if mine else "(NOT k.private OR k.owner_id = %(me)s)"
     with conn() as c:
         rows = c.execute(
             "SELECT k.id, k.type, k.name, k.config, k.state, k.company_wide, k.enabled, k.last_sync, k.last_error, "
-            " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
+            " k.private, k.owner_id, (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status IN ('pending','processing')) AS indexing, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'ready') AS ready, "
             " (SELECT coalesce(sum(coalesce((d.metadata->>'events')::int, (d.metadata->>'messages')::int, 1)), 0) FROM documents d "
@@ -934,7 +1003,7 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'error') AS failed, k.last_note, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) FROM connector_departments cd "
             "   JOIN departments dp ON dp.id=cd.department_id WHERE cd.connector_id=k.id), '[]') AS departments "
-            "FROM connectors k ORDER BY k.name"
+            f"FROM connectors k WHERE {where} ORDER BY k.name", {"me": user["id"]}
         ).fetchall()
     for r in rows:
         r["config"] = _public_config(r["type"], r["config"])
@@ -970,12 +1039,14 @@ def _sync_in_background(cid: int) -> None:
 
 
 @app.post("/api/connectors")
-def create_connector(body: ConnectorIn, _: dict = Depends(auth.admin_user)):
+def create_connector(body: ConnectorIn, admin: dict = Depends(auth.admin_user)):
     cfg = _check_connector(body)
     with conn() as c:
         cid = c.execute(
-            "INSERT INTO connectors(type, name, config, company_wide, enabled) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (body.type, body.name.strip(), json.dumps(cfg), body.company_wide, body.enabled),
+            "INSERT INTO connectors(type, name, config, company_wide, enabled, private, owner_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (body.type, body.name.strip(), json.dumps(cfg), body.company_wide and not body.private, body.enabled,
+             body.private, admin["id"]),
         ).fetchone()["id"]
         _save_connector_departments(c, cid, body.department_ids)
     _sync_in_background(cid)
@@ -983,31 +1054,44 @@ def create_connector(body: ConnectorIn, _: dict = Depends(auth.admin_user)):
 
 
 @app.put("/api/connectors/{cid}")
-def update_connector(cid: int, body: ConnectorIn, _: dict = Depends(auth.admin_user)):
+def update_connector(cid: int, body: ConnectorIn, user: dict = Depends(auth.current_user)):
     with conn() as c:
-        old = c.execute("SELECT type, config FROM connectors WHERE id=%s", (cid,)).fetchone()
-    if not old:
+        old = c.execute("SELECT type, config, owner_id, private FROM connectors WHERE id=%s", (cid,)).fetchone()
+    if not old or not _may_manage(user, old):
         raise HTTPException(404, "Not found")
+    _check_circle(user, body.private, body.company_wide, body.department_ids)
     body.type = old["type"]
     cfg = _check_connector(body, old["config"])
     with conn() as c:
-        c.execute("UPDATE connectors SET name=%s, config=%s, company_wide=%s, enabled=%s WHERE id=%s",
-                  (body.name.strip(), json.dumps(cfg), body.company_wide, body.enabled, cid))
-        _save_connector_departments(c, cid, body.department_ids)
+        c.execute("UPDATE connectors SET name=%s, config=%s, company_wide=%s, enabled=%s, private=%s, "
+                  "owner_id = CASE WHEN %s THEN coalesce(owner_id, %s) ELSE owner_id END WHERE id=%s",
+                  (body.name.strip(), json.dumps(cfg), body.company_wide and not body.private, body.enabled, body.private,
+                   body.private, user["id"], cid))
+        _save_connector_departments(c, cid, [] if body.private else body.department_ids)
         connector_runner.apply_visibility(c, cid, body.company_wide)  # takes effect right away, no re-import
     if body.type not in connector_runner.OAUTH_TYPES:
         _sync_in_background(cid)  # address/password may have changed: check and import again
     return {"ok": True}
 
 
+def _managed(cid: int, user: dict) -> dict:
+    with conn() as c:
+        row = c.execute("SELECT id, owner_id, private FROM connectors WHERE id=%s", (cid,)).fetchone()
+    if not row or not _may_manage(user, row):
+        raise HTTPException(404, "Not found")
+    return row
+
+
 @app.post("/api/connectors/{cid}/sync")
-def sync_connector_now(cid: int, _: dict = Depends(auth.admin_user)):
+def sync_connector_now(cid: int, user: dict = Depends(auth.current_user)):
+    _managed(cid, user)
     _sync_in_background(cid)
     return {"ok": True}
 
 
 @app.delete("/api/connectors/{cid}")
-def delete_connector(cid: int, _: dict = Depends(auth.admin_user)):
+def delete_connector(cid: int, user: dict = Depends(auth.current_user)):
+    _managed(cid, user)
     lock = connector_runner.lock_for(cid)
     if not lock.acquire(timeout=300):
         raise HTTPException(409, "This source is still importing. Try again in a few minutes.")
@@ -1061,6 +1145,7 @@ class OAuthStartIn(BaseModel):
     services: list[str]
     department_ids: list[int] = []
     company_wide: bool = False
+    private: bool = False
 
 
 def _origin(request: Request) -> str:
@@ -1071,7 +1156,7 @@ def _origin(request: Request) -> str:
 
 
 @app.get("/api/oauth/status")
-def oauth_status(request: Request, _: dict = Depends(auth.admin_user)):
+def oauth_status(request: Request, _: dict = Depends(auth.current_user)):
     return {"configured": oauth.configured(), "redirect_url": oauth.redirect_url(_origin(request))}
 
 
@@ -1131,12 +1216,16 @@ def oauth_app_delete(provider: str, _: dict = Depends(auth.admin_user)):
 
 
 @app.post("/api/oauth/start")
-def oauth_start(body: OAuthStartIn, request: Request, _: dict = Depends(auth.admin_user)):
-    if not body.department_ids and not body.company_wide:
-        raise HTTPException(400, "Choose at least one department, or make it visible to everyone")
+def oauth_start(body: OAuthStartIn, request: Request, user: dict = Depends(auth.current_user)):
+    """Anyone can connect their own accounts; the admin also connects company-wide services (Slack, Facebook)."""
+    if user["role"] == "learner":
+        raise HTTPException(403, "New employees can't connect accounts yet")
+    if user["role"] != "admin" and body.provider not in ("google", "microsoft"):
+        raise HTTPException(403, "Ask your admin to connect this for the company")
+    _check_circle(user, body.private, body.company_wide, body.department_ids)
     try:
         return {"url": oauth.start(body.provider, body.services, body.department_ids, body.company_wide,
-                                   _origin(request))}
+                                   _origin(request), body.private, user["id"])}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -1231,7 +1320,7 @@ def refind_logo(_: dict = Depends(auth.admin_user)):
 # ---------------------------------------------------------------- dashboard numbers
 
 @app.get("/api/admin/analytics")
-def analytics(days: int = 30, _: dict = Depends(auth.admin_user)):
+def analytics(days: int = 30, admin_user: dict = Depends(auth.admin_user)):
     days = max(7, min(days, 180))
     with conn() as c:
         per_day = c.execute(
@@ -1264,7 +1353,7 @@ def analytics(days: int = 30, _: dict = Depends(auth.admin_user)):
             " (SELECT max(d.created_at) FROM documents d WHERE d.connector_id = k.id) AS last_new, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id = k.id AND d.created_at > now() - interval '24 hours') AS added_today, "
             " (SELECT a.email FROM oauth_accounts a WHERE a.id::text = k.config->>'account_id') AS account "
-            "FROM connectors k ORDER BY k.type, k.id").fetchall()
+            "FROM connectors k WHERE NOT k.private OR k.owner_id = %(me)s ORDER BY k.type, k.id", {"me": admin_user["id"]}).fetchall()
         uploads = c.execute("SELECT max(created_at) AS last_new, count(*) FILTER (WHERE created_at > now() - interval '24 hours') AS added_today "
                             "FROM documents WHERE source IN ('upload', 'folder')").fetchone()
     return {"days": days, "per_day": per_day, "by_department": by_department, "by_person": by_person, "growth": growth,
@@ -1480,10 +1569,10 @@ def health(_: dict = Depends(auth.admin_user)):
 # ---------------------------------------------------------------- admin
 
 @app.get("/api/admin/questions")
-def recent_questions(limit: int = 200, _: dict = Depends(auth.admin_user)):
+def recent_questions(limit: int = 200, admin_user: dict = Depends(auth.admin_user)):
     with conn() as c:
         rows = c.execute(
-            "SELECT q.id, q.question, q.answer, q.feedback, q.found_sources, q.created_at, q.conversation_id, "
+            "SELECT q.id, q.question, q.answer, q.feedback, q.found_sources, q.created_at, q.conversation_id, q.user_id, q.sources, "
             " u.name AS user_name, u.email AS user_email, d.name AS department "
             "FROM questions q LEFT JOIN users u ON u.id=q.user_id LEFT JOIN departments d ON d.id=q.department_id "
             "ORDER BY q.created_at DESC LIMIT %s", (min(limit, 1000),)
@@ -1496,6 +1585,10 @@ def recent_questions(limit: int = 200, _: dict = Depends(auth.admin_user)):
             " count(*) FILTER (WHERE NOT found_sources) AS no_sources "
             "FROM questions"
         ).fetchone()
+    for q in rows:
+        if q["user_id"] != admin_user["id"]:
+            _redact(q)
+        q.pop("sources", None)
     return {"stats": stats, "questions": rows}
 
 

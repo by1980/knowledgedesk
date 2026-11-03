@@ -160,3 +160,12 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS meta_tsv tsvector GENERATED ALWAY
         coalesce(metadata->>'attachments', '') || ' ' || coalesce(metadata->>'account', '') || ' ' || coalesce(filename, ''),
         '[@._/:+=<>(),;|*#&~-]+', ' ', 'g'))) STORED;
 CREATE INDEX IF NOT EXISTS documents_meta_tsv ON documents USING gin(meta_tsv);
+
+-- v0.10: privacy. Every item is in one of three circles: only its owner (private), some departments, or everyone.
+-- Items can also be limited to named people (e.g. the members of a private Slack channel).
+ALTER TABLE connectors ADD COLUMN IF NOT EXISTS owner_id INT REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE connectors ADD COLUMN IF NOT EXISTS private BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE oauth_accounts ADD COLUMN IF NOT EXISTS owner_id INT REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS owner_id INT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS private BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS allowed_emails TEXT[];

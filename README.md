@@ -58,6 +58,25 @@ Question ──► permission filter + hybrid search (meaning + keywords) ──
 | Answers | Claude via the Anthropic API |
 | Web interface | Plain HTML/JS with right-to-left support, served by the same app |
 
+## Who sees what: three circles
+
+Everyone in the company brings their own assets (email, calendar, Drive, documents, Slack channels...). Each asset
+is in one circle, chosen by the person who adds it:
+
+| Circle | Who can find it | Starts here by default |
+|---|---|---|
+| **Only me** | Only that person. Admins included: they can't search or open it. | Email and calendar |
+| **Teams** | People in the chosen departments. Private Slack channels: only their members. | Team folders, private channels |
+| **Everyone** | The whole company | Website, social media, public Slack channels, company guides |
+
+- Team members connect their own Google or Microsoft account and add documents under **My sources**, sharing with
+  only themselves, their own teams, or everyone. Admins manage company sources under **Sources**.
+- Answers mark private items "Only you". When an admin opens someone else's conversation, answers that used that
+  person's private items are hidden.
+- The rule is enforced in the database for every search, list, preview and download.
+- Updating from an earlier version makes connected email and calendars "Only me" for the admin who connected them,
+  once. Everything else keeps its circle.
+
 ## Installing at a customer
 
 **Server:** any Linux server or small PC (Ubuntu 22.04/24.04 recommended), 4+ CPU cores, 16 GB

@@ -267,12 +267,17 @@ def test_oauth_errors_and_permissions(client):
     assert r.status_code == 400
     r = client.post("/api/oauth/start", headers=admin, json={"provider": "google", "services": [], "company_wide": True})
     assert r.status_code == 400
-    # Not an admin
+    # Team members connect their own accounts, but not company-wide services, and share only with their own teams
     client.post("/api/users", headers=admin, json={"email": "plain@test.local", "password": "password-123"})
     r = client.post("/api/login", json={"email": "plain@test.local", "password": "password-123"})
     member = {"Authorization": f"Bearer {r.json()['token']}"}
     assert client.post("/api/oauth/start", headers=member,
-                       json={"provider": "google", "services": ["mail"], "company_wide": True}).status_code == 403
+                       json={"provider": "google", "services": ["mail"], "private": True}).status_code == 200
+    assert client.post("/api/oauth/start", headers=member,
+                       json={"provider": "slack", "services": ["messages"], "company_wide": True}).status_code == 403
+    other_dept = client.post("/api/departments", headers=admin, json={"name": "Finance-only"}).json()["id"]
+    assert client.post("/api/oauth/start", headers=member,
+                       json={"provider": "google", "services": ["files"], "department_ids": [other_dept]}).status_code == 403
     # Account-based connections can't be created by hand
     r = client.post("/api/connectors", headers=admin, json={"type": "gmail", "name": "x", "company_wide": True})
     assert r.status_code == 400

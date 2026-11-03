@@ -77,28 +77,41 @@ async function busy(button, label, fn) {
 function debounce(fn, ms = 300) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 // ---------- who can find this: Everyone OR departments
-function visibilityPicker(selected = [], everyone = false, title = "Who can find this?") {
-  const boxes = departments.map((d) => `<label class="check"><input type="checkbox" value="${d.id}" ${selected.includes(d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("");
+// Who can find something: Only me, some departments (my teams), or everyone in the company
+function visibilityPicker(selected = [], everyone = false, title = "Who can find this?", { only = false } = {}) {
+  const mine = me.role === "admin" ? departments : me.departments;   // team members share with their own teams
+  const boxes = mine.map((d) => `<label class="check"><input type="checkbox" value="${d.id}" ${!only && selected.includes(d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("");
   return `<div class="vis-block"><span class="label">${esc(title)}</span>
-    <label class="check"><input type="checkbox" class="vis-everyone" ${everyone ? "checked" : ""}> <b>Everyone in the company</b></label>
-    ${boxes ? `<div class="muted small">or only these departments:</div><div class="vis-depts ${everyone ? "off" : ""}">${boxes}</div>` :
-      '<div class="muted small">To limit it to certain teams, first create departments under People.</div>'}</div>`;
+    <div class="circles">
+      <label class="circle"><input type="checkbox" class="vis-private" ${only ? "checked" : ""}><span>${ic("lock")}<b>Only me</b><small>Private: only your questions use it</small></span></label>
+      <label class="circle"><input type="checkbox" class="vis-everyone" ${everyone && !only ? "checked" : ""}><span>${ic("globe")}<b>Everyone</b><small>The whole company</small></span></label>
+    </div>
+    ${boxes ? `<div class="muted small">or only ${me.role === "admin" ? "these teams" : "your teams"}:</div><div class="vis-depts ${everyone || only ? "off" : ""}">${boxes}</div>` :
+      `<div class="muted small">${me.role === "admin" ? "To share with certain teams, first create departments under People." : ""}</div>`}</div>`;
 }
 document.addEventListener("change", (e) => {
   const block = e.target.closest?.(".vis-block");
   if (!block) return;
-  const everyone = $(".vis-everyone", block);
+  const everyone = $(".vis-everyone", block), priv = $(".vis-private", block);
   const depts = $$(".vis-depts input", block);
-  if (e.target === everyone && everyone.checked) depts.forEach((d) => (d.checked = false));
-  if (e.target !== everyone && e.target.checked) everyone.checked = false;
-  $(".vis-depts", block)?.classList.toggle("off", everyone.checked);
+  if (e.target.checked) {   // the three circles exclude each other
+    if (e.target === priv) { everyone.checked = false; depts.forEach((d) => (d.checked = false)); }
+    else if (e.target === everyone) { priv.checked = false; depts.forEach((d) => (d.checked = false)); }
+    else { priv.checked = false; everyone.checked = false; }
+  }
+  $(".vis-depts", block)?.classList.toggle("off", everyone.checked || priv.checked);
+  const err = block.closest(".panel, form, #dialog-form")?.querySelector(".error");   // a choice was made: the warning is answered
+  if (err && /Choose who can find it/.test(err.textContent)) err.textContent = "";
 });
 function readVisibility(root) {
   const el = root.classList?.contains("vis-block") ? root : $(".vis-block", root);
-  return { company_wide: $(".vis-everyone", el).checked, department_ids: $$(".vis-depts input:checked", el).map((x) => Number(x.value)) };
+  const priv = $(".vis-private", el).checked;
+  return { private: priv, company_wide: !priv && $(".vis-everyone", el).checked,
+    department_ids: priv ? [] : $$(".vis-depts input:checked", el).map((x) => Number(x.value)) };
 }
-function visibilityError(v) { return !v.company_wide && !v.department_ids.length ? "Choose who can find it: Everyone, or at least one department." : ""; }
+function visibilityError(v) { return !v.private && !v.company_wide && !v.department_ids.length ? "Choose who can find it: only you, a team, or everyone." : ""; }
 function visibilityPills(item) {
+  if (item.private) return `<span class="pill pill-private">${ic("lock")}Only you</span>`;
   if (item.company_wide) return '<span class="pill">Everyone</span>';
   return (item.departments || []).map((d) => `<span class="pill">${esc(d.name)}</span>`).join("") || '<span class="pill">Admins only</span>';
 }
@@ -125,7 +138,7 @@ function docBadge(d) {
 const NAV = {
   admin: [["home", "Home", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
     ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
-  member: [["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["learning", "Learning Center", "learn"]],
+  member: [["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["mine", "My sources", "sources"], ["learning", "Learning Center", "learn"]],
   learner: [["learning", "Learning Center", "learn"], ["ask", "Chat", "ask"]],   // new employees: only their learning path
 };
 const HOME_PAGE = { admin: "home", member: "ask", learner: "learning" };
@@ -189,7 +202,7 @@ async function boot() {
   showView("#app-view");
   const connected = new URLSearchParams(location.search).get("connected");
   if (connected !== null) {
-    window.history.replaceState(null, "", "/app#sources");
+    window.history.replaceState(null, "", me.role === "admin" ? "/app#sources" : "/app#mine");
     toast("Account connected. Importing now. You can follow the progress on this page.");
   }
   route();
@@ -541,7 +554,7 @@ function fileCard(s) {
   const when = s.date ? new Date(s.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
   const to = (s.to || "").replace(/<[^>]*>/g, "").split(",")[0].trim();
   const about = s.email_subject ? `Attached to "${esc(s.email_subject)}"` : esc(s.title);
-  const meta = [about, when && (s.email_subject ? `sent ${when}` : when), to && s.email_subject ? `to ${esc(to)}` : ""].filter(Boolean).join(" · ");
+  const meta = [about, when && (s.email_subject ? `sent ${when}` : when), to && s.email_subject ? `to ${esc(to)}` : "", s.private ? "Only you" : ""].filter(Boolean).join(" · ");
   const open = s.url ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : `href="#" data-doc="${s.document_id}"`;
   return `<div class="file-card" dir="ltr"><span class="file-icon" style="--fc:${FILE_COLORS[ext] || "var(--accent)"}">${esc(ext)}</span>
     <div class="file-info"><div class="file-name" dir="auto">${esc(s.filename || s.title)}</div><div class="file-meta" dir="auto">${meta}</div></div>
@@ -578,7 +591,7 @@ function finishBot(bot, text, sources, qid, feedback = null) {
   if (cited.length) body.insertAdjacentHTML("beforeend", `<div class="src-chips">${cited.map((s) => {
     // Files (attachments, Drive files, uploads) show their type and can be downloaded right here
     const ext = isFile(s) ? s.filename.split(".").pop().toUpperCase() : "";
-    const label = `<b>${s.n}</b>${ic(KIND_ICON[s.kind] || "file")}<span>${esc(s.title)}</span>${ext ? `<i class="ftype">${esc(ext)}</i>` : ""}`;
+    const label = `<b>${s.n}</b>${ic(KIND_ICON[s.kind] || "file")}<span>${esc(s.title)}</span>${ext ? `<i class="ftype">${esc(ext)}</i>` : ""}${s.private ? `<i class="only-you" title="Private: only you can see this">${ic("lock")}Only you</i>` : ""}`;
     const chip = s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title)}">${label}</a>`
       : `<a class="src-chip" href="#" data-doc="${s.document_id}" title="Open ${esc(s.title + (s.location ? ", " + s.location : ""))}">${label}</a>`;
     return ext && !s.url ? `<span class="src-file">${chip}<a class="src-dl" href="#" data-doc="${s.document_id}" data-download title="Download ${esc(s.filename)}" aria-label="Download ${esc(s.filename)}">${ic("download")}</a></span>` : chip;
@@ -675,7 +688,7 @@ function viewConversation(c) {
   const f = openDialog(`<h2 dir="auto">${esc(c.title || "Conversation")}</h2>
     <p class="muted small">${esc(c.user_name || c.user_email || "")} · ${new Date(c.updated_at).toLocaleString()}</p>
     <div class="conv-view">${c.messages.map((m) => `<div class="msg user"><div class="bubble" dir="auto">${esc(m.question)}</div></div>
-      <div class="msg bot"><img src="/static/cortex.svg" alt="" class="bot-avatar"><div class="bot-body"><div class="answer" dir="auto">${m.answer ? renderAnswer(m.answer, m.sources || []) : '<p class="muted">No answer was saved.</p>'}</div>
+      <div class="msg bot"><img src="/static/cortex.svg" alt="" class="bot-avatar"><div class="bot-body"><div class="answer" dir="auto">${m.private_answer ? `<p class="muted">${ic("lock")} The answer used ${esc(c.user_name || "this person")}'s private items, so it's only visible to them.</p>` : m.answer ? renderAnswer(m.answer, m.sources || []) : '<p class="muted">No answer was saved.</p>'}</div>
       ${!m.found_sources ? badge("bad", "No answer found") : m.feedback === -1 ? badge("bad", "Not helpful") : m.feedback === 1 ? badge("ok", "Helpful") : ""}</div></div>`).join("")}</div>
     <div class="dialog-actions"><button class="btn primary" type="button" data-close>Close</button></div>`);
   $("[data-close]", f).onclick = closeDialog;
@@ -967,7 +980,7 @@ function uploadDialog(kind) {
     <label class="btn" style="display:inline-flex">${ic("upload")}Choose file${kind === "file" ? "s" : ""}
       <input type="file" name="files" ${kind === "file" ? "multiple" : 'accept=".xls,.xlsx,.csv"'} hidden></label>
     <span class="muted small" data-names></span>
-    <div data-vis>${visibilityPicker([], false)}</div>
+    <div data-vis>${visibilityPicker([], false, "Who can find it?", { only: me.role !== "admin" })}</div>
     <p class="error" role="alert"></p>
     <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Upload</button></div>`);
   f.files.onchange = () => { $("[data-names]", f).textContent = [...f.files.files].map((x) => x.name).join(", "); };
@@ -979,12 +992,13 @@ function uploadDialog(kind) {
     const body = new FormData();
     files.forEach((x) => body.append("files", x));
     body.append("department_ids", v.department_ids.join(",")); body.append("company_wide", v.company_wide ? "true" : "false");
+    body.append("private", v.private ? "true" : "false");
     body.append("kind", kind);
     busy(e.target, "Uploading…", async () => {
       try {
         await api("/api/documents", { method: "POST", body });
         closeDialog(); toast(`Uploaded ${plural(files.length, "file", "files")}. They'll be searchable in a moment.`);
-        await loadFiles(true); refreshSources();
+        if (me.role === "admin") { await loadFiles(true); refreshSources(); } else LOADERS.mine();
       } catch (err2) { $(".error", f).textContent = err2.message; }
     });
   };
@@ -1067,7 +1081,7 @@ function drawProvider(provider) {
   $$("[data-edit-vis]", card).forEach((b) => b.onclick = () => {
     const acc = b.closest(".account"); const list = accounts[b.dataset.editVis];
     editing = true;
-    $(".vis-slot", acc).innerHTML = `<div class="panel" style="margin:0 16px 16px">${visibilityPicker(list[0].departments.map((d) => d.id), list[0].company_wide)}
+    $(".vis-slot", acc).innerHTML = `<div class="panel" style="margin:0 16px 16px">${visibilityPicker(list[0].departments.map((d) => d.id), list[0].company_wide, "Who can find this?", { only: list[0].private })}
       <div class="row"><button class="btn primary" data-save-vis>Save</button><button class="btn" data-cancel-vis>Cancel</button></div><p class="error"></p></div>`;
     $("[data-cancel-vis]", acc).onclick = () => { editing = false; refreshSources(); };
     $("[data-save-vis]", acc).onclick = (ev) => busy(ev.target, "Saving…", async () => {
@@ -1166,6 +1180,12 @@ async function setupNeededDialog(card, then = null) {
   });
 }
 
+// Email and calendar are personal: "Only me" unless the person shares them (e.g. a team mailbox)
+function personalOnly(provider, services) {
+  if (!["google", "microsoft"].includes(provider)) return false;
+  const picked = services || PROVIDER_SERVICES[provider].map(([v]) => v);
+  return picked.some((s) => s === "mail" || s === "calendar");
+}
 function openConnectPanel(provider, only = null, inDialog = false) {
   if (!oauthState.configured[oauthOf(provider)]) return setupNeededDialog(provider, only);
   editing = !inDialog;
@@ -1175,7 +1195,7 @@ function openConnectPanel(provider, only = null, inDialog = false) {
     <span class="label">What should Cortex read?</span>
     ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" ${!only || only.includes(value) ? "checked" : ""}> ${label}
       ${hint ? `<span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
-    ${visibilityPicker([], false)}
+    <div data-vis-slot>${visibilityPicker([], ["meta", "youtube", "slack"].includes(provider), "Who can find it?", { only: personalOnly(provider, only) })}</div>
     <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. Cortex only reads. It never sends, posts, changes or deletes anything.
       ${oauthOf(provider) === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}
       ${provider === "meta" ? "On Facebook, pick your business Page <b>and</b> its Instagram account when asked, and leave every permission switched on." : ""}
@@ -1372,6 +1392,7 @@ uploadForm.addEventListener("submit", (e) => {
   files.forEach((f) => body.append("files", f));
   body.append("department_ids", v.department_ids.join(","));
   body.append("company_wide", v.company_wide ? "true" : "false");
+  body.append("private", v.private ? "true" : "false");
   body.append("kind", uploadKind());
   for (const k of ["interviewee", "role", "interview_date"]) body.append(k, uploadForm[k].value || "");
   busy($("button[type=submit]", uploadForm), "Uploading…", async () => {
@@ -1437,7 +1458,7 @@ function drawManual() {
     $("input[name=name]", fields).value = k.name;
     for (const [key, val] of Object.entries(k.config)) { const i = $(`input[name=${key}]`, fields); if (i && val) i.value = val; }
     $$("input[name=password], input[name=url]", fields).forEach((i) => (i.placeholder = "Leave empty to keep the saved one"));
-    $("#conn-visibility").innerHTML = visibilityPicker(k.departments.map((d) => d.id), k.company_wide);
+    $("#conn-visibility").innerHTML = visibilityPicker(k.departments.map((d) => d.id), k.company_wide, "Who can find this?", { only: k.private });
     $("#conn-cancel").classList.remove("hidden");
     connForm.scrollIntoView({ behavior: "smooth" });
   });
@@ -1831,3 +1852,62 @@ async function showPreview(id) {
     setTimeout(() => { newChat(); qBox.value = `About "${p.title}": `; qBox.focus(); qBox.dispatchEvent(new Event("input")); }, 50);
   };
 }
+
+
+// ================================================================== My sources: what each person brings to the company's brain
+LOADERS.mine = async function loadMine() {
+  try { oauthState = await getJSON("/api/oauth/status"); } catch {}
+  const [rows, ups] = await Promise.all([getJSON("/api/connectors?mine=true"), api("/api/documents?source=uploads&mine=true&limit=1")]);
+  const uploads = Number(ups.headers.get("X-Total-Count") || 0);
+  const accounts = {};
+  rows.forEach((k) => (accounts[k.config.account_id || k.id] ||= []).push(k));
+  $("#mine-list").innerHTML = rows.length ? Object.values(accounts).map((list) => `<div class="account">
+      <div class="acc-head"><div><b dir="auto">${esc(list[0].config.username || list[0].name)}</b></div>
+        <div class="acc-actions"><button class="btn small" type="button" data-mine-sync="${list.map((k) => k.id).join(",")}">${ic("refresh")}Check for new items</button>
+          <button class="btn link danger" type="button" data-mine-del="${list.map((k) => k.id).join(",")}">Disconnect</button></div></div>
+      ${list.map((k) => { const [icon, label] = SERVICE_INFO[k.type] || ["file", k.name];
+        return `<div class="svc"><div class="svc-name">${brandTile(k.type, icon, "sm")}${esc(label)}</div><div>${sourceStatus(k)}</div>
+          <div class="mine-circle">${visibilityPills(k)} <button class="btn link small" type="button" data-mine-vis="${k.id}">Change</button></div></div>`; }).join("")}
+    </div>`).join("") : '<div class="empty">Nothing connected yet. Connect your work account above, or add documents.</div>';
+  $("#mine-uploads").textContent = uploads ? `${plural(uploads, "document", "documents")} added by you.` : "";
+  $$("[data-mine-sync]").forEach((b) => b.onclick = async () => { b.disabled = true; for (const id of b.dataset.mineSync.split(",")) await api(`/api/connectors/${id}/sync`, { method: "POST" }); toast("Checking for new items."); setTimeout(() => LOADERS.mine(), 1500); });
+  $$("[data-mine-del]").forEach((b) => b.onclick = async () => {
+    if (!await confirmBox({ title: "Disconnect this account?", text: "Everything Cortex learned from it will be removed. Nothing changes in the account itself.", confirm: "Disconnect", danger: true })) return;
+    for (const id of b.dataset.mineDel.split(",")) await api(`/api/connectors/${id}`, { method: "DELETE" });
+    toast("Disconnected."); LOADERS.mine();
+  });
+  $$("[data-mine-vis]").forEach((b) => b.onclick = () => {
+    const k = rows.find((x) => x.id === Number(b.dataset.mineVis));
+    const f = openDialog(`<h2>Who can find your ${esc((SERVICE_INFO[k.type] || ["", k.name])[1])}?</h2>
+      <div data-vis>${visibilityPicker(k.departments.map((d) => d.id), k.company_wide, "Who can find it?", { only: k.private })}</div><p class="error" role="alert"></p>
+      <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Save</button></div>`);
+    $("[data-close]", f).onclick = closeDialog;
+    $("[data-save]", f).onclick = (e) => busy(e.target, "Saving…", async () => {
+      const v = readVisibility($("[data-vis]", f)); const err = visibilityError(v);
+      if (err) { $(".error", f).textContent = err; return; }
+      try { await api(`/api/connectors/${k.id}`, { method: "PUT", json: { type: k.type, name: k.name, config: {}, enabled: k.enabled, ...v } }); closeDialog(); toast("Saved. This applies to everything already learned."); LOADERS.mine(); }
+      catch (err2) { $(".error", f).textContent = err2.message; }
+    });
+  });
+};
+$$("[data-mine-connect]").forEach((b) => b.onclick = () => {
+  const provider = b.dataset.mineConnect;
+  if (!oauthState.configured[provider]) return toast(`${PROVIDER_NAME[provider]} sign-in isn't set up yet. Ask your admin.`, true);
+  const f = openDialog(`<h2>Connect your ${PROVIDER_NAME[provider]} account</h2><div data-slot></div>`);
+  const slot = $("[data-slot]", f);
+  slot.innerHTML = `<div class="panel"><span class="label">What should Cortex learn from?</span>
+    ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" checked> ${label}${hint ? ` <span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
+    ${visibilityPicker([], false, "Who can find it?", { only: true })}
+    <p class="muted small">Tip: keep email and calendar to yourself, and connect again to share Drive files with your team. You can change this any time.</p>
+    <div class="row"><button class="btn primary" type="button" data-go>Continue to ${PROVIDER_NAME[provider]}</button><button class="btn" type="button" data-cancel>Cancel</button></div>
+    <p class="error" role="alert"></p></div>`;
+  $("[data-cancel]", slot).onclick = closeDialog;
+  $("[data-go]", slot).onclick = (e) => {
+    const services = $$("input[name=svc]:checked", slot).map((x) => x.value);
+    const v = readVisibility(slot);
+    const err = !services.length ? "Tick at least one thing." : visibilityError(v);
+    if (err) { $(".error", slot).textContent = err; return; }
+    startSignIn(provider, services, v, e.target, $(".error", slot));
+  };
+});
+$("#mine-add-docs").addEventListener("click", () => uploadDialog("file"));

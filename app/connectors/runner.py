@@ -73,8 +73,10 @@ def _sync(connector_id: int, scheduled: bool = False) -> dict:
 
 
 def apply_visibility(c, connector_id: int, company_wide: bool) -> None:
-    """Make every item from this source visible to exactly the source's departments."""
-    c.execute("UPDATE documents SET company_wide=%s WHERE connector_id=%s", (company_wide, connector_id))
+    """Make every item from this source visible to exactly the source's circle: its owner only, its departments,
+    or everyone."""
+    c.execute("UPDATE documents d SET company_wide=%s, private=k.private, owner_id=k.owner_id FROM connectors k "
+              "WHERE k.id = d.connector_id AND d.connector_id=%s", (company_wide, connector_id))
     c.execute("DELETE FROM document_departments WHERE document_id IN "
               "(SELECT id FROM documents WHERE connector_id=%s)", (connector_id,))
     c.execute("INSERT INTO document_departments(document_id, department_id) "

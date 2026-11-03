@@ -59,8 +59,11 @@ def sync_slack(sync: Sync) -> None:
     state = sync.connector["state"]
     seen_until: dict = state.setdefault("channels", {})
     with Api(int(sync.connector["config"]["account_id"])) as api:
-        names = {u["id"]: (u.get("profile") or {}).get("real_name") or u.get("real_name") or u.get("name", "")
-                 for u in _pages(api, "users.list", "members")}
+        people = list(_pages(api, "users.list", "members"))
+        names = {u["id"]: (u.get("profile") or {}).get("real_name") or u.get("real_name") or u.get("name", "") for u in people}
+        emails = {u["id"]: ((u.get("profile") or {}).get("email") or "").lower() for u in people}
+        owner = sync.c.execute("SELECT email FROM users WHERE id=%s", (sync.connector.get("owner_id"),)).fetchone()
+        owner_email = (owner["email"] if owner else "").lower()
         channels = [c for c in _pages(api, "conversations.list", "channels",
                                       types="public_channel,private_channel", exclude_archived="true")]
         readable = []
@@ -89,6 +92,14 @@ def sync_slack(sync: Sync) -> None:
                     replies[m["ts"]] = [r for r in rs if r.get("ts") != m["ts"]]
                 except (SlackError, ApiError):
                     continue
+            # A private channel: only its members may find what was said there (matched by email address)
+            allowed = None
+            if ch.get("is_private"):
+                try:
+                    members = list(_pages(api, "conversations.members", "members", channel=ch["id"]))
+                except (SlackError, ApiError):
+                    members = []
+                allowed = sorted({emails.get(m, "") for m in members} - {""} | ({owner_email} if owner_email else set()))
             days: dict[str, list[tuple[float, str]]] = defaultdict(list)
             for m in messages:
                 if m.get("subtype") in ("channel_join", "channel_leave", "bot_add", "channel_topic", "channel_purpose"):
@@ -103,7 +114,8 @@ def sync_slack(sync: Sync) -> None:
                 lines.sort()
                 body = f"Slack channel #{ch.get('name', '')} – {day}\n\n" + "\n".join(line for _, line in lines)
                 sync.upsert(f"slack:{ch['id']}:{day}", f"Slack #{ch.get('name', '')} – {day}", f"slack-{day}.txt",
-                            body.encode(), "slack", {"channel": ch.get("name", ""), "day": day, "messages": len(lines)})
+                            body.encode(), "slack", {"channel": ch.get("name", ""), "day": day, "messages": len(lines),
+                                                     "private_channel": bool(ch.get("is_private"))}, allowed_emails=allowed)
             if messages:
                 seen_until[ch["id"]] = max(float(m["ts"]) for m in messages)
         sync.connector["state"].pop("progress", None)

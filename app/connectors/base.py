@@ -113,7 +113,8 @@ class Sync:
         return False
 
     def upsert(self, external_id: str, title: str, filename: str, data: bytes, kind: str,
-               metadata: dict | None = None) -> None:
+               metadata: dict | None = None, allowed_emails: list[str] | None = None) -> None:
+        """allowed_emails: only these people may find the item (e.g. a private Slack channel's members)."""
         """Save the content as a file and create/refresh its document if it is new or changed."""
         self.seen.add(external_id)
         digest = sha(data)
@@ -122,6 +123,8 @@ class Sync:
             (self.connector["id"], external_id),
         ).fetchone()
         if row and row["sha256"] == digest:
+            if allowed_emails is not None:  # channel members can change without the content changing
+                self.c.execute("UPDATE documents SET allowed_emails=%s WHERE id=%s", (allowed_emails, row["id"]))
             return
         safe = "".join(ch if ch.isalnum() or ch in "._- " else "_" for ch in filename)[:150] or "item"
         path = storage_dir(self.connector["id"]) / f"{sha(external_id.encode())[:16]}_{safe}"
@@ -131,15 +134,17 @@ class Sync:
         if row:
             self.c.execute(
                 "UPDATE documents SET title=%s, filename=%s, path=%s, sha256=%s, metadata=%s, status='pending', "
-                "updated_at=now(), doc_date=%s WHERE id=%s",
-                (title[:300], filename, str(path), digest, meta, when, row["id"]),
+                "updated_at=now(), doc_date=%s, allowed_emails=%s WHERE id=%s",
+                (title[:300], filename, str(path), digest, meta, when, allowed_emails, row["id"]),
             )
         else:
             self.c.execute(
                 "INSERT INTO documents(title, filename, path, kind, source, sha256, company_wide, metadata, "
-                "connector_id, external_id, doc_date) VALUES (%s, %s, %s, %s, 'connector', %s, %s, %s, %s, %s, %s)",
+                "connector_id, external_id, doc_date, private, owner_id, allowed_emails) "
+                "VALUES (%s, %s, %s, %s, 'connector', %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (title[:300], filename, str(path), kind, digest, self.connector["company_wide"], meta,
-                 self.connector["id"], external_id, when),
+                 self.connector["id"], external_id, when, bool(self.connector.get("private")),
+                 self.connector.get("owner_id"), allowed_emails),
             )
             # Visible to the connector's departments right away
             self.c.execute(
