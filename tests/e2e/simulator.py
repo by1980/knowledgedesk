@@ -224,6 +224,16 @@ async def slack_api(method: str, request: Request):
     return {"ok": False, "error": "unknown_method"}
 
 
+# ---------------------------------------------------------------- Meta (WhatsApp Business)
+@app.get("/graph.facebook.com/v23.0/{object_id}")
+def meta_object(object_id: str, request: Request):
+    if request.headers.get("authorization") != "Bearer wa-token":
+        return JSONResponse({"error": {"message": "Invalid OAuth access token."}}, 401)
+    if object_id == "PHONE1":
+        return {"display_phone_number": "+972 50-123-4567", "verified_name": "Acme Plumbing", "id": "PHONE1"}
+    return {"url": "http://127.0.0.1:9999/media/voice.ogg", "id": object_id}
+
+
 # ---------------------------------------------------------------- a small company website
 SITE = {
     "": ("Acme Plumbing – Haifa", '<a href="/site/services">Services</a> <a href="/site/about/">About</a>'

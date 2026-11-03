@@ -366,3 +366,45 @@ def test_masked_api_key_is_explained(client):
     admin = login(client, "admin@test.local", "admin-pass-123")
     r = client.put("/api/admin/ai-key", headers=admin, json={"key": "sk-ant-u" + "•" * 90 + "WwAA"})
     assert r.status_code == 400 and "hidden dots" in r.json()["detail"]
+
+
+def test_whatsapp_business_webhook(client, monkeypatch):
+    import hashlib
+    import hmac
+
+    import httpx
+
+    from app.connectors import whatsapp_business
+
+    def meta(request):
+        if request.headers.get("authorization") != "Bearer good-token":
+            return httpx.Response(401, json={"error": {"message": "Invalid OAuth access token."}})
+        return httpx.Response(200, json={"display_phone_number": "+972 50-000-0000", "verified_name": "Demo"})
+
+    monkeypatch.setattr(whatsapp_business, "http", lambda: httpx.Client(transport=httpx.MockTransport(meta)))
+    admin = login(client, "admin@test.local", "admin-pass-123")
+    body = {"type": "whatsapp_business", "name": "WA", "company_wide": True,
+            "config": {"phone_number_id": "1", "access_token": "bad", "app_secret": "shh"}}
+    r = client.post("/api/connectors", headers=admin, json=body)
+    assert r.status_code == 400 and "Invalid OAuth access token" in r.json()["detail"]
+    body["config"]["access_token"] = "good-token"
+    cid = client.post("/api/connectors", headers=admin, json=body).json()["id"]
+    k = next(k for k in client.get("/api/connectors", headers=admin).json() if k["id"] == cid)
+    assert k["config"]["access_token"] == "" and k["config"]["number"] == "Demo +972 50-000-0000"
+    token = k["config"]["verify_token"]
+    assert client.get(f"/webhooks/whatsapp/{cid}", params={"hub.mode": "subscribe", "hub.verify_token": "nope", "hub.challenge": "1"}).status_code == 403
+    assert client.get(f"/webhooks/whatsapp/{cid}", params={"hub.mode": "subscribe", "hub.verify_token": token, "hub.challenge": "42"}).text == "42"
+
+    payload = json.dumps({"entry": [{"changes": [{"value": {
+        "contacts": [{"wa_id": "972500000001", "profile": {"name": "Rina"}}],
+        "messages": [{"from": "972500000001", "id": "wamid.A", "timestamp": "1793000000", "type": "text",
+                      "text": {"body": "The spare key for the van is in the blue box"}}]}}]}]}).encode()
+    bad = client.post(f"/webhooks/whatsapp/{cid}", content=payload, headers={"x-hub-signature-256": "sha256=0"})
+    assert bad.status_code == 403  # unsigned / wrongly signed deliveries are refused
+    sig = "sha256=" + hmac.new(b"shh", payload, hashlib.sha256).hexdigest()
+    for _ in range(2):  # the same delivery twice is stored once
+        assert client.post(f"/webhooks/whatsapp/{cid}", content=payload, headers={"x-hub-signature-256": sig}).json()["ok"]
+    process_pending()
+    ask(client, admin, "Where is the spare key for the van?")
+    assert "blue box" in captured["sources"] and "(WhatsApp chat)" in captured["sources"]
+    assert captured["sources"].count("blue box") == 1

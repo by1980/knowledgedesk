@@ -54,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.7"
+APP_VERSION = "0.8"
 
 
 def _ensure_secret_key() -> None:
@@ -556,6 +556,13 @@ def _check_connector(body: ConnectorIn, old_config: dict | None = None) -> dict:
             if not cfg.get("url"):
                 raise HTTPException(400, "Missing calendar link")
             calendar_ics.events_by_month(calendar_ics.fetch(connector_base.decrypt(cfg["url"])))
+        elif body.type == "whatsapp_business":
+            from .connectors import whatsapp_business
+
+            if not cfg.get("phone_number_id") or not cfg.get("access_token"):
+                raise HTTPException(400, "Fill in the Phone number ID and the access token from Meta.")
+            cfg.setdefault("verify_token", (old_config or {}).get("verify_token") or secrets.token_urlsafe(18))
+            cfg["number"] = whatsapp_business.check(cfg)
         elif body.type == "website":
             from .connectors import website as website_connector
 
@@ -686,6 +693,36 @@ def delete_connector(cid: int, _: dict = Depends(auth.admin_user)):
         lock.release()
     shutil.rmtree(settings.data_dir / "connectors" / str(cid), ignore_errors=True)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- WhatsApp Business webhook (Meta calls these)
+
+@app.get("/webhooks/whatsapp/{cid}")
+def whatsapp_verify(cid: int, request: Request):
+    """Meta checks the address once when you save it in the Meta app settings."""
+    q = request.query_params
+    with conn() as c:
+        row = c.execute("SELECT config FROM connectors WHERE id=%s AND type='whatsapp_business'", (cid,)).fetchone()
+    if not row or q.get("hub.mode") != "subscribe" or q.get("hub.verify_token") != row["config"].get("verify_token"):
+        raise HTTPException(403, "Verification failed")
+    return Response(q.get("hub.challenge", ""), media_type="text/plain")
+
+
+@app.post("/webhooks/whatsapp/{cid}")
+async def whatsapp_receive(cid: int, request: Request):
+    from .connectors import whatsapp_business
+
+    body = await request.body()
+    with conn() as c:
+        row = c.execute("SELECT config FROM connectors WHERE id=%s AND type='whatsapp_business'", (cid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Unknown connection")
+    if not whatsapp_business.verify_signature(row["config"], body, request.headers.get("x-hub-signature-256", "")):
+        raise HTTPException(403, "Bad signature")
+    stored = whatsapp_business.receive(cid, whatsapp_business.as_json(body))
+    if stored:
+        worker.wake()
+    return {"ok": True, "stored": stored}
 
 
 # ---------------------------------------------------------------- one-click sign-in (Google / Microsoft)

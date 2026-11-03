@@ -434,6 +434,7 @@ const SERVICE_INFO = {
   gdrive: ["folder", "Google Drive", "file", "files"], ms_drive: ["folder", "OneDrive", "file", "files"],
   imap: ["mail", "Mailbox", "email", "emails"], ics: ["calendar", "Calendar", "event", "events"], website: ["globe", "Website", "page", "pages"],
   slack: ["ask", "Channels", "message", "messages"],
+  whatsapp_business: ["chat", "WhatsApp Business", "conversation-day", "conversation-days"],
 };
 const CALENDAR_TYPES = ["gcal", "ms_cal", "ics", "slack"]; // counted in events / messages, not documents
 let conns = [];
@@ -486,16 +487,19 @@ LOADERS.sources = async function loadSources() {
 const TILES = [
   ["gmail", "Gmail", "mail", "google"], ["gcal", "Google Calendar", "calendar", "google"], ["gdrive", "Google Drive", "folder", "google"],
   ["ms_mail", "Outlook mail", "mail", "microsoft"], ["ms_cal", "Outlook calendar", "calendar", "microsoft"], ["ms_drive", "OneDrive", "folder", "microsoft"],
-  ["slack", "Slack", "ask", "slack"], ["website", "Websites", "globe", "web-card"], ["whatsapp", "WhatsApp chats", "chat", "whatsapp-card"],
+  ["slack", "Slack", "ask", "slack"], ["website", "Websites", "globe", "web-card"], ["whatsapp", "WhatsApp", "chat", "whatsapp-card"],
   ["uploads", "Uploaded files", "upload", "files-card"],
 ];
 function tileState(type) {
   const ks = conns.filter((k) => k.type === type);
-  if (type === "whatsapp" || type === "uploads") {
-    const n = type === "whatsapp" ? (overviewNow.ready.whatsapp || 0) : null;
-    if (type === "whatsapp") return n ? ["ok", "Imported", plural(n, "chat", "chats")] : ["", "Not added", ""];
-    return ["", "", ""];
+  if (type === "whatsapp") {
+    const business = conns.filter((k) => k.type === "whatsapp_business");
+    const n = overviewNow.ready.whatsapp || 0;
+    if (business.some((k) => k.last_error)) return ["bad", "Needs attention", ""];
+    if (business.length) return ["ok", "Connected", n ? plural(n, "conversation", "conversations") : "Waiting for messages"];
+    return n ? ["ok", "Chats imported", plural(n, "chat", "chats")] : ["", "Not connected", ""];
   }
+  if (type === "uploads") return ["", "", ""];
   if (!ks.length) return ["", "Not connected", ""];
   const count = ks.reduce((a, k) => a + (CALENDAR_TYPES.includes(k.type) ? k.events : k.ready), 0);
   const [, , one, many] = SERVICE_INFO[type];
@@ -507,13 +511,31 @@ function drawTiles(uploads) {
   $("#overview-tiles").innerHTML = TILES.map(([type, label, icon, target]) => {
     let [state, text, count] = tileState(type);
     if (type === "uploads") [state, text, count] = uploads ? ["ok", "Added", plural(uploads, "file", "files")] : ["", "None yet", ""];
-    return `<button type="button" class="tile ${state ? "" : "off"}" data-tile="${type}" data-target="${target}">
-      <span class="icon-tile">${ic(icon)}</span><span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}</span></button>`;
+    const action = type === "uploads" ? "Upload" : type === "website" ? "Add" : "Connect";
+    return `<div class="tile ${state ? "" : "off"}" data-tile="${type}" data-target="${target}" role="button" tabindex="0">
+      <span class="icon-tile">${ic(icon)}</span><span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}
+      ${state ? "" : `<button type="button" class="btn small primary tile-connect" data-connect-tile="${type}">${action}</button>`}</span></div>`;
   }).join("");
-  $$("#overview-tiles .tile").forEach((t) => t.onclick = () => {
+  $$("#overview-tiles .tile").forEach((t) => t.onclick = (e) => {
+    if (e.target.closest("[data-connect-tile]")) return connectFromTile(t.dataset.tile);
     const el = document.getElementById(t.dataset.target) || $(`.provider-card[data-provider=${t.dataset.target}]`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
+}
+const TILE_SERVICE = { gmail: ["google", "mail"], gcal: ["google", "calendar"], gdrive: ["google", "files"],
+  ms_mail: ["microsoft", "mail"], ms_cal: ["microsoft", "calendar"], ms_drive: ["microsoft", "files"], slack: ["slack", "messages"] };
+function connectFromTile(type) {
+  if (TILE_SERVICE[type]) {
+    const [provider, service] = TILE_SERVICE[type];
+    const card = $(`.provider-card[data-provider=${provider}]`);
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!oauthState.configured[provider]) return setupNeededDialog(provider);
+    openConnectPanel(provider, [service]);
+    return;
+  }
+  if (type === "website") { $("#web-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#web-form input").focus(), 400); return; }
+  if (type === "whatsapp") { $("#whatsapp-card").scrollIntoView({ behavior: "smooth", block: "start" }); openWhatsAppPanel(); return; }
+  if (type === "uploads") { $("#files-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#dropzone input").click(), 400); }
 }
 $("#find-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -540,13 +562,13 @@ async function refreshSources(withFiles = false) {
     const up = await api("/api/documents?source=uploads&limit=1");
     drawTiles(Number(up.headers.get("X-Total-Count") || 0));
   } catch { drawTiles(0); }
-  $("#wa-status").innerHTML = o.ready.whatsapp ? `${badge("ok", "Imported")} <span class="muted small">${plural(o.ready.whatsapp, "chat", "chats")} searchable – listed under Files and recordings below.</span>`
-    : `${badge("", "No chats yet")}`;
+  const imported = await api("/api/documents?source=uploads&kind=whatsapp&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => 0);
+  $("#wa-status").innerHTML = imported ? `<span class="muted small">${plural(imported, "chat", "chats")} imported from the phone – listed under Files and recordings.</span>` : "";
   const importing = o.importing || conns.some((k) => k.syncing || !k.last_sync || k.more);
   $("#kb-summary").innerHTML = `<div class="toolbar"><h3>Searchable now</h3>${o.total ? '<a class="btn primary small" href="#ask">Ask a question</a>' : ""}</div>
     ${o.total ? `<div class="chips">${knowledgeChips(o.ready)}</div>` : '<p class="muted">Nothing yet. Connect an account, add your website, or upload files below.</p>'}
     ${importing ? `<p class="status-detail">${badge("busy", "Working")} ${o.importing ? `${plural(o.importing, "item is", "items are")} being prepared for search${o.eta ? ` (about ${esc(o.eta)} left)` : ""}.` : "Importing from your sources."} New items become searchable automatically – you can already ask questions.</p>` : ""}`;
-  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawWebsites(); drawManual(); }
+  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawWebsites(); drawManual(); drawWhatsApp(); }
   if (withFiles || o.importing || refreshSources.wasImporting) await loadFiles(false);
   refreshSources.wasImporting = o.importing > 0;
   if (importing || conns.some((k) => k.indexing)) poll(() => refreshSources(), 4000);
@@ -631,12 +653,12 @@ function setupNeededDialog(provider) {
   $("[data-close]", f).onclick = closeDialog;
 }
 
-function openConnectPanel(provider) {
+function openConnectPanel(provider, only = null) {
   editing = true;
   const slot = $(`.provider-card[data-provider=${provider}] .pc-panel`);
   slot.innerHTML = `<div class="panel">
     <span class="label">What should KnowledgeDesk read?</span>
-    ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" checked> ${label}
+    ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" ${!only || only.includes(value) ? "checked" : ""}> ${label}
       ${hint ? `<span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
     ${visibilityPicker([], false)}
     <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, posts, changes or deletes anything.
@@ -711,6 +733,83 @@ $("#web-form").addEventListener("submit", (e) => {
 });
 
 // ---------- Files and recordings
+// ---------- WhatsApp Business (official Meta connection)
+function isPublicAddress() { return location.protocol === "https:" && !/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname); }
+function copyRow(label, value) {
+  return `<div class="small muted">${esc(label)}</div><div class="copy-row"><code>${esc(value)}</code>
+    <button type="button" class="btn small" data-copy="${esc(value)}">Copy</button></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied."); } catch { toast("Select the text and copy it.", true); }
+});
+function drawWhatsApp() {
+  const list = conns.filter((k) => k.type === "whatsapp_business");
+  $("#wa-connect").innerHTML = list.length ? `${ic("plus")}Connect another number` : "Connect WhatsApp Business";
+  $("#wa-connect").classList.toggle("primary", !list.length);
+  $("#wa-list").innerHTML = list.map((k) => `<div class="account">
+      <div class="acc-head"><div><b>${esc(k.config.number || k.name)}</b>
+        <div class="muted small">Who can find this: ${visibilityPills(k)}</div></div>
+        <div class="acc-actions">${k.documents ? `<button class="btn link" data-items="${k.id}">View conversations</button>` : ""}
+          <button class="btn link danger" data-wa-del="${k.id}">Disconnect</button></div></div>
+      <div class="svc"><div class="svc-name"><span class="icon-tile sm">${ic("chat")}</span>Messages</div>
+        <div>${k.last_error ? `${badge("bad", "Needs attention")}<div class="status-detail bad">${esc(k.last_error)}</div>`
+          : `<div class="status-line">${badge("ok", "Connected")} <span class="state-text ok small">${k.documents ? `${plural(k.events, "message", "messages")} so far` : "Waiting for the first message"}</span></div>`}
+          ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} Meta can only deliver messages to a public <b>https</b> address. On this computer
+            (${esc(location.origin)}) messages won't arrive – this starts working once KnowledgeDesk runs online.</div>`}
+          <details><summary class="small">Webhook details for Meta</summary>
+            ${copyRow("Callback URL", `${location.origin}/webhooks/whatsapp/${k.id}`)}${copyRow("Verify token", k.config.verify_token || "")}
+            <p class="muted small">In your Meta app: WhatsApp → Configuration → Webhook → Edit, paste both, then subscribe to <b>messages</b>
+              (and <b>smb_message_echoes</b> if the number also uses the WhatsApp Business app).</p></details></div><div></div></div></div>`).join("");
+  $$("#wa-list [data-items]").forEach((b) => b.onclick = () => itemsDialog(conns.find((k) => k.id === Number(b.dataset.items))));
+  $$("[data-wa-del]").forEach((b) => b.onclick = async () => {
+    if (!await confirmBox({ title: "Disconnect this WhatsApp number?", text: "Its conversations will be removed from KnowledgeDesk. Nothing changes in WhatsApp.", confirm: "Disconnect", danger: true })) return;
+    await api(`/api/connectors/${b.dataset.waDel}`, { method: "DELETE" }); toast("Disconnected."); refreshSources();
+  });
+}
+function openWhatsAppPanel() {
+  editing = true;
+  $("#wa-panel").innerHTML = `<div class="panel"><form id="wa-form">
+    <span class="label">Connect a WhatsApp Business number</span>
+    <ol class="wa-steps small">
+      <li>Go to <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create app</b> → type <b>Business</b> → add the <b>WhatsApp</b> product, and add your business number.</li>
+      <li>In <b>WhatsApp → API Setup</b>, copy the <b>Phone number ID</b>.</li>
+      <li>In <b>Meta Business Settings → System users</b>, add a user, then <b>Generate token</b> for this app with
+        <i>whatsapp_business_messaging</i> and <i>whatsapp_business_management</i>. Copy the token.</li>
+      <li>Optional, for extra security: <b>App settings → Basic → App secret</b>.</li>
+    </ol>
+    ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} This page runs at ${esc(location.origin)}. Meta can only deliver messages to a public
+      <b>https</b> address, so messages won't arrive here yet. You can still save the connection now – it starts working once KnowledgeDesk runs online.</div>`}
+    <div class="grid3">
+      <label>Phone number ID <input name="phone_number_id" autocomplete="off" inputmode="numeric"></label>
+      <label class="span2">Access token <input name="access_token" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"></label>
+      <label>App secret (optional) <input name="app_secret" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"></label>
+    </div>
+    ${visibilityPicker([], false)}
+    <div class="row"><button class="btn primary" type="submit">Check and connect</button><button class="btn" type="button" data-cancel>Cancel</button></div>
+    <p class="error" role="alert"></p></form></div>`;
+  const f = $("#wa-form");
+  $("[data-cancel]", f).onclick = () => { editing = false; $("#wa-panel").innerHTML = ""; refreshSources(); };
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    const v = readVisibility(f);
+    const err = !f.phone_number_id.value.trim() || !f.access_token.value.trim() ? "Fill in the Phone number ID and the access token." : visibilityError(v);
+    if (err) { $(".error", f).textContent = err; return; }
+    busy($("button[type=submit]", f), "Checking with Meta…", async () => {
+      try {
+        await api("/api/connectors", { method: "POST", json: { type: "whatsapp_business", name: "WhatsApp Business", ...v,
+          config: { phone_number_id: f.phone_number_id.value.trim(), access_token: f.access_token.value.trim(), app_secret: f.app_secret.value.trim() } } });
+        editing = false; $("#wa-panel").innerHTML = "";
+        toast("WhatsApp Business connected. Now add the webhook details in Meta (shown below).");
+        await refreshSources();
+        $("#wa-list details")?.setAttribute("open", "");
+      } catch (err2) { $(".error", f).textContent = err2.message; }
+    });
+  };
+}
+$("#wa-connect").addEventListener("click", openWhatsAppPanel);
+
 const uploadForm = $("#upload-form");
 $("#wa-upload").addEventListener("click", () => {
   const radio = $("input[name=kind][value=whatsapp]", uploadForm);
@@ -929,12 +1028,6 @@ $("#q-gaps").addEventListener("change", drawQuestions);
 let lastHealth = null;
 LOADERS.settings = async function loadSettings() {
   await Promise.all([drawHealth(), drawAiKey()]);
-  const st = await (await fetch("/api/status")).json();
-  const l = st.license;
-  $("#license-info").innerHTML = l.state === "unchecked" ? '<p class="muted">Licensing is not configured on this installation.</p>'
-    : `<p>${badge(l.state === "valid" ? "ok" : l.state === "grace" ? "busy" : "bad", l.state)}
-       ${l.customer ? esc(l.customer) : ""}${l.expires ? ` · valid until ${esc(l.expires)}` : ""}${l.max_users ? ` · up to ${l.max_users} people` : ""}</p>
-       ${l.message ? `<p class="muted">${esc(l.message)}</p>` : ""}`;
 };
 const HEALTH_ICON = { ok: "check", busy: "clock", warn: "alert", bad: "error", info: "info" };
 async function drawHealth() {
@@ -973,15 +1066,6 @@ $("#health-download").addEventListener("click", () => {
     href: URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" })),
     download: `knowledgedesk-health-${new Date().toISOString().slice(0, 10)}.json` });
   a.click();
-});
-$("#license-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  $("#license-error").textContent = "";
-  const body = new FormData(); body.append("file", e.target.file.files[0]);
-  busy($("button", e.target), "Installing…", async () => {
-    try { await api("/api/admin/license", { method: "POST", body }); e.target.reset(); toast("License installed."); LOADERS.settings(); }
-    catch (err) { $("#license-error").textContent = err.message; }
-  });
 });
 
 boot();

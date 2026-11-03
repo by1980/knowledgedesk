@@ -191,6 +191,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .tile.off b { color: var(--muted); }
 #find-form { width: 320px; }
 .wa-status { margin: 12px 0 4px; }
+.wa-import { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.wa-import summary { cursor: pointer; font-weight: 500; color: var(--text-2); }
+.tile-connect { margin-top: 6px; }
+.copy-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.copy-row code { flex: 1; padding: 6px 8px; font-size: 12px; }
+.warn-box { background: var(--busy-soft); border: 1px solid var(--busy-line); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 10px 0; }
 .wa-steps { margin: 10px 0; padding-left: 20px; color: var(--text-2); }
 .wa-steps li { margin: 4px 0; }
 .pc-head { display: flex; align-items: center; gap: 12px; }

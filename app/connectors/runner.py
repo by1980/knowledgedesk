@@ -9,20 +9,21 @@ import psycopg
 
 from ..config import settings
 from ..db import conn
-from . import calendar_ics, email_imap, google, microsoft, slack, website
+from . import calendar_ics, email_imap, google, microsoft, slack, website, whatsapp_business
 from .base import Sync
 
 log = logging.getLogger("connectors")
 
 # Sources the admin sets up by typing details in.
-MANUAL_TYPES = {"imap": email_imap.sync, "ics": calendar_ics.sync, "website": website.sync}
+MANUAL_TYPES = {"imap": email_imap.sync, "ics": calendar_ics.sync, "website": website.sync,
+                "whatsapp_business": whatsapp_business.sync}
 # Sources connected with "Sign in with Google / Microsoft".
 OAUTH_TYPES = {"gmail": google.sync_gmail, "gcal": google.sync_gcal, "gdrive": google.sync_gdrive,
                "ms_mail": microsoft.sync_mail, "ms_cal": microsoft.sync_calendar, "ms_drive": microsoft.sync_drive,
                "slack": slack.sync_slack}
 TYPES = {**MANUAL_TYPES, **OAUTH_TYPES}
 # Config fields stored encrypted, per connector type.
-SECRETS = {"imap": {"password"}, "ics": {"url"}}
+SECRETS = {"imap": {"password"}, "ics": {"url"}, "whatsapp_business": {"access_token", "app_secret"}}
 
 # One lock per connector: a connector never syncs twice at once, and removing it waits for a running sync.
 _locks: dict[int, threading.Lock] = defaultdict(threading.Lock)

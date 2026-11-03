@@ -81,6 +81,14 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Calendar: counted in events (3), not months", /3 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
   await until(async () => /Connected/.test(await text("[data-tile=gmail]")), 15000, 500);
+  check("Connection hub: named 'Connection hub'", /Connection hub/.test(await text("#overview-card h2")));
+  check("Connection hub: unconnected Outlook tile has a Connect button", await page.isVisible("[data-tile=ms_mail] [data-connect-tile]"));
+  await page.click("[data-tile=ms_mail] [data-connect-tile]");
+  check("…which opens the Microsoft connect panel with only Outlook mail ticked", await until(async () =>
+    await page.isVisible(".provider-card[data-provider=microsoft] .panel") &&
+    await page.isChecked(".provider-card[data-provider=microsoft] .panel input[value=mail]") &&
+    !(await page.isChecked(".provider-card[data-provider=microsoft] .panel input[value=calendar]")), 5000, 200));
+  await page.click(".provider-card[data-provider=microsoft] .panel [data-cancel]");
   check("Overview: Gmail tile says Connected with the count", /Connected[\s\S]*30 emails/.test(await text("[data-tile=gmail]")), await text("[data-tile=gmail]"));
   check("Overview: Outlook tile says Not connected", /Not connected/.test(await text("[data-tile=ms_mail]")));
   check("Overview: Slack tile says Not connected", /Not connected/.test(await text("[data-tile=slack]")));
@@ -208,7 +216,26 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
     return (t.match(/Searchable/g) || []).length === 3;
   }, 90000, 2000);
   check("Uploads: all 3 files become searchable", filesReady, await text("#files-list"));
-  check("WhatsApp card: shows the imported chat", await until(async () => /1 chat searchable/.test(await text("#wa-status")), 15000, 500));
+  check("WhatsApp card: shows the imported chat", await until(async () => /1 chat imported/.test(await text("#wa-status")), 15000, 500));
+
+  // WhatsApp Business: official connection
+  await page.click("[data-tile=whatsapp]");
+  await page.click("#wa-connect");
+  check("WhatsApp: connect panel with the steps", /Phone number ID/.test(await text("#wa-panel")));
+  check("WhatsApp: warns clearly that Meta needs a public https address", /public[\s\S]*https/.test(await text("#wa-panel")));
+  await page.fill("#wa-form input[name=phone_number_id]", "PHONE1"); await page.fill("#wa-form input[name=access_token]", "wrong");
+  await page.check("#wa-form .vis-everyone"); await page.click("#wa-form button[type=submit]");
+  check("WhatsApp: a wrong token gets Meta's reason", await until(async () => /Meta didn't accept/.test(await text("#wa-form .error")), 8000, 300));
+  await page.fill("#wa-form input[name=access_token]", "wa-token"); await page.click("#wa-form button[type=submit]");
+  check("WhatsApp: connected with the number's name", await until(async () => /Acme Plumbing \+972 50-123-4567[\s\S]*Connected/.test(await text("#wa-list")), 10000, 300), await text("#wa-list"));
+  const waId = await page.getAttribute("#wa-list [data-wa-del]", "data-wa-del");
+  const verify = await page.request.get(`${APP}/webhooks/whatsapp/${waId}?hub.mode=subscribe&hub.challenge=12345&hub.verify_token=${encodeURIComponent(await page.locator("#wa-list code").nth(1).textContent())}`);
+  check("WhatsApp: Meta's webhook check is answered", (await verify.text()) === "12345");
+  await page.request.post(`${APP}/webhooks/whatsapp/${waId}`, { data: { object: "whatsapp_business_account", entry: [{ changes: [{ field: "messages", value: {
+    contacts: [{ wa_id: "972501112233", profile: { name: "Yossi Levi" } }],
+    messages: [{ from: "972501112233", id: "wamid.1", timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: "Hi, can you send a technician tomorrow for the leaking boiler at Levi Gardens?" } }] } }] }] } });
+  check("WhatsApp: an incoming message shows up and becomes searchable", await until(async () => /1 message so far/.test(await text("#wa-list")), 30000, 1000), await text("#wa-list"));
+  check("Connection hub: WhatsApp tile says Connected", /Connected/.test(await text("[data-tile=whatsapp]")));
   check("Uploads: interview and WhatsApp get clear titles", /Interview - Moshe \(Senior technician\)/.test(await text("#files-list")) && /WhatsApp: chat/.test(await text("#files-list")));
   await shot("sources-full");
 
