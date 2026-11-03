@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.5"
+APP_VERSION = "0.9.6"
 
 
 def _ensure_secret_key() -> None:
@@ -901,11 +901,11 @@ def oauth_app_save(provider: str, body: OAuthAppIn, request: Request, _: dict = 
     if not clean["client_id"]:
         raise HTTPException(400, f"Paste the {'App ID' if provider == 'meta' else 'Client ID'}.")
     if provider == "google" and not clean["client_id"].endswith(".apps.googleusercontent.com"):
-        raise HTTPException(400, "A Google Client ID ends with .apps.googleusercontent.com – check you copied the Client ID, not the project name.")
+        raise HTTPException(400, "A Google Client ID ends with .apps.googleusercontent.com. Check you copied the Client ID, not the project name.")
     if provider == "meta" and not clean["client_id"].isdigit():
-        raise HTTPException(400, "A Facebook App ID is only digits – find it at the top of App settings → Basic.")
+        raise HTTPException(400, "A Facebook App ID is only digits. Find it at the top of App settings → Basic.")
     if provider == "meta" and clean["config_id"] and not clean["config_id"].isdigit():
-        raise HTTPException(400, "A Configuration ID is only digits – find it under Facebook Login for Business → Configurations.")
+        raise HTTPException(400, "A Configuration ID is only digits. Find it under Facebook Login for Business → Configurations.")
     if provider in ("google", "meta", "slack") and not clean["client_secret"]:
         old = oauth.saved_apps().get(provider, {})
         if old.get("client_id") == clean["client_id"] and old.get("client_secret"):
@@ -1174,7 +1174,7 @@ def ai_key_save(body: KeyIn, _: dict = Depends(auth.admin_user)):
     if not key.startswith("sk-ant-"):
         raise HTTPException(400, f"That doesn't look like a Claude API key (received: {seen}). It starts with sk-ant-.")
     if any(ch in key for ch in "•*…●") or not key.isascii():
-        raise HTTPException(400, "This key contains hidden dots (•) instead of letters – it was copied from a place that "
+        raise HTTPException(400, "This key contains hidden dots (•) instead of letters. It was copied from a place that "
                                  "hides keys, such as a chat. Copy it again directly from console.anthropic.com "
                                  "(create a new key if needed).")
     try:
@@ -1240,7 +1240,7 @@ def health(_: dict = Depends(auth.admin_user)):
         sources = c.execute("SELECT type, name, last_error, last_sync FROM connectors ORDER BY name").fetchall()
     if docs["waiting"]:
         left = worker.minutes_left(docs["waiting"])
-        eta = f" – about {_duration(left)} left" if left else " – measuring speed…"
+        eta = f", about {_duration(left)} left" if left else ", measuring speed…"
         checks.append({"id": "indexing", "label": "Preparing content for search", "state": "busy",
                        "detail": f"{docs['ready']} items ready, {docs['waiting']} waiting{eta}."})
     else:
@@ -1268,7 +1268,7 @@ def health(_: dict = Depends(auth.admin_user)):
     checks.append({"id": "signin", "label": "Google / Microsoft / Slack sign-in",
                    "state": "ok" if not missing else "info",
                    "detail": "Both ready." if not missing else
-                   f"{', '.join(missing)} sign-in not set up – needed only to connect {' or '.join(missing)} accounts."})
+                   f"{', '.join(missing)} sign-in not set up. Needed only to connect {' or '.join(missing)} accounts."})
     overall = "bad" if any(c["state"] == "bad" for c in checks) else \
         "warn" if any(c["state"] in ("warn", "busy") for c in checks) else "ok"
     return {"overall": overall, "checks": checks, "problems": list(reversed(recent_problems.items[-30:])),

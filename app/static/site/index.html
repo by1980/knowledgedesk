@@ -3,177 +3,229 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cortex – Your company's knowledge, one question away</title>
-<meta name="description" content="Cortex connects your email, documents, chats and social channels, and answers your team's questions in seconds – with the source, and only from what each person is allowed to see.">
+<title>Cortex | Your company already knows</title>
+<meta name="description" content="Cortex learns everything your business knows: emails, files, chats, meetings and social channels. Ask it anything, have it find anything, and let it do the work.">
 <link rel="icon" href="/static/cortex.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #ffffff; --bg-2: #f7f7fb; --ink: #0d0b1f; --ink-2: #3b3a52; --muted: #6b6a80; --line: #e6e5ef;
-    --accent: #4f46e5; --accent-2: #4338ca; --violet: #9333ea; --accent-soft: #eef2ff; --ok: #067647;
-    --dark: #0d0b1f; --dark-2: #17152e; --radius: 16px;
+    --bg: #07060f; --bg-2: #0d0b1c; --card: rgba(255,255,255,.04); --card-2: rgba(255,255,255,.07); --line: rgba(255,255,255,.09); --line-2: rgba(255,255,255,.16);
+    --ink: #f4f3ff; --ink-2: #c3c0de; --muted: #8e8aad; --indigo: #6366f1; --violet: #a855f7; --pink: #ec4899; --cyan: #22d3ee; --ok: #34d399;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body { margin: 0; font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--ink); background: var(--bg);
-    -webkit-font-smoothing: antialiased; }
+    -webkit-font-smoothing: antialiased; overflow-x: hidden; }
   a { color: inherit; }
   img { max-width: 100%; height: auto; display: block; }
-  .wrap { width: min(1160px, 100% - 32px); margin: 0 auto; }
-  h1, h2, h3 { letter-spacing: -.03em; line-height: 1.08; margin: 0; }
-  h2 { font-size: clamp(30px, 4.2vw, 44px); font-weight: 700; }
-  h3 { font-size: 19px; font-weight: 650; letter-spacing: -.015em; line-height: 1.3; }
+  .wrap { width: min(1180px, 100% - 32px); margin: 0 auto; }
+  h1, h2, h3 { margin: 0; letter-spacing: -.035em; line-height: 1.04; }
+  h2 { font-size: clamp(34px, 5vw, 58px); font-weight: 800; }
+  h3 { font-size: 21px; font-weight: 700; letter-spacing: -.02em; line-height: 1.25; }
   p { margin: 0; }
-  .eyebrow { font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .1em; }
-  .lead { font-size: 18px; color: var(--ink-2); }
-  .grad { background: linear-gradient(90deg, var(--accent), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 22px; border-radius: 12px; font-weight: 600;
-    font-size: 15px; text-decoration: none; border: 1px solid transparent; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, transform .15s; }
-  .btn:hover { transform: translateY(-1px); }
-  .btn.primary { background: var(--ink); color: #fff; }
-  .btn.primary:hover { background: #26234a; }
-  .btn.brand { background: linear-gradient(135deg, var(--accent), var(--violet)); color: #fff; box-shadow: 0 10px 24px -10px rgba(79,70,229,.7); }
-  .btn.ghost { background: #fff; border-color: var(--line); color: var(--ink); }
-  .btn.ghost:hover { border-color: #c9c7da; }
-  .btn.sm { height: 40px; padding: 0 16px; font-size: 14px; border-radius: 10px; }
+  .grad { background: linear-gradient(100deg, #a5b4fc 0%, #c084fc 45%, #f472b6 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tag { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #a5b4fc; }
+  .tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--indigo), var(--pink)); box-shadow: 0 0 12px rgba(168,85,247,.9); }
+  .lead { font-size: 19px; color: var(--ink-2); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 26px; border-radius: 14px; font-weight: 650; font-size: 16px;
+    text-decoration: none; border: 1px solid transparent; cursor: pointer; white-space: nowrap; transition: transform .15s, box-shadow .2s, background .2s, border-color .2s; }
+  .btn:hover { transform: translateY(-2px); }
   .btn svg { width: 18px; height: 18px; }
+  .btn.glow { color: #fff; background: linear-gradient(135deg, var(--indigo), var(--violet) 60%, var(--pink)); box-shadow: 0 0 0 1px rgba(255,255,255,.12) inset, 0 12px 40px -8px rgba(168,85,247,.7); }
+  .btn.glow:hover { box-shadow: 0 0 0 1px rgba(255,255,255,.2) inset, 0 16px 50px -6px rgba(168,85,247,.9); }
+  .btn.glass { color: var(--ink); background: rgba(255,255,255,.06); border-color: var(--line-2); backdrop-filter: blur(8px); }
+  .btn.glass:hover { background: rgba(255,255,255,.1); }
+  .btn.sm { height: 40px; padding: 0 16px; font-size: 14px; border-radius: 11px; }
   .show-sm { display: none; }
 
-  header { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.82); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
-  header.scrolled { border-bottom-color: var(--line); }
-  .nav { display: flex; align-items: center; gap: 28px; height: 70px; }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 750; font-size: 21px; text-decoration: none; letter-spacing: -.03em; }
-  .logo img { width: 32px; height: 32px; }
-  .nav-links { display: flex; gap: 26px; margin-left: 14px; }
+  /* nav */
+  header { position: fixed; inset: 0 0 auto; z-index: 20; transition: background .2s, border-color .2s; border-bottom: 1px solid transparent; }
+  header.scrolled { background: rgba(7,6,15,.72); backdrop-filter: blur(14px) saturate(1.4); border-bottom-color: var(--line); }
+  .nav { display: flex; align-items: center; gap: 30px; height: 72px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 22px; letter-spacing: -.04em; text-decoration: none; }
+  .logo img { width: 32px; height: 32px; filter: drop-shadow(0 0 14px rgba(139,92,246,.6)); }
+  .nav-links { display: flex; gap: 28px; margin-left: 10px; }
   .nav-links a { text-decoration: none; color: var(--ink-2); font-size: 15px; font-weight: 500; }
-  .nav-links a:hover { color: var(--ink); }
-  .nav-cta { margin-left: auto; display: flex; gap: 12px; align-items: center; }
-  .nav-cta .login { text-decoration: none; font-weight: 500; font-size: 15px; color: var(--ink-2); }
+  .nav-links a:hover { color: #fff; }
+  .nav-cta { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .nav-cta .login { text-decoration: none; color: var(--ink-2); font-weight: 500; font-size: 15px; }
+  .nav-cta .login:hover { color: #fff; }
 
-  .hero { position: relative; overflow: hidden; padding: 84px 0 40px;
-    background: radial-gradient(900px 480px at 50% -12%, rgba(79,70,229,.16), transparent 62%), radial-gradient(600px 360px at 92% 10%, rgba(147,51,234,.12), transparent 60%); }
-  .hero-grid { display: grid; gap: 26px; justify-items: center; text-align: center; }
-  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 999px; background: #fff; border: 1px solid var(--line);
-    font-size: 14px; font-weight: 500; color: var(--ink-2); box-shadow: 0 1px 2px rgba(13,11,31,.05); }
-  .pill b { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 600; }
-  .hero h1 { font-size: clamp(40px, 6.4vw, 74px); font-weight: 800; max-width: 1120px; }
-  .hero .lead { max-width: 690px; font-size: 20px; }
-  .hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  .hero-notes { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--muted); }
-  .hero-notes span { display: inline-flex; align-items: center; gap: 6px; }
-  .hero-notes svg { width: 16px; height: 16px; color: var(--ok); }
+  /* backgrounds */
+  .glow-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .glow-bg::before, .glow-bg::after { content: ""; position: absolute; border-radius: 50%; filter: blur(90px); opacity: .55; }
+  .glow-bg::before { width: 720px; height: 720px; left: 50%; top: -260px; transform: translateX(-60%); background: radial-gradient(circle, rgba(99,102,241,.55), transparent 65%); }
+  .glow-bg::after { width: 560px; height: 560px; right: -160px; top: 120px; background: radial-gradient(circle, rgba(236,72,153,.35), transparent 65%); }
+  .grid-bg { position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 56px 56px; mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%); }
 
-  .strip { margin-top: 18px; display: grid; gap: 14px; justify-items: center; }
-  .strip p { font-size: 13px; font-weight: 500; color: var(--muted); }
-  .strip-logos { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-  .strip-logos span { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: #fff; border: 1px solid var(--line);
-    box-shadow: 0 1px 2px rgba(13,11,31,.04); transition: transform .15s; }
-  .strip-logos span:hover { transform: translateY(-2px); }
-  .strip-logos svg { width: 26px; height: 26px; }
+  /* hero */
+  .hero { position: relative; padding: 156px 0 60px; }
+  .hero .wrap { position: relative; display: grid; justify-items: start; gap: 28px; }
+  .badge { display: inline-flex; align-items: center; gap: 10px; padding: 7px 16px 7px 8px; border-radius: 999px; font-size: 14px; color: var(--ink-2);
+    background: rgba(255,255,255,.05); border: 1px solid var(--line-2); backdrop-filter: blur(6px); }
+  .badge b { padding: 3px 10px; border-radius: 999px; font-size: 12px; color: #fff; background: linear-gradient(135deg, var(--indigo), var(--violet)); }
+  .hero h1 { font-size: clamp(40px, 6.1vw, 82px); font-weight: 900; letter-spacing: -.05em; line-height: 1.02; }
+  .hero h1 span.line { white-space: nowrap; }
+  @media (max-width: 760px) { .hero h1 span.line { white-space: normal; } }
+  .hero .lead { max-width: 760px; font-size: clamp(17px, 1.9vw, 21px); }
+  .verbs { display: inline-flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .verbs span { padding: 6px 14px; border-radius: 10px; font-weight: 650; font-size: 15px; border: 1px solid var(--line-2); background: rgba(255,255,255,.04); }
+  .verbs span i { font-style: normal; background: linear-gradient(100deg, #a5b4fc, #f0abfc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
 
-  .demo { margin-top: 44px; width: min(900px, 100%); text-align: left; border-radius: 20px; padding: 10px; background: linear-gradient(135deg, rgba(79,70,229,.25), rgba(147,51,234,.25));
-    box-shadow: 0 40px 90px -40px rgba(49, 36, 140, .55); }
-  .demo-in { background: #fff; border-radius: 14px; padding: 22px; display: grid; gap: 16px; min-height: 238px; align-content: start; }
-  .ask { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); font-size: 16px; }
-  .ask img { width: 24px; height: 24px; }
-  .ask .typed { flex: 1; color: var(--ink); min-height: 1.6em; }
-  .ask .typed::after { content: ""; display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: -3px; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+  /* brain */
+  .brain { position: relative; width: min(1000px, 100%); margin-top: 22px; justify-self: center; }
+  .brain svg.net { width: 100%; height: auto; display: block; overflow: visible; }
+  .wire { stroke: url(#wire); stroke-width: 1.2; fill: none; opacity: .55; }
+  .node circle.bg { fill: #121027; stroke: rgba(255,255,255,.14); }
+  .core-ring { fill: none; stroke: rgba(168,85,247,.45); }
+  .core-ring.r2 { stroke: rgba(99,102,241,.3); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { transform-origin: 500px 250px; animation: spin 40s linear infinite; }
+  .spin.rev { animation-direction: reverse; animation-duration: 60s; }
+  @keyframes breathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+  .core-glow { animation: breathe 3.2s ease-in-out infinite; }
+
+  /* command bar under the brain */
+  .console { position: relative; margin-top: -40px; width: min(820px, 100%); justify-self: center; text-align: left; border-radius: 22px; padding: 1px;
+    background: linear-gradient(135deg, rgba(99,102,241,.7), rgba(168,85,247,.5) 50%, rgba(236,72,153,.5)); box-shadow: 0 30px 120px -20px rgba(124,58,237,.55); }
+  .console-in { border-radius: 21px; background: rgba(12,10,26,.92); backdrop-filter: blur(16px); padding: 18px; display: grid; gap: 14px; min-height: 290px; align-content: start; }
+  .modes { display: flex; gap: 6px; }
+  .mode { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 10px; padding: 6px 14px; font: 600 14px Inter, sans-serif; cursor: pointer; }
+  .mode[aria-selected="true"] { color: #fff; background: rgba(255,255,255,.08); border-color: var(--line-2); }
+  .prompt { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 14px; background: rgba(255,255,255,.05); border: 1px solid var(--line); font-size: 17px; }
+  .prompt img { width: 24px; height: 24px; }
+  .prompt .typed { flex: 1; min-height: 1.5em; }
+  .prompt .typed::after { content: ""; display: inline-block; width: 2px; height: 1.1em; vertical-align: -3px; margin-left: 2px; background: #c084fc; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  .ask kbd { font: 500 12px Inter, sans-serif; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; background: #fff; }
-  .answer { display: grid; gap: 12px; padding: 4px 4px 2px; transition: opacity .4s; }
-  .answer .who { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--accent); }
-  .answer .who img { width: 18px; height: 18px; }
-  .answer p { font-size: 16.5px; color: var(--ink); }
-  .cite { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; background: var(--accent-soft); color: var(--accent);
-    font-size: 12px; font-weight: 700; vertical-align: 2px; margin-left: 2px; }
-  .sources { display: flex; flex-wrap: wrap; gap: 8px; }
-  .src { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; font-size: 13.5px; color: var(--ink-2); background: #fff; }
-  .src svg { width: 16px; height: 16px; flex: none; }
-  .src b { color: var(--accent); font-weight: 700; }
+  .prompt kbd { font: 600 12px Inter, sans-serif; color: var(--muted); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 8px; }
+  .out { display: grid; gap: 10px; transition: opacity .35s, transform .35s; }
+  .out.hide { opacity: 0; transform: translateY(6px); }
+  .out p { color: var(--ink); font-size: 16px; }
+  .out b { color: #fff; }
+  .cite { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin-left: 3px; border-radius: 6px; font-size: 12px; font-weight: 700;
+    color: #e9d5ff; background: rgba(168,85,247,.25); vertical-align: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 10px; font-size: 13.5px; color: var(--ink-2); background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+  .chip svg { width: 16px; height: 16px; flex: none; }
+  .chip b { color: #c4b5fd; }
+  .result { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--line); }
+  .result svg { width: 22px; height: 22px; flex: none; }
+  .result .t { font-weight: 600; font-size: 15px; }
+  .result .m { font-size: 13px; color: var(--muted); }
+  .result .go { margin-left: auto; font-size: 13px; color: #c4b5fd; font-weight: 600; }
+  .task { display: grid; gap: 8px; padding: 14px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--line); }
+  .task .row { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--ink-2); }
+  .task .row svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--ok); }
+  .task .head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #c4b5fd; text-transform: uppercase; letter-spacing: .08em; }
 
-  section.block { padding: 104px 0; }
-  .head { display: grid; gap: 16px; max-width: 760px; margin: 0 auto 56px; text-align: center; justify-items: center; }
-  .tinted { background: var(--bg-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  /* sections */
+  section.block { position: relative; padding: 130px 0; }
+  .center-head { display: grid; gap: 18px; max-width: 760px; margin: 0 0 56px; }
 
-  .pillars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-  .pillar { padding: 28px 24px; border-radius: var(--radius); background: #fff; border: 1px solid var(--line); display: grid; gap: 12px; align-content: start; }
-  .pillar .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--accent), var(--violet)); }
-  .pillar .ico svg { width: 22px; height: 22px; }
-  .pillar p { color: var(--ink-2); font-size: 15px; }
+  /* find / answer / do bento */
+  .bento { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .tile { position: relative; overflow: hidden; border-radius: 24px; padding: 28px; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+    border: 1px solid var(--line); display: grid; gap: 14px; align-content: start; min-height: 420px; }
+  .tile::after { content: ""; position: absolute; inset: auto -40% -60% -40%; height: 70%; background: radial-gradient(closest-side, var(--c, rgba(99,102,241,.35)), transparent); pointer-events: none; }
+  .tile .num { font-size: 13px; font-weight: 800; letter-spacing: .14em; color: var(--muted); }
+  .tile h3 { font-size: 30px; font-weight: 800; letter-spacing: -.03em; }
+  .tile p.d { color: var(--ink-2); }
+  .tile .mini { position: relative; z-index: 1; margin-top: 8px; display: grid; gap: 8px; }
 
-  .rows { display: grid; gap: 110px; }
-  .split { display: grid; grid-template-columns: 1fr 1.3fr; gap: 64px; align-items: center; }
-  .split.rev { grid-template-columns: 1.3fr 1fr; }
-  .split.rev .text { order: 2; }
-  .split .text { display: grid; gap: 18px; }
-  .split ul { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 12px; }
-  .split li { display: flex; gap: 10px; color: var(--ink-2); font-size: 15.5px; }
-  .split li svg { flex: none; width: 20px; height: 20px; color: var(--accent); margin-top: 2px; }
-  .frame { border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 34px 70px -36px rgba(30, 22, 90, .45); padding: 8px; background: linear-gradient(135deg, #eef2ff, #f5ecff); }
-  .frame img { border-radius: 10px; border: 1px solid var(--line); }
+  /* always learning feed */
+  .learn { display: grid; grid-template-columns: 1fr 1.1fr; gap: 64px; align-items: center; }
+  .learn .text { display: grid; gap: 20px; }
+  .stat-row { display: flex; gap: 34px; margin-top: 6px; }
+  .stat b { display: block; font-size: 40px; font-weight: 800; letter-spacing: -.04em; }
+  .stat span { color: var(--muted); font-size: 14px; }
+  .feed { position: relative; height: 420px; overflow: hidden; border-radius: 24px; border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 18px;
+    mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent); }
+  .feed-track { display: grid; gap: 10px; animation: feed 28s linear infinite; }
+  @keyframes feed { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+  .feed .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: rgba(12,10,26,.8); border: 1px solid var(--line); }
+  .feed .item svg { width: 22px; height: 22px; flex: none; }
+  .feed .item .t { font-size: 14.5px; font-weight: 600; }
+  .feed .item .m { font-size: 12.5px; color: var(--muted); }
+  .feed .item .new { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--ok); background: rgba(52,211,153,.12); border-radius: 999px; padding: 3px 8px; }
 
-  .tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 28px; }
-  .tab { border: 1px solid var(--line); background: #fff; color: var(--ink-2); border-radius: 999px; padding: 9px 18px; font: 600 14.5px Inter, sans-serif; cursor: pointer; }
-  .tab:hover { border-color: #c9c7da; }
-  .tab[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
-  .team-card { max-width: 860px; margin: 0 auto; background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 28px; display: grid; gap: 18px;
-    box-shadow: 0 24px 60px -40px rgba(30, 22, 90, .45); }
-  .team-card .q { justify-self: end; max-width: 85%; background: var(--accent-soft); color: #2c2596; border-radius: 16px 16px 4px 16px; padding: 12px 16px; font-weight: 500; }
-  .team-card .why { font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+  /* screens */
+  .screens { position: relative; perspective: 1600px; }
+  .screen { border-radius: 18px; overflow: hidden; border: 1px solid var(--line-2); box-shadow: 0 50px 140px -40px rgba(124,58,237,.6), 0 0 0 8px rgba(255,255,255,.03);
+    transform: rotateX(8deg); transform-origin: 50% 100%; transition: transform .6s; }
+  .screens:hover .screen { transform: rotateX(0); }
+  .screen-cta { display: flex; margin-top: 36px; }
 
-  .dark { background: var(--dark); color: #e4e2f3; }
-  .dark h2 { color: #fff; }
-  .dark .lead { color: #aeabc8; }
-  .dark .eyebrow { color: #a5b4fc; }
-  .sec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
-  .sec { padding: 26px; border-radius: var(--radius); background: var(--dark-2); border: 1px solid #2a2750; display: flex; gap: 16px; }
-  .sec svg { flex: none; width: 24px; height: 24px; color: #a5b4fc; margin-top: 2px; }
-  .sec h3 { color: #fff; margin-bottom: 6px; }
-  .sec p { color: #aeabc8; }
+  /* access */
+  .access { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .person { border-radius: 22px; padding: 24px; border: 1px solid var(--line); background: rgba(255,255,255,.03); display: grid; gap: 14px; align-content: start; }
+  .person .who { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; color: #fff; }
+  .person .role { font-size: 13px; color: var(--muted); }
+  .sees { display: grid; gap: 8px; }
+  .sees div { display: flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); padding: 9px 12px; border-radius: 10px; background: rgba(255,255,255,.04); }
+  .sees div svg { width: 16px; height: 16px; flex: none; }
+  .sees .yes svg { color: var(--ok); }
+  .sees .no { opacity: .45; text-decoration: line-through; }
+  .sees .no svg { color: #f87171; }
 
-  .faq { max-width: 800px; margin: 0 auto; display: grid; gap: 10px; }
-  details { border: 1px solid var(--line); border-radius: 14px; padding: 0 22px; background: #fff; }
-  summary { cursor: pointer; list-style: none; padding: 20px 0; font-weight: 600; display: flex; justify-content: space-between; gap: 16px; }
-  summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; font-size: 22px; line-height: 1; color: var(--muted); }
-  details[open] summary::after { content: "–"; }
-  details p { padding: 0 0 20px; color: var(--ink-2); }
+  /* teams */
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+  .tab { border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 999px; padding: 10px 18px; font: 600 15px Inter, sans-serif; cursor: pointer; }
+  .tab:hover { border-color: var(--line-2); color: #fff; }
+  .tab[aria-selected="true"] { color: #fff; background: linear-gradient(135deg, rgba(99,102,241,.4), rgba(168,85,247,.4)); border-color: rgba(168,85,247,.6); }
+  .team { max-width: 900px; border-radius: 22px; padding: 26px; border: 1px solid var(--line); background: rgba(255,255,255,.03); display: grid; gap: 16px; }
+  .team .q { justify-self: end; max-width: 86%; padding: 12px 16px; border-radius: 16px 16px 4px 16px; background: linear-gradient(135deg, rgba(99,102,241,.35), rgba(168,85,247,.3)); font-weight: 500; }
+  .team .a-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #c4b5fd; }
+  .team .a-head img { width: 18px; height: 18px; }
 
-  .cta { padding: 0 0 104px; }
-  .cta-box { border-radius: 28px; padding: 72px 32px; text-align: center; color: #fff; display: grid; gap: 20px; justify-items: center;
-    background: radial-gradient(700px 320px at 15% 0%, rgba(147,51,234,.65), transparent 60%), linear-gradient(135deg, #3730a3, #4f46e5 60%, #6d28d9); }
-  .cta-box h2 { color: #fff; max-width: 680px; }
-  .cta-box p { color: #e0e7ff; max-width: 560px; font-size: 18px; }
-  .cta-box .btn.white { background: #fff; color: var(--ink); }
-  .cta-box .btn.line { background: transparent; color: #fff; border-color: rgba(255,255,255,.45); }
-  footer { border-top: 1px solid var(--line); padding: 34px 0; font-size: 14px; color: var(--muted); }
-  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+  /* trust */
+  .trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .trust div { padding: 22px; border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,.03); display: grid; gap: 8px; }
+  .trust svg { width: 24px; height: 24px; color: #a5b4fc; }
+  .trust b { font-size: 17px; }
+  .trust p { color: var(--muted); font-size: 14.5px; }
+
+  /* final */
+  .final { position: relative; overflow: hidden; border-radius: 32px; padding: 80px clamp(24px, 6vw, 72px); display: grid; gap: 22px; justify-items: start;
+    border: 1px solid var(--line-2); background: radial-gradient(800px 400px at 50% 0%, rgba(168,85,247,.45), transparent 65%), radial-gradient(600px 300px at 10% 100%, rgba(99,102,241,.4), transparent 60%), #0c0a1d; }
+  .final h2 { max-width: 760px; }
+  footer { padding: 40px 0 50px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 30px; }
   footer a { text-decoration: none; }
-  footer a:hover { color: var(--ink); }
+  footer a:hover { color: #fff; }
 
-  @media (max-width: 960px) {
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .8s, transform .8s; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 980px) {
     .nav-links, .nav-cta .login { display: none; }
-    .pillars { grid-template-columns: repeat(2, 1fr); }
-    .split, .split.rev { grid-template-columns: 1fr; gap: 30px; }
-    .split.rev .text { order: 0; }
-    .rows { gap: 72px; }
-    section.block { padding: 72px 0; }
+    .bento, .access { grid-template-columns: 1fr; }
+    .tile { min-height: 0; }
+    .learn { grid-template-columns: 1fr; gap: 40px; }
+    .trust { grid-template-columns: repeat(2, 1fr); }
+    section.block { padding: 90px 0; }
   }
   @media (max-width: 600px) {
-    .pillars, .sec-grid { grid-template-columns: 1fr; }
-    .hero { padding-top: 44px; }
-    .hero .lead { font-size: 17px; }
-    .demo-in { padding: 14px; min-height: 300px; }
-    .ask kbd { display: none; }
-    .strip-logos span { width: 44px; height: 44px; border-radius: 12px; }
-    .strip-logos svg { width: 22px; height: 22px; }
+    .hero { padding-top: 112px; }
+    .console { margin-top: -10px; }
+    .console-in { min-height: 360px; padding: 14px; }
+    .prompt { font-size: 15px; }
+    .prompt kbd { display: none; }
+    .trust { grid-template-columns: 1fr; }
+    .stat-row { gap: 22px; }
+    .stat b { font-size: 32px; }
     .hide-sm { display: none; } .show-sm { display: inline; }
-    .team-card { padding: 18px; }
-    .pill { font-size: 13px; }
+    .result .go { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { .ask .typed::after { animation: none; } .btn:hover { transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .spin, .core-glow, .feed-track, .prompt .typed::after { animation: none; }
+    .reveal { opacity: 1; transform: none; }
+  }
 </style>
 </head>
 <body>
@@ -192,179 +244,172 @@
   <symbol id="b-instagram" viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="6" fill="url(#igs)"/><rect x="5.5" y="5.5" width="13" height="13" rx="4" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="16.4" cy="7.6" r="1" fill="#fff"/></symbol>
   <symbol id="b-youtube" viewBox="0 0 24 24"><rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#FF0000"/><path fill="#fff" d="M10 8.8v6.4l5.5-3.2z"/></symbol>
   <symbol id="b-linkedin" viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="4" fill="#0A66C2"/><path fill="#fff" d="M5.5 9.5h2.8V18H5.5zM6.9 5.3a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM10 9.5h2.7v1.2c.4-.7 1.3-1.4 2.7-1.4 2.9 0 3.4 1.9 3.4 4.3V18H16v-3.9c0-.9 0-2.1-1.3-2.1s-1.5 1-1.5 2V18H10z"/></symbol>
-  <symbol id="b-web" viewBox="0 0 24 24" fill="none" stroke="#475467" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+  <symbol id="b-web" viewBox="0 0 24 24" fill="none" stroke="#c3c0de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
   <symbol id="b-pdf" viewBox="0 0 24 24"><path fill="#E5252A" d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path fill="#fff" opacity=".55" d="M14 2v5h5z"/><text x="11.5" y="17" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="5.5" fill="#fff">PDF</text></symbol>
-  <symbol id="b-mic" viewBox="0 0 24 24" fill="none" stroke="#475467" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
-
-  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9.5"/></symbol>
-  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
-  <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7V3M15 7V3M6 7h12v4a6 6 0 0 1-12 0zM12 17v4"/></symbol>
-  <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><circle cx="5" cy="6" r="1.8"/><circle cx="19" cy="6" r="1.8"/><circle cx="5" cy="18" r="1.8"/><circle cx="19" cy="18" r="1.8"/><path d="M6.4 7.2 10.2 10.4M17.6 7.2l-3.8 3.2M6.4 16.8l3.8-3.2M17.6 16.8l-3.8-3.2"/></symbol>
-  <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></symbol>
-  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="b-mic" viewBox="0 0 24 24" fill="none" stroke="#c3c0de" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
   <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/><path d="M16 3.5a4 4 0 0 1 0 7.5"/><path d="M22 21v-1a6 6 0 0 0-4-5.6"/></symbol>
-  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
-  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6.5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8.5z"/><path d="M14 3v5.5h5.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
 </svg>
 
 <header id="top">
   <div class="wrap nav">
     <a class="logo" href="#top"><img src="/static/cortex.svg" alt="">Cortex</a>
     <nav class="nav-links" aria-label="Main">
-      <a href="#how">How it works</a><a href="#product">Product</a><a href="#teams">For teams</a><a href="#security">Security</a><a href="#faq">FAQ</a>
+      <a href="#what">What it does</a><a href="#learns">How it learns</a><a href="#teams">Teams</a><a href="#trust">Security</a>
     </nav>
     <div class="nav-cta"><a class="login" href="/">Log in</a>
-      <a class="btn primary sm" href="/"><span class="hide-sm">Get started</span><span class="show-sm">Open Cortex</span></a></div>
+      <a class="btn glow sm" href="/#home"><span class="hide-sm">Open the dashboard</span><span class="show-sm">Dashboard</span></a></div>
   </div>
 </header>
 
 <main>
+  <!-- ================================================================== HERO -->
   <section class="hero">
-    <div class="wrap hero-grid">
-      <span class="pill"><b>New</b>Now with Facebook, Instagram and YouTube</span>
-      <h1>Your company's knowledge.<br><span class="grad">One question away.</span></h1>
-      <p class="lead">Cortex connects your email, documents, chats and social channels into one AI assistant. Your team asks in plain words – and gets the answer in seconds, with the source.</p>
-      <div class="hero-ctas">
-        <a class="btn brand" href="/">Get started <svg><use href="#i-arrow"/></svg></a>
-        <a class="btn ghost" href="#how">See how it works</a>
-      </div>
-      <div class="hero-notes">
-        <span><svg><use href="#i-check"/></svg>Set up in an afternoon</span>
-        <span><svg><use href="#i-check"/></svg>Everyone sees only what they're allowed to</span>
-        <span><svg><use href="#i-check"/></svg>English and Hebrew</span>
+    <div class="glow-bg"></div><div class="grid-bg"></div>
+    <div class="wrap">
+      <h1><span class="line">Your company already knows.</span><br><span class="grad line">Now it can tell you.</span></h1>
+      <p class="lead">Cortex connects to your email, files, chats, calendar and social accounts. Your team asks a question and gets the answer with its source, finds any document or message in one search, and gets briefings, summaries and drafts written from your own information.</p>
+      <div class="ctas">
+        <a class="btn glow" href="/#home">See how it works <svg><use href="#i-arrow"/></svg></a>
+        <a class="btn glass" href="#what">What it does</a>
       </div>
 
-      <div class="demo" aria-label="Example: a question and Cortex's answer">
-        <div class="demo-in">
-          <div class="ask"><img src="/static/cortex.svg" alt=""><span class="typed" id="typed"></span><kbd>Enter</kbd></div>
-          <div class="answer" id="answer">
-            <div class="who"><img src="/static/cortex.svg" alt="">Cortex</div>
-            <p id="answer-text"></p>
-            <div class="sources" id="answer-sources"></div>
+      <div class="brain" aria-hidden="true">
+        <svg class="net" id="net" viewBox="0 0 1000 500"></svg>
+      </div>
+
+      <div class="console" aria-label="Example of Cortex at work">
+        <div class="console-in">
+          <div class="modes" role="tablist" id="modes">
+            <button class="mode" role="tab" type="button" data-mode="0">Ask</button>
+            <button class="mode" role="tab" type="button" data-mode="1">Find</button>
+            <button class="mode" role="tab" type="button" data-mode="2">Do</button>
+          </div>
+          <div class="prompt"><img src="/static/cortex.svg" alt=""><span class="typed" id="typed"></span><kbd>Enter</kbd></div>
+          <div class="out hide" id="out"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== ASK FIND DO -->
+  <section class="block" id="what">
+    <div class="wrap">
+      <div class="center-head reveal"><h2>Ask. Find. <span class="grad">Done.</span></h2>
+        <p class="lead">The three things your team does dozens of times a day, now in seconds instead of digging through inboxes, folders and chats.</p></div>
+      <div class="bento">
+        <div class="tile reveal" style="--c: rgba(99,102,241,.4)">
+          <h3>Ask anything</h3>
+          <p class="d">Prices, policies, decisions, who handles what. Get a clear answer in seconds, with the exact source behind it.</p>
+          <div class="mini">
+            <div class="result"><svg><use href="#b-gmail"/></svg><div><div class="t">"How much is the Levi Gardens contract?"</div><div class="m">7,200 NIS a year, paid quarterly <span class="cite">1</span></div></div></div>
+            <div class="chips"><span class="chip"><b>1</b><svg><use href="#b-gmail"/></svg>Price agreement email</span></div>
+          </div>
+        </div>
+        <div class="tile reveal" style="--c: rgba(34,211,238,.3)">
+          <h3>Find everything</h3>
+          <p class="d">That contract, that WhatsApp message, that recording. One search across every tool your company uses.</p>
+          <div class="mini">
+            <div class="result"><svg><use href="#b-gdrive"/></svg><div><div class="t">Cohen Towers contract 2026.pdf</div><div class="m">Google Drive</div></div></div>
+            <div class="result"><svg><use href="#b-whatsapp"/></svg><div><div class="t">"Signed copy is on the way"</div><div class="m">WhatsApp, Avi Levi</div></div></div>
+            <div class="result"><svg><use href="#b-slack"/></svg><div><div class="t">#sales: deal closed, 3 years</div><div class="m">Slack</div></div></div>
+          </div>
+        </div>
+        <div class="tile reveal" style="--c: rgba(236,72,153,.35)">
+          <h3>Do the work</h3>
+          <p class="d">Summaries, briefings, drafts and checklists, written from your own information and ready to use.</p>
+          <div class="mini">
+            <div class="task"><div class="head"><svg width="16" height="16"><use href="#i-spark"/></svg>Weekly supplier briefing</div>
+              <div class="row"><svg><use href="#i-check"/></svg>3 deliveries confirmed this week</div>
+              <div class="row"><svg><use href="#i-check"/></svg>Electra Parts raised prices by 4%</div>
+              <div class="row"><svg><use href="#i-check"/></svg>Draft reply to Electra is ready</div></div>
           </div>
         </div>
       </div>
+    </div>
+  </section>
 
-      <div class="strip" id="connections">
-        <p>Connects to the tools you already use</p>
-        <div class="strip-logos">
-          <span title="Gmail"><svg role="img" aria-label="Gmail"><use href="#b-gmail"/></svg></span>
-          <span title="Google Calendar"><svg role="img" aria-label="Google Calendar"><use href="#b-gcal"/></svg></span>
-          <span title="Google Drive"><svg role="img" aria-label="Google Drive"><use href="#b-gdrive"/></svg></span>
-          <span title="Outlook"><svg role="img" aria-label="Outlook"><use href="#b-outlook"/></svg></span>
-          <span title="OneDrive"><svg role="img" aria-label="OneDrive"><use href="#b-onedrive"/></svg></span>
-          <span title="Slack"><svg role="img" aria-label="Slack"><use href="#b-slack"/></svg></span>
-          <span title="WhatsApp"><svg role="img" aria-label="WhatsApp"><use href="#b-whatsapp"/></svg></span>
-          <span title="Facebook"><svg role="img" aria-label="Facebook"><use href="#b-facebook"/></svg></span>
-          <span title="Instagram"><svg role="img" aria-label="Instagram"><use href="#b-instagram"/></svg></span>
-          <span title="YouTube"><svg role="img" aria-label="YouTube"><use href="#b-youtube"/></svg></span>
-          <span title="LinkedIn"><svg role="img" aria-label="LinkedIn"><use href="#b-linkedin"/></svg></span>
-          <span title="Websites"><svg role="img" aria-label="Websites"><use href="#b-web"/></svg></span>
-          <span title="PDF, Word, Excel"><svg role="img" aria-label="Documents"><use href="#b-pdf"/></svg></span>
-          <span title="Recordings and interviews"><svg role="img" aria-label="Recordings"><use href="#b-mic"/></svg></span>
+  <!-- ================================================================== LEARNS -->
+  <section class="block" id="learns" style="padding-top:20px">
+    <div class="wrap learn">
+      <div class="text reveal"><h2>It already knows what <span class="grad">happened this morning.</span></h2>
+        <p class="lead">Connect your tools once. From then on every new email, file, message and post is added by itself, every ten minutes. Nothing to upload, nothing to maintain.</p>
+        <div class="stat-row">
+          <div class="stat"><b class="grad">10 min</b><span>between checks for new information</span></div>
+          <div class="stat"><b class="grad">15+</b><span>tools and file types</span></div>
         </div>
+        <div><a class="btn glass" href="/#sources">See the Connection hub <svg><use href="#i-arrow"/></svg></a></div>
       </div>
+      <div class="feed reveal" aria-hidden="true"><div class="feed-track" id="feed"></div></div>
     </div>
   </section>
 
-  <section class="block tinted" id="how">
+  <!-- ================================================================== DASHBOARD -->
+  <section class="block" style="padding-top:20px">
     <div class="wrap">
-      <div class="head"><span class="eyebrow">How it works</span>
-        <h2>From scattered information to clear answers.</h2>
-        <p class="lead">The answer to most questions already exists somewhere in your business – in an email, a file, a chat or someone's head. Cortex brings it together.</p></div>
-      <div class="pillars">
-        <div class="pillar"><span class="ico"><svg><use href="#i-plug"/></svg></span><h3>Connect</h3><p>Sign in to Google, Microsoft, Slack or Facebook with one click. Add your website, documents and recordings.</p></div>
-        <div class="pillar"><span class="ico"><svg><use href="#i-brain"/></svg></span><h3>Understand</h3><p>Cortex reads everything and keeps learning – new emails, files, messages and posts are added automatically.</p></div>
-        <div class="pillar"><span class="ico"><svg><use href="#i-chat"/></svg></span><h3>Answer</h3><p>Anyone on the team asks in plain words and gets a short, clear answer – with the email, file or page it came from.</p></div>
-        <div class="pillar"><span class="ico"><svg><use href="#i-shield"/></svg></span><h3>Protect</h3><p>Every person sees only what their department is allowed to. New employees see only their learning path.</p></div>
-      </div>
+      <div class="center-head reveal"><h2>See what your team <span class="grad">needs to know.</span></h2>
+        <p class="lead">Every source and its status, what your team asks every day, and the questions nobody could answer yet.</p></div>
+      <div class="screens reveal"><div class="screen"><img src="/static/site/img/home.png" alt="The Cortex dashboard" width="2880" height="1800" loading="lazy"></div></div>
+      <div class="screen-cta"><a class="btn glow" href="/#home">Open the dashboard <svg><use href="#i-arrow"/></svg></a></div>
     </div>
   </section>
 
-  <section class="block" id="product">
-    <div class="wrap rows">
-      <div class="split">
-        <div class="text"><span class="eyebrow">Answers you can trust</span>
-          <h2>Every answer shows where it came from.</h2>
-          <p class="lead">No guessing and no made-up facts. Cortex answers only from your own information, and points to the exact source.</p>
-          <ul>
-            <li><svg><use href="#i-check"/></svg>One click opens the email, file or page behind the answer</li>
-            <li><svg><use href="#i-check"/></svg>Says plainly when something isn't there – and who might know</li>
-            <li><svg><use href="#i-check"/></svg>Search everything, or only emails, calendar, Slack or social media</li>
-          </ul></div>
-        <div class="frame"><img src="/static/site/img/ask-answer.png" alt="A question about a customer contract, answered with the email it came from" loading="lazy" width="2110" height="465"></div>
-      </div>
-
-      <div class="split rev">
-        <div class="text"><span class="eyebrow">Connection hub</span>
-          <h2>Every source in one place. Clearly connected.</h2>
-          <p class="lead">See at a glance what's connected, what's been learned and what needs attention. Add anything new with one click.</p>
-          <ul>
-            <li><svg><use href="#i-check"/></svg>Email, calendars and files from Google and Microsoft</li>
-            <li><svg><use href="#i-check"/></svg>Slack channels and WhatsApp Business conversations</li>
-            <li><svg><use href="#i-check"/></svg>Facebook, Instagram, YouTube and LinkedIn – posts, likes, views and followers</li>
-          </ul></div>
-        <div class="frame"><img src="/static/site/img/hub.png" alt="The Connection hub with each source's logo and status" loading="lazy" width="2110" height="1115"></div>
-      </div>
-
-      <div class="split">
-        <div class="text"><span class="eyebrow">Insights for managers</span>
-          <h2>See what your team needs to know.</h2>
-          <p class="lead">A dashboard of what people ask, by department and person – and the questions nobody could answer, so you know exactly what's missing.</p>
-          <ul>
-            <li><svg><use href="#i-check"/></svg>Questions per day, answered and unanswered</li>
-            <li><svg><use href="#i-check"/></svg>Which teams use Cortex the most</li>
-            <li><svg><use href="#i-check"/></svg>A Learning Center to onboard new employees, with their progress</li>
-          </ul></div>
-        <div class="frame"><img src="/static/site/img/home.png" alt="The Cortex dashboard with questions per day and by department" loading="lazy" width="2880" height="1800"></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="block tinted" id="teams">
+  <!-- ================================================================== ACCESS -->
+  <section class="block" style="padding-top:20px">
     <div class="wrap">
-      <div class="head"><span class="eyebrow">For every team</span><h2>One assistant for the whole company.</h2>
-        <p class="lead">Each team asks its own questions. Cortex answers from the sources that team is allowed to see.</p></div>
+      <div class="center-head reveal"><h2>Everyone sees <span class="grad">only what they should.</span></h2>
+        <p class="lead">Each person only gets answers from what they're allowed to see. Checked every time, before the AI sees anything.</p></div>
+      <div class="access">
+        <div class="person reveal"><div class="who"><span class="avatar" style="background:linear-gradient(135deg,#6366f1,#22d3ee)">D</span><div><b>Dana</b><div class="role">Sales</div></div></div>
+          <div class="sees"><div class="yes"><svg><use href="#i-check"/></svg>Customer emails and deals</div><div class="yes"><svg><use href="#i-check"/></svg>Price lists</div>
+            <div class="no"><svg><use href="#i-x"/></svg>Salaries</div><div class="no"><svg><use href="#i-x"/></svg>Board decisions</div></div></div>
+        <div class="person reveal"><div class="who"><span class="avatar" style="background:linear-gradient(135deg,#a855f7,#ec4899)">R</span><div><b>Rina</b><div class="role">HR</div></div></div>
+          <div class="sees"><div class="yes"><svg><use href="#i-check"/></svg>Employee handbook</div><div class="yes"><svg><use href="#i-check"/></svg>Salaries</div>
+            <div class="yes"><svg><use href="#i-check"/></svg>Interviews</div><div class="no"><svg><use href="#i-x"/></svg>Customer deals</div></div></div>
+        <div class="person reveal"><div class="who"><span class="avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">N</span><div><b>Noa</b><div class="role">New employee</div></div></div>
+          <div class="sees"><div class="yes"><svg><use href="#i-check"/></svg>Her learning path</div><div class="yes"><svg><use href="#i-check"/></svg>Safety handbook</div>
+            <div class="no"><svg><use href="#i-x"/></svg>Everything else, for now</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== TEAMS -->
+  <section class="block" id="teams" style="padding-top:20px">
+    <div class="wrap">
+      <div class="center-head reveal"><h2>Every team asks <span class="grad">different questions.</span></h2></div>
       <div class="tabs" role="tablist" id="tabs"></div>
-      <div class="team-card" role="tabpanel" id="team-card"></div>
+      <div class="team" role="tabpanel" id="team"></div>
     </div>
   </section>
 
-  <section class="block dark" id="security">
+  <!-- ================================================================== TRUST -->
+  <section class="block" id="trust" style="padding-top:20px">
     <div class="wrap">
-      <div class="head"><span class="eyebrow">Security and privacy</span><h2>Built for real company data.</h2>
-        <p class="lead">Your information stays yours – and stays with the people who should see it.</p></div>
-      <div class="sec-grid">
-        <div class="sec"><svg><use href="#i-eye"/></svg><div><h3>Reads only</h3><p>Cortex never sends, posts, edits or deletes anything in your accounts.</p></div></div>
-        <div class="sec"><svg><use href="#i-people"/></svg><div><h3>Permissions checked first</h3><p>Access is checked before anything reaches the AI, so an answer can only use what the person asking may see.</p></div></div>
-        <div class="sec"><svg><use href="#i-lock"/></svg><div><h3>Official, encrypted sign-ins</h3><p>Connections use each provider's own sign-in. Access keys are stored encrypted and can be disconnected anytime.</p></div></div>
-        <div class="sec"><svg><use href="#i-file"/></svg><div><h3>Not used for training</h3><p>Answers are written by a leading AI model under business terms – your data is not used to train it.</p></div></div>
+      <div class="center-head reveal"><h2>Your information <span class="grad">stays yours.</span></h2></div>
+      <div class="trust">
+        <div class="reveal"><svg><use href="#i-eye"/></svg><b>Reads only</b><p>Cortex never sends, posts, edits or deletes anything in your accounts.</p></div>
+        <div class="reveal"><svg><use href="#i-people"/></svg><b>Access checked first</b><p>Answers only use what the person asking is allowed to see.</p></div>
+        <div class="reveal"><svg><use href="#i-lock"/></svg><b>Encrypted sign-ins</b><p>Official sign-in for every tool. Disconnect anything, anytime.</p></div>
+        <div class="reveal"><svg><use href="#i-shield"/></svg><b>Not used for training</b><p>Your data is never used to train AI models.</p></div>
       </div>
     </div>
   </section>
 
-  <section class="block" id="faq">
+  <!-- ================================================================== FINAL -->
+  <section class="block" style="padding-top:20px">
     <div class="wrap">
-      <div class="head"><span class="eyebrow">Questions</span><h2>Frequently asked</h2></div>
-      <div class="faq">
-        <details><summary>Which tools can Cortex connect to?</summary><p>Gmail, Google Calendar, Google Drive, Outlook mail and calendar, OneDrive, Slack, WhatsApp Business, Facebook Pages, Instagram, YouTube, LinkedIn (by import), any website, and files: PDF, Word, Excel, PowerPoint, text, emails and audio or video recordings. Personal and group WhatsApp chats can be imported from the phone.</p></details>
-        <details><summary>Do employees see everything?</summary><p>No. You decide who can find each source – everyone, or specific departments. Answers use only what the person asking is allowed to see. New employees can be limited to the Learning Center.</p></details>
-        <details><summary>How long does setup take?</summary><p>Most businesses connect their main accounts and website in an afternoon. Importing runs in the background, and you can start asking right away.</p></details>
-        <details><summary>Does it work in Hebrew?</summary><p>Yes. Ask in Hebrew or English and Cortex answers in the language you asked in.</p></details>
-        <details><summary>Will it make things up?</summary><p>It's built not to. Cortex answers only from your information, shows the source of each answer, and says plainly when it couldn't find something.</p></details>
-        <details><summary>What does it cost?</summary><p>A simple monthly plan that grows with your team. We're onboarding our first customers now – talk to us for early access.</p></details>
-      </div>
-    </div>
-  </section>
-
-  <section class="cta">
-    <div class="wrap">
-      <div class="cta-box">
-        <h2>Give your team the answers they're looking for.</h2>
-        <p>Connect your first source in minutes and ask your first question today.</p>
-        <div class="hero-ctas"><a class="btn white" href="/">Get started <svg><use href="#i-arrow"/></svg></a>
-          <a class="btn line" href="https://by1labs.com" target="_blank" rel="noopener">Talk to us</a></div>
+      <div class="final reveal">
+        <img src="/static/cortex.svg" alt="" width="64" height="64" style="filter:drop-shadow(0 0 30px rgba(168,85,247,.8))">
+        <h2>Stop asking around. <span class="grad">Ask Cortex.</span></h2>
+        <p class="lead">Connect your first tool in minutes. Ask your first question today.</p>
+        <div class="ctas"><a class="btn glow" href="/#home">Open the dashboard <svg><use href="#i-arrow"/></svg></a>
+          <a class="btn glass" href="https://by1labs.com" target="_blank" rel="noopener">Talk to us</a></div>
       </div>
     </div>
   </section>
@@ -372,81 +417,119 @@
 
 <footer>
   <div class="wrap">
-    <a class="logo" href="#top" style="font-size:17px"><img src="/static/cortex.svg" alt="" style="width:24px;height:24px">Cortex</a>
-    <span>A product by <a href="https://by1labs.com" target="_blank" rel="noopener">BY1 Labs</a> · © <span id="year">2026</span></span>
-    <span><a href="#product">Product</a> · <a href="#security">Security</a> · <a href="/">Log in</a></span>
+    <a class="logo" href="#top" style="font-size:18px"><img src="/static/cortex.svg" alt="" style="width:26px;height:26px">Cortex</a>
+    <span>Built by <a href="https://by1labs.com" target="_blank" rel="noopener">BY1 Labs</a>. © <span id="year">2026</span></span>
+    <span><a href="#what">What it does</a> · <a href="#trust">Security</a> · <a href="/">Log in</a></span>
   </div>
 </footer>
 
 <script>
   document.getElementById("year").textContent = new Date().getFullYear();
   const header = document.querySelector("header");
-  addEventListener("scroll", () => header.classList.toggle("scrolled", scrollY > 8), { passive: true });
-  const logo = (id) => `<svg aria-hidden="true"><use href="#b-${id}"/></svg>`;
-  const cite = (n) => `<span class="cite">${n}</span>`;
-  const sourcesHtml = (s) => s.map(([id, t], i) => `<span class="src"><b>${i + 1}</b>${logo(id)}${t}</span>`).join("");
-
-  // Hero: example questions typed out, with Cortex's answer and its sources (a demo company)
-  const DEMOS = [
-    { q: "What did we agree with Levi Gardens on price?",
-      a: `The annual maintenance contract is <b>7,200 NIS</b>, paid quarterly ${cite(1)}. Dana confirmed the renewal in Slack last week ${cite(2)}.`,
-      s: [["gmail", "Email: Price agreement – Levi Gardens"], ["slack", "#sales – Dana Cohen"]] },
-    { q: "How many likes did our last Instagram post get?",
-      a: `Your latest post, <i>"Before and after: bathroom renovation in Nesher"</i>, has <b>212 likes</b> and 14 comments ${cite(1)} – your best post this month.`,
-      s: [["instagram", "Instagram summary – @acme.plumbing"]] },
-    { q: "What should a new technician do in their first week?",
-      a: `Shadow a senior technician on the Haifa route, read the safety handbook, and learn the stock layout – boiler parts are on shelf C ${cite(1)} ${cite(2)}.`,
-      s: [["gdrive", "Welcome guide for technicians"], ["mic", "Interview – Moshe, senior technician"]] },
-  ];
-  const typed = document.getElementById("typed"), ans = document.getElementById("answer");
+  addEventListener("scroll", () => header.classList.toggle("scrolled", scrollY > 10), { passive: true });
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  let d = 0;
-  async function play() {
-    const demo = DEMOS[d++ % DEMOS.length];
-    ans.style.opacity = 0;
-    typed.textContent = "";
-    if (reduce) typed.textContent = demo.q;
-    else for (const ch of demo.q) { typed.textContent += ch; await wait(34); }
-    await wait(reduce ? 0 : 450);
-    document.getElementById("answer-text").innerHTML = demo.a;
-    document.getElementById("answer-sources").innerHTML = sourcesHtml(demo.s);
-    ans.style.opacity = 1;
-    if (!reduce) setTimeout(play, 5200);
-  }
-  play();
+  const logo = (id) => `<svg aria-hidden="true"><use href="#b-${id}"/></svg>`;
+  const cite = (n) => `<span class="cite">${n}</span>`;
 
-  // Teams: one example question per team
-  const TEAMS = [
-    ["Sales", "What did we offer Cohen Towers, and when does the contract renew?",
-      `We offered a 3-year contract at <b>21,000 NIS</b> ${cite(1)}. It renews on <b>1 March</b>; Avi is the account owner ${cite(2)}.`,
-      [["slack", "#sales – deal closed"], ["gcal", "Renewal call – Cohen Towers"]], "Answers from the emails, chats and calendar the sales team can see."],
-    ["Customer service", "A customer wants to cancel after the technician already left. What's our policy?",
-      `A call-out fee of <b>250 NIS</b> applies once the technician is on the way ${cite(1)}. Regular customers get it waived once a year ${cite(2)}.`,
-      [["gdrive", "Service policy 2026"], ["gmail", "Email: Exception for regular customers"]], "The same correct answer for every agent – no more asking the manager."],
-    ["Operations", "Who do we call for boiler parts, and how long does delivery take?",
-      `Order from <b>Electra Parts</b> – delivery is usually 2 working days ${cite(1)}. Check shelf C in the back warehouse first ${cite(2)}.`,
-      [["gmail", "Email: Electra Parts – delivery times"], ["mic", "Interview – Moshe, senior technician"]], "Know-how from experienced staff, available to everyone."],
-    ["HR", "How many vacation days does a new employee get in the first year?",
-      `New employees get <b>12 vacation days</b> in their first year, rising to 14 from the second year ${cite(1)}.`,
-      [["pdf", "Employee handbook"]], "HR-only documents stay visible to HR only."],
-    ["Marketing", "Which post did best this month, and what did people say?",
-      `The Instagram renovation post: <b>212 likes, 14 comments</b> ${cite(1)}. People asked mostly about prices and coverage in the Krayot ${cite(2)}.`,
-      [["instagram", "Instagram summary – @acme.plumbing"], ["facebook", "Facebook post – winter boiler check"]], "Social numbers, refreshed every hour."],
-    ["Management", "What was decided about opening in Haifa Bay?",
-      `The team agreed to open in <b>January</b> with two technicians ${cite(1)}; the budget was approved in the October meeting ${cite(2)}.`,
-      [["slack", "#management – Haifa Bay"], ["gcal", "Board meeting – October"]], "Decisions from meetings, chats and email, in one answer."],
+  // ---------------------------------------------------------------- the brain: your tools wired into one core
+  (function brain() {
+    const svg = document.getElementById("net"), NS = "http://www.w3.org/2000/svg";
+    const cx = 500, cy = 250;
+    const tools = ["gmail", "slack", "gdrive", "whatsapp", "instagram", "outlook", "gcal", "youtube", "facebook", "onedrive", "linkedin", "pdf", "web", "mic"];
+    let html = `<defs>
+      <linearGradient id="wire" x1="0" x2="1"><stop offset="0" stop-color="#6366f1" stop-opacity=".1"/><stop offset=".5" stop-color="#a855f7"/><stop offset="1" stop-color="#ec4899" stop-opacity=".1"/></linearGradient>
+      <radialGradient id="coreg"><stop offset="0" stop-color="#a855f7" stop-opacity=".9"/><stop offset=".45" stop-color="#6366f1" stop-opacity=".35"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></radialGradient>
+      <filter id="soft"><feGaussianBlur stdDeviation="2.2"/></filter></defs>`;
+    const nodes = tools.map((t, i) => {
+      const ring = i % 2 ? 1 : 0;
+      const a = (i / tools.length) * Math.PI * 2 + (ring ? .2 : 0);
+      const rx = ring ? 455 : 330, ry = ring ? 205 : 150;
+      return { t, x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry * .95 };
+    });
+    nodes.forEach((n, i) => {
+      const mx = (n.x + cx) / 2 + (n.y - cy) * .18, my = (n.y + cy) / 2 - (n.x - cx) * .12;
+      html += `<path id="w${i}" class="wire" d="M${n.x.toFixed(1)} ${n.y.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${cx} ${cy}"/>`;
+      if (!reduce) html += `<circle r="3.2" fill="#f0abfc" filter="url(#soft)" opacity="0"><set attributeName="opacity" to="1" begin="${(i * .37).toFixed(2)}s"/><animateMotion dur="${(2.6 + (i % 5) * .55).toFixed(2)}s" begin="${(i * .37).toFixed(2)}s" repeatCount="indefinite"><mpath href="#w${i}"/></animateMotion></circle>`;
+    });
+    html += `<circle class="core-glow" cx="${cx}" cy="${cy}" r="120" fill="url(#coreg)"/>
+      <g class="spin"><circle class="core-ring" cx="${cx}" cy="${cy}" r="78" stroke-dasharray="4 10" stroke-width="2"/></g>
+      <g class="spin rev"><circle class="core-ring r2" cx="${cx}" cy="${cy}" r="96" stroke-dasharray="40 18" stroke-width="1.5"/></g>
+      <circle cx="${cx}" cy="${cy}" r="58" fill="#0c0a1d" stroke="rgba(255,255,255,.18)"/>
+      <image href="/static/cortex.svg" x="${cx - 32}" y="${cy - 32}" width="64" height="64"/>`;
+    nodes.forEach((n) => {
+      html += `<g class="node"><circle class="bg" cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="27"/>
+        <use href="#b-${n.t}" x="${(n.x - 15).toFixed(1)}" y="${(n.y - 15).toFixed(1)}" width="30" height="30"/></g>`;
+    });
+    svg.innerHTML = html;
+  })();
+
+  // ---------------------------------------------------------------- the console: Ask, Find, Do
+  const MODES = [
+    { q: "What did we agree with Levi Gardens on price?",
+      html: `<p>The annual maintenance contract is <b>7,200 NIS</b>, paid quarterly ${cite(1)}. Dana confirmed the renewal in Slack last week ${cite(2)}.</p>
+        <div class="chips"><span class="chip"><b>1</b>${logo("gmail")}Email: Price agreement, Levi Gardens</span><span class="chip"><b>2</b>${logo("slack")}#sales, Dana Cohen</span></div>` },
+    { q: "Find the signed contract with Cohen Towers",
+      html: `<div class="result">${logo("gdrive")}<div><div class="t">Cohen Towers contract 2026 (signed).pdf</div><div class="m">Google Drive, updated 3 days ago</div></div><span class="go">Open</span></div>
+        <div class="result">${logo("gmail")}<div><div class="t">Re: Signed contract attached</div><div class="m">Gmail, from Cohen Towers management</div></div><span class="go">Open</span></div>
+        <div class="result">${logo("whatsapp")}<div><div class="t">"Signed copy is on the way"</div><div class="m">WhatsApp, Avi Levi</div></div><span class="go">Open</span></div>` },
+    { q: "Prepare a briefing for tomorrow's meeting with Electra Parts",
+      html: `<div class="task"><div class="head"><svg width="16" height="16"><use href="#i-spark"/></svg>Briefing ready</div>
+        <div class="row"><svg><use href="#i-check"/></svg><span>We ordered <b>34 boiler parts</b> from them this quarter ${cite(1)}</span></div>
+        <div class="row"><svg><use href="#i-check"/></svg><span>They announced a <b>4% price increase</b> from January ${cite(2)}</span></div>
+        <div class="row"><svg><use href="#i-check"/></svg><span>Two late deliveries in October to raise in the meeting ${cite(3)}</span></div></div>
+        <div class="chips"><span class="chip"><b>1</b>${logo("gdrive")}Orders 2026.xlsx</span><span class="chip"><b>2</b>${logo("gmail")}Price update email</span><span class="chip"><b>3</b>${logo("slack")}#operations</span></div>` },
   ];
-  const tabs = document.getElementById("tabs"), card = document.getElementById("team-card");
-  function showTeam(i) {
-    const [, q, a, s, why] = TEAMS[i];
-    [...tabs.children].forEach((t, j) => t.setAttribute("aria-selected", String(j === i)));
-    card.innerHTML = `<div class="q">${q}</div><div class="answer"><div class="who"><img src="/static/cortex.svg" alt="">Cortex</div>
-      <p>${a}</p><div class="sources">${sourcesHtml(s)}</div></div><div class="why">${why}</div>`;
+  const modes = [...document.querySelectorAll(".mode")], typed = document.getElementById("typed"), out = document.getElementById("out");
+  let current = 0, run = 0, timer = null;
+  async function show(i, auto) {
+    const id = ++run; current = i; clearTimeout(timer);
+    modes.forEach((m, j) => m.setAttribute("aria-selected", String(j === i)));
+    out.classList.add("hide"); typed.textContent = "";
+    const m = MODES[i];
+    if (reduce) typed.textContent = m.q;
+    else for (const ch of m.q) { if (id !== run) return; typed.textContent += ch; await wait(30); }
+    await wait(reduce ? 0 : 380); if (id !== run) return;
+    out.innerHTML = m.html; out.classList.remove("hide");
+    if (auto && !reduce) timer = setTimeout(() => show((i + 1) % MODES.length, true), 6500);
   }
-  tabs.innerHTML = TEAMS.map(([name]) => `<button class="tab" role="tab" type="button">${name}</button>`).join("");
+  modes.forEach((m, i) => m.addEventListener("click", () => show(i, false)));
+  show(0, true);
+
+  // ---------------------------------------------------------------- always learning: a live feed
+  const FEED = [
+    ["gmail", "New email: Electra Parts price update", "Gmail, 2 min ago"], ["instagram", "Post reached 212 likes", "Instagram, 5 min ago"],
+    ["slack", "#sales: Cohen Towers deal closed", "Slack, 9 min ago"], ["gdrive", "Safety handbook v4 updated", "Google Drive, 14 min ago"],
+    ["whatsapp", "Customer asked about Friday hours", "WhatsApp Business, 18 min ago"], ["gcal", "Supplier visit added for Thursday", "Google Calendar, 22 min ago"],
+    ["youtube", "New video: How to bleed a radiator", "YouTube, 31 min ago"], ["mic", "Interview with Moshe transcribed", "Recording, 40 min ago"],
+    ["web", "Services page changed", "Website, 1 hour ago"], ["facebook", "Winter boiler check post: 57 reactions", "Facebook, 1 hour ago"],
+  ];
+  const item = ([id, t, m]) => `<div class="item">${logo(id)}<div><div class="t">${t}</div><div class="m">${m}</div></div><span class="new">LEARNED</span></div>`;
+  document.getElementById("feed").innerHTML = FEED.map(item).join("") + FEED.map(item).join("");
+
+  // ---------------------------------------------------------------- teams
+  const TEAMS = [
+    ["Sales", "What did we offer Cohen Towers, and when does it renew?", `A 3 year contract at <b>21,000 NIS</b> ${cite(1)}. It renews on <b>1 March</b>, and Avi owns the account ${cite(2)}.`, [["slack", "#sales"], ["gcal", "Renewal call"]]],
+    ["Service", "A customer cancels after the technician left. What's our policy?", `A <b>250 NIS</b> call out fee applies once the technician is on the way ${cite(1)}. Regular customers get it waived once a year ${cite(2)}.`, [["gdrive", "Service policy 2026"], ["gmail", "Exception for regular customers"]]],
+    ["Operations", "Who do we call for boiler parts?", `<b>Electra Parts</b>. Delivery usually takes 2 working days ${cite(1)}. Check shelf C in the back warehouse first ${cite(2)}.`, [["gmail", "Delivery times"], ["mic", "Interview with Moshe"]]],
+    ["HR", "Write a welcome plan for a new technician", `Week one: shadow Moshe on the Haifa route, read the safety handbook, learn the stock layout. Week two: first solo jobs with a check in every evening ${cite(1)} ${cite(2)}.`, [["gdrive", "Welcome guide"], ["mic", "Interview with Moshe"]]],
+    ["Marketing", "Which post did best this month?", `The Instagram renovation post: <b>212 likes and 14 comments</b> ${cite(1)}. People mostly asked about prices and coverage in the Krayot ${cite(2)}.`, [["instagram", "@acme.plumbing"], ["facebook", "Winter boiler post"]]],
+    ["Management", "Summarize everything that happened this week", `<b>2 new deals</b> closed ${cite(1)}, supplier prices go up 4% in January ${cite(2)}, and the Haifa Bay opening was approved for January ${cite(3)}.`, [["slack", "#sales"], ["gmail", "Electra Parts"], ["gcal", "Board meeting"]]],
+  ];
+  const tabs = document.getElementById("tabs"), team = document.getElementById("team");
+  function showTeam(i) {
+    const [, q, a, s] = TEAMS[i];
+    [...tabs.children].forEach((t, j) => t.setAttribute("aria-selected", String(j === i)));
+    team.innerHTML = `<div class="q">${q}</div><div class="a-head"><img src="/static/cortex.svg" alt="">Cortex</div><p>${a}</p>
+      <div class="chips">${s.map(([id, t], k) => `<span class="chip"><b>${k + 1}</b>${logo(id)}${t}</span>`).join("")}</div>`;
+  }
+  tabs.innerHTML = TEAMS.map(([n]) => `<button class="tab" role="tab" type="button">${n}</button>`).join("");
   [...tabs.children].forEach((t, i) => t.addEventListener("click", () => showTeam(i)));
   showTeam(0);
+
+  // ---------------------------------------------------------------- reveal on scroll
+  const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .12 }) : null;
+  document.querySelectorAll(".reveal").forEach((el) => io ? io.observe(el) : el.classList.add("in"));
 </script>
 </body>
 </html>

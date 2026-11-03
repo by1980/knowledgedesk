@@ -455,13 +455,18 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   // ------------------------------------------------------------------ 15. Marketing page
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(APP + "/welcome");
-  check("Marketing page: clear hero with the Cortex name and connector logos", /One question away/.test(await text("h1")) && /Cortex/.test(await text(".logo"))
-    && (await page.$$(".strip-logos span")).length >= 10);
-  check("Marketing page: the example answer appears with its sources", await until(async () => (await page.$$("#answer-sources .src")).length > 0, 8000, 300));
+  check("Marketing page: clear hero headline", /already knows/.test(await text("h1")) && /Cortex/.test(await text(".logo")));
+  check("Marketing page: the brain shows the connected tools", (await page.$$("#net .node")).length >= 10);
+  check("Marketing page: the example appears (Ask, Find, Do)", await until(async () => (await page.$$("#out .chip, #out .result")).length > 0, 8000, 300));
+  await page.click(".mode[data-mode='2']");
+  check("Marketing page: Do shows a finished task", await until(async () => /Briefing ready/.test(await text("#out")), 8000, 300));
   await page.click("#tabs .tab >> nth=4");
-  check("Marketing page: team tabs switch the example", /Instagram/.test(await text("#team-card")));
+  check("Marketing page: team tabs switch the example", /Instagram/.test(await text("#team")));
+  check("Marketing page: See how it works opens the dashboard", (await page.getAttribute(".ctas .btn.glow", "href")) === "/#home");
+  check("Marketing page: no small labels above headlines", (await page.$$(".tag, .badge, .num")).length === 0);
+  check("Marketing page: no dashes in the text", !/[–—]/.test(await page.evaluate(() => document.body.innerText)));
   check("Marketing page: product screenshots load", await page.evaluate(async () => (await Promise.all([...document.images].map((i) => fetch(i.src).then((r) => r.ok && /image/.test(r.headers.get("content-type")))))).every(Boolean)));
-  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/");
+  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/#home");
   await page.setViewportSize({ width: 390, height: 844 });
   check("Marketing page fits a phone screen", await noOverflow());
   check("Login page links to the marketing page", (await (await page.request.get(APP + "/")).text()).includes('href="/welcome"'));

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cortex – your company's knowledge</title>
+  <title>Cortex | Your company's brain</title>
   <link rel="icon" href="/static/cortex.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -91,7 +91,7 @@
         <div class="card"><div class="toolbar"><div><h2>Questions per day</h2><p class="muted small" id="q-chart-sub"></p></div></div>
           <div id="home-q-chart"></div></div>
         <div class="grid2">
-          <div class="card"><h2>Questions by department</h2><p class="muted small">Which teams ask the most – by the department of the person asking.</p><div id="home-by-dept"></div></div>
+          <div class="card"><h2>Questions by department</h2><p class="muted small">Which teams ask the most. By the department of the person asking.</p><div id="home-by-dept"></div></div>
           <div class="card"><h2>Questions by person</h2><p class="muted small">Who uses Cortex the most.</p><div id="home-by-person"></div></div>
         </div>
         <div class="card" id="home-learning"></div>
@@ -122,11 +122,11 @@
       <!-- ---------------------------------------------------------- Sources -->
       <main id="page-sources" class="page hidden">
         <div class="page-head"><div><h1>Sources</h1>
-          <p class="muted">Everything Cortex can search. Connect a source once – new emails, events, files and pages are picked up automatically.</p></div></div>
+          <p class="muted">Everything Cortex can search. Connect a source once. New emails, events, files and pages are picked up automatically.</p></div></div>
         <div class="card" id="overview-card">
           <div class="toolbar"><div><h2>Connection hub</h2><p class="muted small" style="margin:-6px 0 0">Every source in one place. Click a tile to manage it, or Connect to add it.</p></div>
             <form id="find-form" class="search-box" role="search"><svg class="ic"><use href="#i-search"/></svg>
-              <input name="q" type="search" placeholder="Find an item – is it imported?" dir="auto" aria-label="Find an item"></form></div>
+              <input name="q" type="search" placeholder="Find an item, is it imported?" dir="auto" aria-label="Find an item"></form></div>
           <div id="overview-tiles" class="tiles"></div>
           <div id="kb-summary"></div>
         </div>
@@ -185,7 +185,7 @@
         <div class="card" id="linkedin-card">
           <div class="pc-head">
             <span class="brand-tile"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="4" fill="#0A66C2"/><path fill="#fff" d="M5.5 9.5h2.8V18H5.5zM6.9 5.3a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM10 9.5h2.7v1.2c.4-.7 1.3-1.4 2.7-1.4 2.9 0 3.4 1.9 3.4 4.3V18H16v-3.9c0-.9 0-2.1-1.3-2.1s-1.5 1-1.5 2V18H10z"/></svg></span>
-            <div class="grow"><h3>LinkedIn</h3><p class="muted small">Your company page's posts and their numbers. LinkedIn only lets approved partners connect directly, so import its export file – it takes a minute.</p></div>
+            <div class="grow"><h3>LinkedIn</h3><p class="muted small">Your company page's posts and their numbers. LinkedIn only lets approved partners connect directly, so import its export file. It takes a minute.</p></div>
             <button class="btn primary" type="button" id="li-upload"><svg class="ic"><use href="#i-upload"/></svg>Import LinkedIn file</button>
           </div>
           <div id="li-status"></div>
@@ -202,14 +202,14 @@
         <h2 class="section-title">Chats</h2>
         <div class="card" id="whatsapp-card">
           <div class="pc-head"><span class="brand-tile"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/><path fill="#fff" d="M8.9 7.3c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.3.3-.9.9-.9 2.2s.9 2.6 1.1 2.7c.1.2 1.8 2.9 4.5 3.9 2.2.9 2.7.7 3.1.7.5 0 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.6-.3l-1.8-.9c-.3-.1-.5-.1-.7.1-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.5-1.5-1.8-.1-.3 0-.4.1-.6l.4-.5.3-.5v-.5z"/></svg></span>
-            <div class="grow"><h3>WhatsApp</h3><p class="muted small">Your WhatsApp Business number – every message to and from it, as it happens</p></div>
+            <div class="grow"><h3>WhatsApp</h3><p class="muted small">Your WhatsApp Business number. Every message to and from it, as it happens</p></div>
             <div class="row tight"><button class="btn" type="button" id="wa-upload"><svg class="ic"><use href="#i-upload"/></svg>Import a chat</button>
               <button class="btn primary" type="button" id="wa-connect">Connect WhatsApp Business</button></div></div>
           <div id="wa-panel"></div>
           <div id="wa-list"></div>
           <div id="wa-status" class="wa-status"></div>
           <details class="wa-import"><summary>Personal and group chats, and older history: import from the phone</summary>
-            <p class="muted small">WhatsApp doesn't let any app connect to personal or group chats, or read history. Export them instead – it takes a minute:</p>
+            <p class="muted small">WhatsApp doesn't let any app connect to personal or group chats, or read history. Export them instead. It takes a minute:</p>
             <ol class="wa-steps">
               <li>On the phone, open the chat or group.</li>
               <li>iPhone: tap the chat's name → <b>Export chat</b>. Android: ⋮ → More → <b>Export chat</b>. Choose <b>Attach media</b> to include voice notes.</li>
@@ -357,7 +357,7 @@
         <div class="card hidden" id="ai-card">
           <div class="toolbar"><h2>Claude API key</h2><span id="ai-state"></span></div>
           <p class="muted small">Answers are written by Claude. Create a key at console.anthropic.com → API Keys, then paste it here. It's tested before it's saved, and stored encrypted.</p>
-          <form id="ai-form" class="inline-form" autocomplete="off"><input name="key" type="text" placeholder="Paste your key here – it starts with sk-ant-" autocomplete="off"
+          <form id="ai-form" class="inline-form" autocomplete="off"><input name="key" type="text" placeholder="Paste your key here. It starts with sk-ant-" autocomplete="off"
             spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" aria-label="Claude API key">
             <button class="btn primary" type="submit">Save and test</button></form>
           <p class="error" id="ai-error" role="alert"></p>

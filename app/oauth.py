@@ -330,7 +330,7 @@ def finish(state: str, code: str) -> list[int]:
                 continue
             cid = c.execute(
                 "INSERT INTO connectors(type, name, config, company_wide) VALUES (%s, %s, %s, %s) RETURNING id",
-                (ctype, f"{SERVICE_LABEL[service]} – {email}", json.dumps({"account_id": account_id}),
+                (ctype, f"{SERVICE_LABEL[service]}: {email}", json.dumps({"account_id": account_id}),
                  pending["company_wide"]),
             ).fetchone()["id"]
             for d in set(pending["department_ids"]):

@@ -1,4 +1,4 @@
-// Cortex web interface – plain JavaScript, no build step.
+// Cortex web interface. Plain JavaScript, no build step.
 "use strict";
 
 // ================================================================== basics
@@ -133,7 +133,7 @@ const LOADERS = {};
 function showView(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
 // Logging out reloads the page, so nothing of the previous person (their conversation, lists) stays on screen.
 function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; location.replace("/"); }
-// The person's first name: their name, or – if none was set – a guess from their email (yaniv.b@… → Yaniv).
+// The person's first name: their name, or. If none was set. A guess from their email (yaniv.b@… → Yaniv).
 function firstName(user) {
   const name = (user.name || "").trim();
   if (name && name.toLowerCase() !== "administrator") return name.split(/\s+/)[0];
@@ -159,7 +159,7 @@ async function boot() {
   const connected = new URLSearchParams(location.search).get("connected");
   if (connected !== null) {
     window.history.replaceState(null, "", "/#sources");
-    toast("Account connected. Importing now – you can follow the progress on this page.");
+    toast("Account connected. Importing now. You can follow the progress on this page.");
   }
   route();
 }
@@ -345,7 +345,7 @@ LOADERS.home = async function loadHome() {
   ].map(([label, value, sub]) => `<div class="kpi"><div class="label">${label}</div><div class="big-number">${value}</div><div class="sub">${sub}</div></div>`).join("");
 
   const qRows = a.per_day.map((r) => ({ day: r.day, answered: r.asked - r.unanswered, unanswered: r.unanswered }));
-  $("#q-chart-sub").textContent = `How many questions your team asked each day. Orange means no answer was found or someone marked it unhelpful – usually information that's missing.`;
+  $("#q-chart-sub").textContent = `How many questions your team asked each day. Orange means no answer was found or someone marked it unhelpful. Usually information that's missing.`;
   $("#home-q-chart").innerHTML = t.asked_period ? columnChart(qRows, [
     { key: "answered", label: "Answered", color: "--series-1" }, { key: "unanswered", label: "No answer or not helpful", color: "--series-2" }],
     { title: "Questions per day" }) : '<div class="empty">No questions yet. Once people start asking, you\'ll see the trend here.</div>';
@@ -428,7 +428,7 @@ function renderAnswer(text, sources) {
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\[(\d+)\]/g, (m, n) => {
       const s = sources[Number(n) - 1];
-      return s ? `<span class="cite" title="${esc(s.title + (s.location ? " – " + s.location : ""))}">[${n}]</span>` : m;
+      return s ? `<span class="cite" title="${esc(s.title + (s.location ? ", " + s.location : ""))}">[${n}]</span>` : m;
     });
   const out = []; let list = null;
   for (const raw of text.split("\n")) {
@@ -506,7 +506,7 @@ $("#ask-form").addEventListener("submit", async (e) => {
     bot.insertAdjacentHTML("beforeend", `<div class="feedback">Was this helpful? <button type="button" data-v="1" aria-label="Helpful">${ic("up")}</button><button type="button" data-v="-1" aria-label="Not helpful">${ic("down")}</button></div>`);
     $$(".feedback button", bot).forEach((b) => b.onclick = async () => {
       $$(".feedback button", bot).forEach((x) => x.classList.toggle("chosen", x === b));
-      try { await api(`/api/questions/${qid}/feedback`, { method: "POST", json: { value: Number(b.dataset.v) } }); toast("Thanks – your feedback helps improve the answers."); }
+      try { await api(`/api/questions/${qid}/feedback`, { method: "POST", json: { value: Number(b.dataset.v) } }); toast("Thanks. Your feedback helps improve the answers."); }
       catch (err) { toast(err.message, true); }
     });
   }
@@ -640,7 +640,7 @@ function sourceStatus(k) {
   const checked = k.last_sync ? `<span class="muted small">Checked ${ago(k.last_sync)}</span>` : "";
   let note = k.last_note ? `<div class="status-detail">${esc(k.last_note)}</div>` : "";
   if (k.type === "slack" && k.channels != null) note += `<div class="status-detail">Reading ${plural(k.channels, "channel", "channels")}.${k.private_not_added
-    ? ` ${plural(k.private_not_added, "private channel isn't", "private channels aren't")} included – in Slack, open the channel → its name → Integrations → Add apps → Cortex.` : ""}</div>`;
+    ? ` ${plural(k.private_not_added, "private channel isn't", "private channels aren't")} included. In Slack, open the channel → its name → Integrations → Add apps → Cortex.` : ""}</div>`;
   const searchable = ready ? `${plural(ready, one, many)} searchable` : "";
   if (k.last_error && !k.syncing)
     return `<div class="status-line">${badge("bad", "Needs attention")} ${checked}</div><div class="status-detail bad">${linkify(k.last_error)}</div>
@@ -655,7 +655,7 @@ function sourceStatus(k) {
     const total = k.documents;
     const done = k.ready;
     return `<div class="status-line">${badge("ok", "Connected")} <span class="state-text busy small">Preparing for search: ${num(done)} of ${plural(total, one, many)} ready</span></div>
-      ${progressBar(done, total)}<div class="status-detail">Items are prepared one by one${overviewNow.importing > k.indexing ? ` – ${num(overviewNow.importing)} items in line in total` : ""}${overviewNow.eta ? `, about ${esc(overviewNow.eta)} left` : ""}. You can already ask about the ready ones.</div>${note}`;
+      ${progressBar(done, total)}<div class="status-detail">Items are prepared one by one${overviewNow.importing > k.indexing ? `. ${num(overviewNow.importing)} items in line in total` : ""}${overviewNow.eta ? `, about ${esc(overviewNow.eta)} left` : ""}. You can already ask about the ready ones.</div>${note}`;
   }
   return `<div class="status-line">${badge("ok", "Connected")} <span class="state-text ok small">${searchable || "Nothing to import yet"}</span> ${checked}</div>${note}`;
 }
@@ -789,7 +789,7 @@ $("#find-form").addEventListener("submit", async (e) => {
     <div class="dialog-actions"><button class="btn" type="button" data-close>Close</button></div>`);
   const list = $("[data-list]", f);
   const load = () => pagedDocs(list, { reset: true, query: { q: $("[data-q]", f).value } }, { manage: true, pageSize: 15,
-    empty: "Nothing found. It may not be imported yet – check the status of its source on this page." });
+    empty: "Nothing found. It may not be imported yet. Check the status of its source on this page." });
   $("[data-q]", f).addEventListener("input", debounce(load));
   $("[data-close]", f).onclick = closeDialog;
   await load();
@@ -805,13 +805,13 @@ async function refreshSources(withFiles = false) {
     drawTiles(Number(up.headers.get("X-Total-Count") || 0));
   } catch { drawTiles(0); }
   linkedinFiles = await api("/api/documents?source=uploads&kind=social&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => 0);
-  $("#li-status").innerHTML = linkedinFiles ? `<p class="muted small wa-status">${plural(linkedinFiles, "LinkedIn file", "LinkedIn files")} imported – listed under Files and recordings.</p>` : "";
+  $("#li-status").innerHTML = linkedinFiles ? `<p class="muted small wa-status">${plural(linkedinFiles, "LinkedIn file", "LinkedIn files")} imported. Listed under Files and recordings.</p>` : "";
   const imported = await api("/api/documents?source=uploads&kind=whatsapp&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => 0);
-  $("#wa-status").innerHTML = imported ? `<span class="muted small">${plural(imported, "chat", "chats")} imported from the phone – listed under Files and recordings.</span>` : "";
+  $("#wa-status").innerHTML = imported ? `<span class="muted small">${plural(imported, "chat", "chats")} imported from the phone. Listed under Files and recordings.</span>` : "";
   const importing = o.importing || conns.some((k) => k.syncing || !k.last_sync || k.more);
   $("#kb-summary").innerHTML = `<div class="toolbar"><h3>In the knowledge base now</h3></div>
     ${o.total ? `<div class="chips">${knowledgeChips(o.ready)}</div>` : '<p class="muted">Nothing yet. Connect an account, add your website, or upload files below.</p>'}
-    ${importing ? `<p class="status-detail">${badge("busy", "Working")} ${o.importing ? `${plural(o.importing, "item is", "items are")} being prepared for search${o.eta ? ` (about ${esc(o.eta)} left)` : ""}.` : "Importing from your sources."} New items become searchable automatically – you can already ask questions.</p>` : ""}`;
+    ${importing ? `<p class="status-detail">${badge("busy", "Working")} ${o.importing ? `${plural(o.importing, "item is", "items are")} being prepared for search${o.eta ? ` (about ${esc(o.eta)} left)` : ""}.` : "Importing from your sources."} New items become searchable automatically. You can already ask questions.</p>` : ""}`;
   if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawProvider("meta"); drawProvider("youtube"); drawWebsites(); drawManual(); drawWhatsApp(); }
   if (withFiles || o.importing || refreshSources.wasImporting) await loadFiles(false);
   refreshSources.wasImporting = o.importing > 0;
@@ -902,7 +902,7 @@ const SETUP_STEPS = {
         Click <b>Create</b>, then copy the <b>Configuration ID</b>.</li>
       <li>Open <b>App settings → Basic</b>. Copy the <b>App ID</b>, and the <b>App secret</b> (click <b>Show</b>).</li>
     </ol>
-    <p class="muted small">While the app is in Development mode, only you (and people you add under <b>App roles</b>) can connect – enough for your own business.
+    <p class="muted small">While the app is in Development mode, only you (and people you add under <b>App roles</b>) can connect. Enough for your own business.
       Selling to customers needs Meta's free App Review.</p>`,
   google: (r) => `<ol class="setup-steps">
       <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">console.cloud.google.com → Credentials</a> in your Google project.</li>
@@ -965,7 +965,7 @@ function openConnectPanel(provider, only = null, inDialog = false) {
     ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" ${!only || only.includes(value) ? "checked" : ""}> ${label}
       ${hint ? `<span class="muted small">(${hint})</span>` : ""}</label>`).join("<br>")}
     ${visibilityPicker([], false)}
-    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. Cortex only reads – it never sends, posts, changes or deletes anything.
+    <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. Cortex only reads. It never sends, posts, changes or deletes anything.
       ${oauthOf(provider) === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}
       ${provider === "meta" ? "On Facebook, pick your business Page <b>and</b> its Instagram account when asked, and leave every permission switched on." : ""}
       ${provider === "youtube" ? "Sign in with the Google account that owns the channel. If you already connected Gmail with that account, it stays connected." : ""}</p>
@@ -1076,7 +1076,7 @@ function drawWhatsApp() {
         <div>${k.last_error ? `${badge("bad", "Needs attention")}<div class="status-detail bad">${esc(k.last_error)}</div>`
           : `<div class="status-line">${badge("ok", "Connected")} <span class="state-text ok small">${k.documents ? `${plural(k.events, "message", "messages")} so far` : "Waiting for the first message"}</span></div>`}
           ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} Meta can only deliver messages to a public <b>https</b> address. On this computer
-            (${esc(location.origin)}) messages won't arrive – this starts working once Cortex runs online.</div>`}
+            (${esc(location.origin)}) messages won't arrive. This starts working once Cortex runs online.</div>`}
           <details><summary class="small">Webhook details for Meta</summary>
             ${copyRow("Callback URL", `${location.origin}/webhooks/whatsapp/${k.id}`)}${copyRow("Verify token", k.config.verify_token || "")}
             <p class="muted small">In your Meta app: WhatsApp → Configuration → Webhook → Edit, paste both, then subscribe to <b>messages</b>
@@ -1100,7 +1100,7 @@ function openWhatsAppPanel(inDialog = false) {
       <li>Optional, for extra security: <b>App settings → Basic → App secret</b>.</li>
     </ol>
     ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} This page runs at ${esc(location.origin)}. Meta can only deliver messages to a public
-      <b>https</b> address, so messages won't arrive here yet. You can still save the connection now – it starts working once Cortex runs online.</div>`}
+      <b>https</b> address, so messages won't arrive here yet. You can still save the connection now. It starts working once Cortex runs online.</div>`}
     <div class="grid3">
       <label>Phone number ID <input name="phone_number_id" autocomplete="off" inputmode="numeric"></label>
       <label class="span2">Access token <input name="access_token" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"></label>
@@ -1292,9 +1292,9 @@ function userDialog(u) {
     <label>Email (used to log in) <input name="email" type="email" value="${esc(u?.email || "")}" required></label>
     <label>${u ? "New password (leave empty to keep the current one)" : "Password (at least 8 characters)"}
       <input name="password" type="text" autocomplete="off" ${u ? "" : "required minlength=8"}></label>
-    <label>Role <select name="role"><option value="member">Team member – finds information for their departments</option>
-      <option value="learner">New employee – sees only the Learning Center</option>
-      <option value="admin">Admin – sees everything and manages Cortex</option></select></label>
+    <label>Role <select name="role"><option value="member">Team member: finds information for their departments</option>
+      <option value="learner">New employee: sees only the Learning Center</option>
+      <option value="admin">Admin: sees everything and manages Cortex</option></select></label>
     <span class="label">Departments</span>
     <div>${departments.map((d) => `<label class="check"><input type="checkbox" name="dept" value="${d.id}" ${u?.departments.some((x) => x.id === d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("") || '<span class="muted small">No departments yet.</span>'}</div>
     ${u ? `<label class="check" style="margin-top:8px"><input type="checkbox" name="active" ${u.active ? "checked" : ""}> Can log in</label>` : ""}
@@ -1313,7 +1313,7 @@ function userDialog(u) {
       try {
         await api(u ? `/api/users/${u.id}` : "/api/users", { method: u ? "PUT" : "POST", json: body });
         if (u) { closeDialog(); toast("Saved."); LOADERS.people(); return; }
-        const details = `Cortex – ${appStatus.company || "our company"}\nAddress: ${location.origin}\nEmail: ${body.email}\nPassword: ${body.password}`;
+        const details = `Cortex, ${appStatus.company || "our company"}\nAddress: ${location.origin}\nEmail: ${body.email}\nPassword: ${body.password}`;
         const d = openDialog(`<h2>${esc(body.name)} was added</h2>
           <p class="muted">Send them these login details. They can change the password after logging in (click their name at the bottom left).</p>
           <textarea rows="4" readonly data-details>${esc(details)}</textarea>
@@ -1370,7 +1370,7 @@ $("#company-form").addEventListener("submit", (e) => {
     try {
       const r = await (await api("/api/admin/company", { method: "PUT", json: { name: f.name.value, website: f.website.value } })).json();
       await refreshBrand();
-      toast(r.logo_found === false ? "Saved. No logo was found on the website – you can upload it." : "Saved.");
+      toast(r.logo_found === false ? "Saved. No logo was found on the website. You can upload it." : "Saved.");
     } catch (err) { $("#company-error").textContent = err.message; }
   });
 });
@@ -1436,14 +1436,14 @@ LOADERS.learning = async function loadLearning() {
   const admin = me.role === "admin";
   const path = await getJSON("/api/learning");
   $("#learn-intro").textContent = admin
-    ? "Choose what new employees should read first, in order. People with the New employee role see only these items – and their questions are answered only from them."
-    : me.role === "learner" ? "Welcome! Go through these items in order. Mark each one as done when you've read it – and ask anything about them on the Ask page."
+    ? "Choose what new employees should read first, in order. People with the New employee role see only these items. And their questions are answered only from them."
+    : me.role === "learner" ? "Welcome! Go through these items in order. Mark each one as done when you've read it. And ask anything about them on the Ask page."
     : "The company's onboarding path. A good place to start, or to refresh what matters most.";
   $("#learn-add").classList.toggle("hidden", !admin);
   $("#learn-people-card").classList.toggle("hidden", !admin);
   const pct = path.total ? Math.round((path.done / path.total) * 100) : 0;
   $("#learn-progress").innerHTML = path.total && !admin ? `<div class="learn-progress"><div><b>${path.done} of ${path.total}</b> done</div>${progressBar(path.done, path.total)}
-      ${path.done === path.total ? `<div class="status-detail ok">${ic("check")} All done – well done!</div>` : ""}</div>` : "";
+      ${path.done === path.total ? `<div class="status-detail ok">${ic("check")} All done. Well done!</div>` : ""}</div>` : "";
   $("#learn-list").innerHTML = path.items.length ? path.items.map((it, i) => `<div class="learn-item ${it.done ? "done" : ""}" data-id="${it.id}">
       <span class="step">${it.done && !admin ? ic("tick") : i + 1}</span>
       <div class="grow"><div class="title">${it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : `<a href="#" data-doc="${it.document_id}">${esc(it.title)}</a>`}
@@ -1455,7 +1455,7 @@ LOADERS.learning = async function loadLearning() {
         <button class="btn link small" type="button" data-note>${it.note ? "Edit note" : "Add note"}</button>
         <button class="btn link small danger" type="button" data-remove>Remove</button>`
         : `<button class="btn small ${it.done ? "" : "primary"}" type="button" data-done="${it.done ? 0 : 1}">${it.done ? "Mark as not done" : "Mark as done"}</button>`}</div></div>`).join("")
-    : `<div class="empty">${admin ? "Nothing in the learning path yet. Click <b>Add to the path</b> and pick the documents, pages or recordings a new employee should start with." : "Nothing here yet – your admin is preparing it."}</div>`;
+    : `<div class="empty">${admin ? "Nothing in the learning path yet. Click <b>Add to the path</b> and pick the documents, pages or recordings a new employee should start with." : "Nothing here yet. Your admin is preparing it."}</div>`;
   const ids = path.items.map((x) => x.id);
   $$("#learn-list .learn-item").forEach((row) => {
     const id = Number(row.dataset.id); const it = path.items.find((x) => x.id === id);
@@ -1474,7 +1474,7 @@ LOADERS.learning = async function loadLearning() {
     });
     $("[data-note]", row)?.addEventListener("click", () => {
       const f = openDialog(`<h2>Note for new employees</h2><p class="muted small">${esc(it.title)}</p>
-        <label>What should they look for here? <textarea name="note" rows="4" dir="auto" placeholder="For example: Read the returns policy carefully – customers ask about it every day.">${esc(it.note)}</textarea></label>
+        <label>What should they look for here? <textarea name="note" rows="4" dir="auto" placeholder="For example: Read the returns policy carefully. Customers ask about it every day.">${esc(it.note)}</textarea></label>
         <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Save</button></div>`);
       $("[data-close]", f).onclick = closeDialog;
       $("[data-save]", f).onclick = async () => { await api(`/api/learning/${id}`, { method: "PUT", json: { note: f.note.value } }); closeDialog(); toast("Saved."); LOADERS.learning(); };
@@ -1489,7 +1489,7 @@ async function drawLearningPeople() {
       <div class="title">${esc(u.name || u.email)} ${u.role === "learner" ? badge("busy", "New employee") : ""}</div>
       <div class="meta">${u.last_done ? `Last progress ${ago(u.last_done)}` : "Hasn't started yet"}</div></div>
       <div style="min-width:180px"><div class="small"><b>${u.done} of ${p.total}</b> done</div>${progressBar(u.done, p.total)}</div></div>`).join("")
-    : `<div class="empty">No new employees yet. On the <a href="#people">People</a> page, add a person with the role <b>New employee</b> – they'll see only this path.</div>`;
+    : `<div class="empty">No new employees yet. On the <a href="#people">People</a> page, add a person with the role <b>New employee</b>. They'll see only this path.</div>`;
 }
 
 $("#learn-add").addEventListener("click", () => {
