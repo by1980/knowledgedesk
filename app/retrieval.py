@@ -174,6 +174,20 @@ def format_sources(hits: list[dict]) -> str:
 _SQL_PARTS = _SQL
 
 
+KNOWN_KINDS = {"email", "file", "calendar", "slack", "whatsapp", "web", "interview", "social"}
+
+
+def _is_date(value) -> bool:
+    """The AI should give YYYY-MM-DD; anything else ("last week") is ignored rather than breaking the search."""
+    from datetime import date
+
+    try:
+        date.fromisoformat(str(value))
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def _filters(plan: dict | None, mine: list[str] | None, with_people: bool = True) -> tuple[str, dict]:
     parts, params = [], {}
     if not plan:
@@ -196,7 +210,7 @@ def _filters(plan: dict | None, mine: list[str] | None, with_people: bool = True
         parts.append("coalesce(d.metadata->>'from', '') ILIKE ANY(%(mine)s)" if direction == "sent"
                      else "(d.kind = 'email' AND NOT coalesce(d.metadata->>'from', '') ILIKE ANY(%(mine)s))")
     for key, op in (("after", ">="), ("before", "<")):
-        if plan.get(key):
+        if _is_date(plan.get(key)):
             parts.append(f"coalesce(d.doc_date, d.updated_at) {op} %({key})s::date")
             params[key] = plan[key]
     return (" AND ".join(parts) or "TRUE"), params
@@ -221,7 +235,7 @@ ORDER BY c.document_id,
 
 
 # "What services do WE offer?": questions about the company itself
-_ABOUT_US = re.compile(r"\b(we|our|ours|us)\b|אנחנו|שלנו|אנו|החברה שלנו|\bלנו\b", re.I)
+_ABOUT_US = re.compile(r"(?i:\b(we|our|ours)\b)|\bus\b|אנחנו|שלנו|אנו|החברה שלנו|\bלנו\b")
 
 
 def _about_us(c, params: dict, text: str) -> list[dict]:
@@ -239,8 +253,18 @@ def _run(c, params: dict, plan: dict | None, mine: list[str] | None) -> list[dic
     ours = []
     if about and params.get("kinds") is None:
         # our own pages lead; everything else fills in behind them
-        ours = fuse_many([(1.0, _about_us(c, params, (plan or {}).get("query") or params["_question"]))], 5)
-    found = _planned(c, params, plan, mine, base) if plan else base
+        try:
+            ours = fuse_many([(1.0, _about_us(c, params, (plan or {}).get("query") or params["_question"]))], 5)
+        except Exception:  # noqa: BLE001
+            c.rollback()
+    try:
+        found = _planned(c, params, plan, mine, base) if plan else base
+    except Exception:  # noqa: BLE001 - fall back to the plain search rather than failing the question
+        import logging
+
+        logging.getLogger("search").exception("Planned search failed; using the plain search")
+        c.rollback()
+        found = base
     if not ours:
         return found
     seen = {h["id"] for h in ours}
@@ -251,8 +275,9 @@ def _planned(c, params: dict, plan: dict, mine: list[str] | None, base: list[dic
     text = " ".join([plan.get("query") or ""] + list(plan.get("keywords") or []))
     words = " ".join([params["_question"], text] + list(plan.get("people") or []))
     p2 = {**params, "qvec": embeddings.embed_query(text or params["_question"]), "tsq": _keyword_query(words)}
-    if plan.get("kinds"):
-        p2["kinds"] = plan["kinds"]
+    planned_kinds = [k for k in (plan.get("kinds") or []) if k in KNOWN_KINDS]
+    if planned_kinds and params.get("kinds") is None:   # the person's own "Search in" choice always wins
+        p2["kinds"] = planned_kinds
     lists = [(1.0, base)]
     extra, fp = _filters(plan, mine)
     if extra != "TRUE":

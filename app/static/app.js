@@ -381,8 +381,8 @@ LOADERS.home = async function loadHome() {
     ["ask", "#conversations", num(askedWeek), "questions asked this week", trend(askedWeek, askedBefore) || `${num(t.asked_period)} in the last ${days} days`],
     ["check", "#conversations", rate == null ? "–" : `${rate}%`, "of questions answered", rate == null ? "Shows once people start asking" : `In the last ${days} days`],
   ];
-  $("#home-kpis").innerHTML = tiles.map(([icon, href, value, label, sub]) => `<a class="stat-tile" href="${href}">
-      <span class="st-icon">${ic(icon)}</span><span class="st-text"><span class="st-value">${value}</span> <span class="st-label">${label}</span>
+  $("#home-kpis").innerHTML = tiles.map(([, href, value, label, sub]) => `<a class="stat-tile" href="${href}">
+      <span class="st-text"><span class="st-value">${value}</span> <span class="st-label">${label}</span>
       <span class="st-sub">${esc(sub)}</span></span></a>`).join("");
 
   // 2. Is the team using it: questions per day

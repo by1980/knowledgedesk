@@ -84,10 +84,12 @@ sentence that names it, where N is the file's source number. The reader sees the
 buttons, so don't add instructions about clicking. Use [[file:N]] only for file sources, at most once per file.
 - Never say a file doesn't exist just because you don't see it; say you couldn't find it among the results.
 - When asked to find something specific (an email, a proposal, a file, a message), say exactly which source it is, \
-with its date and who it was from and to. If several match, list them newest first. Each source has a date and, for \
-emails, from/to/cc.
-- Reply in the same language the question was written in. Be concise and practical: short paragraphs, \
-numbered steps for procedures."""
+with its date and who it was from and to. Only when the user asks for several items, or for "all" of something, list \
+them, newest first. Each source has a date and, for emails, from/to/cc.
+- When asked to write something (a summary, a briefing, a reply or email draft, a checklist), write it in full from the \
+sources, ready to use, with citations.
+- Start with the direct answer in the first sentence; details after. Reply in the same language the question was \
+written in. Be concise and practical: short paragraphs, numbered steps for procedures."""
 
 
 def stream_answer(question: str, sources_block: str, history: list[dict]) -> Iterator[str]:

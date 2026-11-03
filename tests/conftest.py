@@ -49,3 +49,11 @@ def client(fresh_database):
 @pytest.fixture(scope="session")
 def tmp_root():
     return _tmp
+
+
+@pytest.fixture(autouse=True)
+def no_real_ai_search_planning(monkeypatch):
+    """Tests never call the real AI service; tests about search plans set their own."""
+    from app import llm
+
+    monkeypatch.setattr(llm, "plan_search", lambda *a, **k: None)
