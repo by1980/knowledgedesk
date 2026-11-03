@@ -491,3 +491,10 @@ a.side-link { text-decoration: none; }
 #conv-scope button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .scope-pill select { max-width: 170px; }
 .chat-hello p { width: max-content; max-width: 100%; margin: 0; }
+
+.src-file { display: inline-flex; align-items: stretch; }
+.src-file .src-chip { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.src-dl { display: inline-grid; place-items: center; width: 32px; border: 1px solid var(--line); border-left: 0; border-radius: 0 9px 9px 0; background: var(--surface); color: var(--muted); }
+.src-dl:hover { color: var(--accent); border-color: var(--accent); }
+.src-dl .ic { width: 15px; height: 15px; }
+.ftype { font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; padding: 1px 5px; border-radius: 4px; background: var(--surface-2); color: var(--text-2); flex: none; }

@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.9"
+APP_VERSION = "0.9.10"
 
 
 def _ensure_secret_key() -> None:
@@ -71,6 +71,14 @@ def _ensure_secret_key() -> None:
     settings.secret_key = key_file.read_text().strip()
 
 
+def _rescan_emails() -> None:
+    try:
+        if email_imap.rescan_saved_emails():
+            worker.wake()
+    except Exception:  # noqa: BLE001
+        log.exception("Re-reading saved emails failed")
+
+
 def startup() -> None:
     _ensure_secret_key()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -82,6 +90,7 @@ def startup() -> None:
         log.info("Merged %d duplicate connected account(s)", merged)
     if settings.run_worker:
         worker.start()
+        threading.Thread(target=_rescan_emails, daemon=True).start()
         threading.Thread(target=branding.ensure_defaults, daemon=True).start()
     log.info("Cortex started for %s", settings.company_name)
 
@@ -190,7 +199,7 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
         hits = retrieval.fuse(hits, retrieval.search(f"{last_user_q}\n{question}", **scope))
     sources = [
         {"n": i, "document_id": h["document_id"], "title": h["title"], "location": h["location"] or "",
-         "kind": h["kind"], "snippet": h["content"][:300],
+         "kind": h["kind"], "snippet": h["content"][:300], "filename": h.get("filename") or "",
          "url": (h["metadata"] or {}).get("url") or (h["metadata"] or {}).get("link") or ""}
         for i, h in enumerate(hits, 1)
     ]

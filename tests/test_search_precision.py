@@ -96,3 +96,70 @@ def test_received_vs_sent(client, mailbox, monkeypatch):
     admin = login(client)
     titles = [s["title"] for s in _ask(client, admin, "what was the last email Dima from cutinside sent me?")]
     assert titles[0] == "Email: Re: meeting", titles
+
+
+def _pdf(text: str) -> bytes:
+    import io
+
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    w = PdfWriter()
+    page = w.add_blank_page(612, 792)
+    font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+                             NameObject("/BaseFont"): NameObject("/Helvetica")})
+    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): w._add_object(font)})})
+    s = DecodedStreamObject()
+    s.set_data(f"BT /F1 14 Tf 72 700 Td ({text}) Tj ET".encode())
+    page[NameObject("/Contents")] = w._add_object(s)
+    b = io.BytesIO()
+    w.write(b)
+    return b.getvalue()
+
+
+def _apple_mail(subject, body, date, pdf_name, pdf_bytes):
+    """How Apple Mail sends a PDF: inside the message layout (alternative > mixed > html + pdf), not at the top level."""
+    m = EmailMessage()
+    m["From"], m["To"], m["Subject"], m["Date"] = "Yaniv Barak <yaniv@by1labs.com>", "Dima Binkovsky <dima@operad.com>", subject, date
+    m.set_content(body)
+    m.add_alternative(f"<p>{body}</p>", subtype="html")
+    html = m.get_payload()[1]
+    html.make_mixed()
+    html.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=pdf_name, disposition="inline")
+    return m.as_bytes()
+
+
+def test_pdf_inside_apple_mail_message_is_found_and_downloadable(client, mailbox, monkeypatch):
+    raw = _apple_mail("Re: Call summery", "Please find the proposal & agreement attached.", "Wed, 04 Mar 2026 10:00:00 +0200",
+                      "Proposal & Agreement - Operad.pdf", _pdf("Proposal and Agreement for Operad: 15,000 NIS per month"))
+    with conn() as c:
+        s = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (mailbox,)).fetchone())
+        store_message(s, "apple-pdf", raw, "Sent")
+    process_pending()
+    monkeypatch.setattr(llm, "plan_search", lambda q, h: {"query": "latest PDF proposal sent to Dima", "keywords": ["proposal", "pdf", "הצעה"],
+                                                         "people": ["dima", "operad"], "direction": "sent", "newest_first": True, "kinds": []})
+    admin = login(client)
+    sources = _ask(client, admin, "I want the PDF proposal I sent to Dima")
+    pdf = next((s for s in sources if s["filename"].endswith(".pdf")), None)
+    assert pdf and sources.index(pdf) < 3, [s["title"] for s in sources]
+    assert "15,000 NIS" in captured["sources"]
+    r = client.get(f"/api/documents/{pdf['document_id']}/file", headers=admin)
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+def test_rescan_adds_attachments_that_older_versions_missed(client, mailbox):
+    from app.connectors import email_imap
+
+    raw = _apple_mail("Signed agreement", "Signed copy attached.", "Thu, 05 Mar 2026 10:00:00 +0200",
+                      "Signed agreement.pdf", _pdf("Signed agreement Operad"))
+    with conn() as c:  # imported the old way: the email only, its PDF missed
+        s = Sync(c, c.execute("SELECT * FROM connectors WHERE id=%s", (mailbox,)).fetchone())
+        s.upsert("old-import", "Email: Signed agreement", "message.eml", raw, "email", {"from": "yaniv@by1labs.com", "folder": "Sent"})
+        c.execute("DELETE FROM meta WHERE key='email_rescan'")
+    assert email_imap.rescan_saved_emails() >= 1
+    with conn() as c:
+        att = c.execute("SELECT title, metadata FROM documents WHERE external_id='old-import:att:Signed agreement.pdf'").fetchone()
+        email_doc = c.execute("SELECT metadata, status FROM documents WHERE external_id='old-import'").fetchone()
+    assert att and "dima@operad.com" in att["metadata"]["to"]
+    assert email_doc["metadata"]["attachments"] == "Signed agreement.pdf" and email_doc["status"] == "pending"
+    assert email_imap.rescan_saved_emails() == 0  # only once

@@ -492,9 +492,12 @@ function finishBot(bot, text, sources, qid, feedback = null) {
   const body = $(".bot-body", bot);
   const cited = sources.filter((s) => text.includes(`[${s.n}]`));
   if (cited.length) body.insertAdjacentHTML("beforeend", `<div class="src-chips">${cited.map((s) => {
-    const label = `<b>${s.n}</b>${ic(KIND_ICON[s.kind] || "file")}<span>${esc(s.title)}</span>`;
-    return s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title)}">${label}</a>`
-      : `<a class="src-chip" href="#" data-doc="${s.document_id}" title="${esc(s.title + (s.location ? ", " + s.location : ""))}">${label}</a>`;
+    // Files (attachments, Drive files, uploads) show their type and can be downloaded right here
+    const ext = s.kind !== "email" && /\.([a-z0-9]{2,5})$/i.test(s.filename || "") ? s.filename.split(".").pop().toUpperCase() : "";
+    const label = `<b>${s.n}</b>${ic(KIND_ICON[s.kind] || "file")}<span>${esc(s.title)}</span>${ext ? `<i class="ftype">${esc(ext)}</i>` : ""}`;
+    const chip = s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title)}">${label}</a>`
+      : `<a class="src-chip" href="#" data-doc="${s.document_id}" title="Open ${esc(s.title + (s.location ? ", " + s.location : ""))}">${label}</a>`;
+    return ext && !s.url ? `<span class="src-file">${chip}<a class="src-dl" href="#" data-doc="${s.document_id}" data-download title="Download ${esc(s.filename)}" aria-label="Download ${esc(s.filename)}">${ic("download")}</a></span>` : chip;
   }).join("")}</div>`);
   body.insertAdjacentHTML("beforeend", `<div class="msg-actions">
     <button type="button" data-copy-answer title="Copy" aria-label="Copy">${ic("copy")}</button>
@@ -639,7 +642,7 @@ document.addEventListener("click", async (e) => {
     const url = URL.createObjectURL(await res.blob());
     const name = (res.headers.get("content-disposition") || "").match(/filename\*?=(?:UTF-8'')?"?([^";]+)/i)?.[1];
     const link = Object.assign(document.createElement("a"), { href: url, target: "_blank", rel: "noopener" });
-    if (name && !/\.(pdf|txt|html?|png|jpe?g)$/i.test(decodeURIComponent(name))) link.download = decodeURIComponent(name);
+    if (name && (a.hasAttribute("data-download") || !/\.(pdf|txt|html?|png|jpe?g)$/i.test(decodeURIComponent(name)))) link.download = decodeURIComponent(name);
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (err) { toast(err.message, true); }

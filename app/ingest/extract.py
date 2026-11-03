@@ -151,7 +151,7 @@ def extract(path: Path) -> list[Section]:
             from bs4 import BeautifulSoup
 
             content = BeautifulSoup(content, "html.parser").get_text("\n")
-        files = [p.get_filename() for p in msg.iter_attachments() if p.get_filename()]
+        files = [p.get_filename() for p in msg.walk() if not p.is_multipart() and p.get_filename()]
         head = (f"From: {msg['from']}\nTo: {msg['to']}\n" + (f"Cc: {msg['cc']}\n" if msg["cc"] else "")
                 + f"Date: {msg['date']}\nSubject: {msg['subject']}\n"
                 + (f"Attachments: {', '.join(files)}\n" if files else "") + "\n")
