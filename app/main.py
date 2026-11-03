@@ -9,7 +9,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,7 +25,30 @@ from .ingest.extract import SUPPORTED_EXT, is_audio_video
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
 
+
+class _RecentProblems(logging.Handler):
+    """Keeps the last warnings and errors so admins can see them in Settings → Health."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.items: list[dict] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        from datetime import datetime, timezone
+
+        message = record.getMessage()
+        if record.exc_info and record.exc_info[1] is not None:
+            message += f" ({record.exc_info[0].__name__}: {record.exc_info[1]})"
+        self.items.append({"time": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+                           "level": record.levelname.lower(), "where": record.name, "message": message[:500]})
+        del self.items[:-100]
+
+
+recent_problems = _RecentProblems()
+logging.getLogger().addHandler(recent_problems)
+
 STATIC = Path(__file__).parent / "static"
+APP_VERSION = "0.5"
 
 
 def _ensure_secret_key() -> None:
@@ -69,7 +92,7 @@ app = FastAPI(title="KnowledgeDesk", lifespan=lifespan)
 def status():
     lic = license.status()
     return {"company": settings.company_name, "license": lic.__dict__ | {"allows_use": lic.allows_use},
-            "llm_configured": bool(settings.anthropic_api_key)}
+            "llm_configured": bool(settings.anthropic_api_key) or settings.fake_llm}
 
 
 class LoginIn(BaseModel):
@@ -129,14 +152,17 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
         raise HTTPException(403, "You are not a member of that department")
 
     history = _clean_history(body.history)
-    # Follow-up questions ("and for VIP customers?") need the previous question to search well.
+    scope = {"is_admin": is_admin, "user_depts": dept_ids, "only_dept": body.department_id}
+    hits = retrieval.search(question, **scope)
+    # A follow-up ("and for VIP customers?") may need the previous question too. The new question
+    # always leads; results for "previous + new" only fill in behind it.
     last_user_q = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-    search_text = f"{last_user_q}\n{question}" if last_user_q and len(question) < 80 else question
-
-    hits = retrieval.search(search_text, is_admin=is_admin, user_depts=dept_ids, only_dept=body.department_id)
+    if last_user_q:
+        hits = retrieval.fuse(hits, retrieval.search(f"{last_user_q}\n{question}", **scope))
     sources = [
         {"n": i, "document_id": h["document_id"], "title": h["title"], "location": h["location"] or "",
-         "kind": h["kind"], "snippet": h["content"][:300]}
+         "kind": h["kind"], "snippet": h["content"][:300],
+         "url": (h["metadata"] or {}).get("url") or (h["metadata"] or {}).get("link") or ""}
         for i, h in enumerate(hits, 1)
     ]
 
@@ -189,7 +215,8 @@ def overview(user: dict = Depends(auth.current_user)):
     dept_ids = [d["id"] for d in user["departments"]]
     with conn() as c:
         rows = c.execute(
-            "SELECT d.kind, d.source, d.status, count(*) AS n FROM documents d "
+            "SELECT d.kind, d.source, d.status, count(*) AS n, "
+            " sum(coalesce((d.metadata->>'events')::int, 1)) AS events FROM documents d "
             "WHERE %s OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
             "  WHERE dd.document_id=d.id AND dd.department_id = ANY(%s)) "
             "GROUP BY d.kind, d.source, d.status",
@@ -199,8 +226,8 @@ def overview(user: dict = Depends(auth.current_user)):
     importing = 0
     for r in rows:
         if r["status"] == "ready":
-            key = "files" if r["kind"] == "file" and r["source"] == "connector" else r["kind"]
-            ready[key] = ready.get(key, 0) + r["n"]
+            key = {"file": "documents"}.get(r["kind"], r["kind"])
+            ready[key] = ready.get(key, 0) + (r["events"] if r["kind"] == "calendar" else r["n"])
         elif r["status"] in ("pending", "processing"):
             importing += r["n"]
     return {"ready": ready, "total": sum(ready.values()), "importing": importing}
@@ -343,21 +370,41 @@ def _can_see(c, user: dict, doc_id: int) -> bool:
 
 
 @app.get("/api/documents")
-def list_documents(user: dict = Depends(auth.current_user)):
+def list_documents(response: Response, user: dict = Depends(auth.current_user), q: str = "",
+                   source: str = "", connector_id: int | None = None, status: str = "",
+                   limit: int = 1000, offset: int = 0):
+    """source: "uploads" = files added by hand or from synced folders. Total count is in X-Total-Count."""
     is_admin = user["role"] == "admin"
+    where = ["(%(admin)s OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
+             "WHERE dd.document_id=d.id AND dd.department_id = ANY(%(depts)s)))"]
+    params = {"admin": is_admin, "depts": [d["id"] for d in user["departments"]],
+              "limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
+    if q.strip():
+        where.append("(d.title ILIKE %(q)s OR d.filename ILIKE %(q)s)")
+        params["q"] = f"%{q.strip()}%"
+    if source == "uploads":
+        where.append("d.source IN ('upload', 'folder')")
+    if connector_id is not None:
+        where.append("d.connector_id = %(cid)s")
+        params["cid"] = connector_id
+    if status == "ready":
+        where.append("d.status = 'ready'")
+    elif status == "problem":
+        where.append("d.status = 'error'")
+    sql_where = " AND ".join(where)
     with conn() as c:
-        return c.execute(
+        total = c.execute(f"SELECT count(*) AS n FROM documents d WHERE {sql_where}", params).fetchone()["n"]
+        rows = c.execute(
             "SELECT d.id, d.title, d.filename, d.kind, d.source, d.company_wide, d.status, d.error, "
-            " d.metadata, d.created_at, d.updated_at, "
-            " (SELECT count(*) FROM chunks ch WHERE ch.document_id=d.id) AS chunks, "
+            " d.metadata, d.created_at, d.updated_at, d.connector_id, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) "
             "   FROM document_departments dd JOIN departments dp ON dp.id=dd.department_id "
             "   WHERE dd.document_id=d.id), '[]') AS departments "
-            "FROM documents d WHERE %s OR d.company_wide OR EXISTS ("
-            " SELECT 1 FROM document_departments dd WHERE dd.document_id=d.id AND dd.department_id = ANY(%s)) "
-            "ORDER BY d.updated_at DESC",
-            (is_admin, [d["id"] for d in user["departments"]]),
+            f"FROM documents d WHERE {sql_where} ORDER BY d.updated_at DESC LIMIT %(limit)s OFFSET %(offset)s",
+            params,
         ).fetchall()
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 def _safe_name(name: str) -> str:
@@ -379,7 +426,7 @@ def upload_documents(
     depts = [int(x) for x in department_ids.split(",") if x.strip().isdigit()]
     if not depts and not company_wide:
         raise HTTPException(400, "Choose at least one department, or mark the document as company-wide")
-    if kind not in ("file", "interview"):
+    if kind not in ("file", "interview", "whatsapp"):
         raise HTTPException(400, "Unknown document kind")
     meta = {k: v for k, v in {"interviewee": interviewee, "role": role, "interview_date": interview_date}.items() if v}
     created = []
@@ -393,7 +440,8 @@ def upload_documents(
                 shutil.copyfileobj(f.file, out)
             doc_kind = "interview" if kind == "interview" or is_audio_video(dest) else "file"
             title = Path(name).stem
-            if doc_kind == "file" and (name.lower().startswith("whatsapp") or Path(name).suffix.lower() == ".zip"):
+            if kind == "whatsapp" or (doc_kind == "file" and (name.lower().startswith("whatsapp")
+                                                           or Path(name).suffix.lower() == ".zip")):
                 doc_kind = "whatsapp"
                 title = "WhatsApp: " + re.sub(r"(?i)^whatsapp\s*(chat)?\s*(with|-)?\s*", "", title).strip()
             if doc_kind == "interview" and interviewee:
@@ -533,6 +581,8 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status IN ('pending','processing')) AS indexing, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'ready') AS ready, "
+            " (SELECT coalesce(sum(coalesce((d.metadata->>'events')::int, 1)), 0) FROM documents d "
+            "   WHERE d.connector_id=k.id AND d.status = 'ready') AS events, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'error') AS failed, k.last_note, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) FROM connector_departments cd "
             "   JOIN departments dp ON dp.id=cd.department_id WHERE cd.connector_id=k.id), '[]') AS departments "
@@ -671,7 +721,103 @@ def oauth_callback(state: str = "", code: str = "", error: str = "", error_descr
         return _message_page("Not connected", str(e))
     for cid in created:
         _sync_in_background(cid)
-    return RedirectResponse(f"/?connected={len(created)}#connections", status_code=303)
+    return RedirectResponse(f"/?connected={len(created)}#sources", status_code=303)
+
+
+# ---------------------------------------------------------------- admin home: setup progress and health
+
+@app.get("/api/admin/setup")
+def setup_progress(_: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        row = c.execute(
+            "SELECT (SELECT count(*) FROM connectors) AS connectors, "
+            " (SELECT count(*) FROM documents WHERE source IN ('upload','folder')) AS uploads, "
+            " (SELECT count(*) FROM users WHERE active) AS users, "
+            " (SELECT count(*) FROM departments) AS departments, "
+            " (SELECT count(*) FROM questions) AS questions, "
+            " (SELECT count(*) FROM questions WHERE created_at > now() - interval '7 days') AS questions_week, "
+            " (SELECT count(*) FROM questions WHERE (feedback = -1 OR NOT found_sources) "
+            "    AND created_at > now() - interval '30 days') AS gaps"
+        ).fetchone()
+    return {**row, "has_sources": bool(row["connectors"] or row["uploads"]), "has_team": row["users"] > 1,
+            "has_asked": row["questions"] > 0}
+
+
+_ai_check: dict = {"at": 0.0, "result": None}
+
+
+def _check_ai() -> dict:
+    import time
+
+    if settings.fake_llm:
+        return {"state": "ok", "detail": "Test mode (answers are simulated)."}
+    if not settings.anthropic_api_key:
+        return {"state": "bad", "detail": "No Claude API key. Add ANTHROPIC_API_KEY to the .env file and restart."}
+    if time.time() - _ai_check["at"] < 300 and _ai_check["result"]:
+        return _ai_check["result"]
+    try:
+        llm.client().messages.count_tokens(model=settings.llm_model, messages=[{"role": "user", "content": "ok"}])
+        result = {"state": "ok", "detail": f"Connected ({settings.llm_model})."}
+    except Exception as e:  # noqa: BLE001
+        text = str(e)
+        if "401" in text or "authentication" in text.lower():
+            result = {"state": "bad", "detail": "The Claude API key is wrong or was revoked. Create a new one at console.anthropic.com."}
+        elif "credit" in text.lower() or "billing" in text.lower():
+            result = {"state": "bad", "detail": "The Claude account has no credit left. Add credit at console.anthropic.com."}
+        else:
+            result = {"state": "warn", "detail": f"Couldn't reach Claude right now ({text[:150]})."}
+    _ai_check.update(at=time.time(), result=result)
+    return result
+
+
+@app.get("/api/admin/health")
+def health(_: dict = Depends(auth.admin_user)):
+    checks = []
+    checks.append({"id": "ai", "label": "AI answers (Claude)", **_check_ai()})
+    checks.append({"id": "search", "label": "Search engine", "state": "ok", "detail": "Ready."})
+    with conn() as c:
+        docs = c.execute(
+            "SELECT count(*) FILTER (WHERE status='ready') AS ready, "
+            " count(*) FILTER (WHERE status IN ('pending','processing')) AS waiting, "
+            " count(*) FILTER (WHERE status='error') AS failed, "
+            " count(*) FILTER (WHERE status='ready' AND updated_at > now() - interval '10 minutes') AS recent "
+            "FROM documents").fetchone()
+        failures = c.execute(
+            "SELECT left(error, 160) AS reason, count(*) AS n FROM documents WHERE status='error' "
+            "GROUP BY 1 ORDER BY 2 DESC LIMIT 5").fetchall()
+        sources = c.execute("SELECT type, name, last_error, last_sync FROM connectors ORDER BY name").fetchall()
+    if docs["waiting"]:
+        rate = docs["recent"] / 10 if docs["recent"] else 0
+        eta = f" – about {max(1, round(docs['waiting'] / rate))} min left" if rate else ""
+        checks.append({"id": "indexing", "label": "Preparing content for search", "state": "busy",
+                       "detail": f"{docs['ready']} items ready, {docs['waiting']} waiting{eta}."})
+    else:
+        checks.append({"id": "indexing", "label": "Preparing content for search", "state": "ok",
+                       "detail": f"All {docs['ready']} items are searchable."})
+    if docs["failed"]:
+        checks.append({"id": "failed", "label": "Items that couldn't be read", "state": "warn",
+                       "detail": f"{docs['failed']} item(s): " + "; ".join(f"{f['reason']} ({f['n']})" for f in failures)})
+    broken = [s for s in sources if s["last_error"]]
+    if not sources:
+        checks.append({"id": "sources", "label": "Connected sources", "state": "warn", "detail": "Nothing connected yet."})
+    elif broken:
+        checks.append({"id": "sources", "label": "Connected sources", "state": "bad",
+                       "detail": "; ".join(f"{s['name']}: {s['last_error']}" for s in broken[:3])})
+    else:
+        checks.append({"id": "sources", "label": "Connected sources", "state": "ok",
+                       "detail": f"{len(sources)} connected, all working."})
+    lic = license.status()
+    checks.append({"id": "license", "label": "Subscription", "state": "ok" if lic.state in ("valid", "unchecked") else
+                   ("warn" if lic.state == "grace" else "bad"),
+                   "detail": lic.message or (f"Valid until {lic.expires}." if lic.expires else "Active.")})
+    configured = oauth.configured()
+    checks.append({"id": "signin", "label": "One-click Google / Microsoft sign-in",
+                   "state": "ok" if all(configured.values()) else "warn",
+                   "detail": ", ".join(f"{p.title()}: {'set up' if ok else 'not set up'}" for p, ok in configured.items())})
+    overall = "bad" if any(c["state"] == "bad" for c in checks) else \
+        "warn" if any(c["state"] in ("warn", "busy") for c in checks) else "ok"
+    return {"overall": overall, "checks": checks, "problems": list(reversed(recent_problems.items[-30:])),
+            "version": APP_VERSION}
 
 
 # ---------------------------------------------------------------- admin

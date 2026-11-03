@@ -25,11 +25,12 @@ class Settings:
     # LLM (Claude)
     anthropic_api_key = _env("ANTHROPIC_API_KEY")
     llm_model = _env("LLM_MODEL", "claude-opus-5-5")
-    llm_effort = _env("LLM_EFFORT", "medium")  # low | medium | high
+    llm_effort = _env("LLM_EFFORT", "low")  # low = fast answers (a few seconds); medium/high = more careful
     summarize_interviews = _env("SUMMARIZE_INTERVIEWS", "true").lower() == "true"
 
     # Embeddings (run locally, no data leaves the server for indexing)
-    embed_model = _env("EMBED_MODEL", "intfloat/multilingual-e5-large")
+    # Balanced for speed on an ordinary computer and quality in Hebrew, English and 50+ other languages.
+    embed_model = _env("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
     model_cache = _env("MODEL_CACHE", "/data/models")
 
     # Transcription of audio/video (employee interviews, meetings)
@@ -61,6 +62,10 @@ class Settings:
     _key_file = Path(__file__).parent / "vendor_public_key.txt"
     license_public_key = _env("LICENSE_PUBLIC_KEY") or (_key_file.read_text().strip() if _key_file.exists() else "")
     license_grace_days = int(_env("LICENSE_GRACE_DAYS", "14"))
+
+    # Quality-assurance switches. NEVER set these on a real installation.
+    fake_llm = _env("KD_FAKE_LLM").lower() == "true"            # answers without calling Claude
+    provider_override = _env("KD_PROVIDER_OVERRIDE")            # send Google/Microsoft calls to a simulator
 
     # Background worker (set to false in tests)
     run_worker = _env("RUN_WORKER", "true").lower() == "true"

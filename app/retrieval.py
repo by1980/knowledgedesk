@@ -87,6 +87,18 @@ def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: i
         return c.execute(_SQL, params).fetchall()
 
 
+def fuse(primary: list[dict], secondary: list[dict], k: int | None = None) -> list[dict]:
+    """Merge two result lists; the first list counts more."""
+    k = k or settings.top_k
+    score: dict[int, float] = {}
+    by_id: dict[int, dict] = {}
+    for weight, hits in ((1.0, primary), (0.6, secondary)):
+        for rank, h in enumerate(hits):
+            score[h["id"]] = score.get(h["id"], 0) + weight / (10 + rank)
+            by_id.setdefault(h["id"], h)
+    return [by_id[i] for i in sorted(score, key=score.get, reverse=True)[:k]]
+
+
 def format_sources(hits: list[dict]) -> str:
     blocks = []
     for i, h in enumerate(hits, 1):

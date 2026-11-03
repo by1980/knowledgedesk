@@ -5,3 +5,4 @@ vendor_private_key.txt
 __pycache__/
 *.pyc
 .pytest_cache/
+tests/e2e/screens/

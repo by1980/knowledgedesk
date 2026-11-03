@@ -76,8 +76,8 @@ def save_months(sync: Sync, months: dict[str, list[str]]) -> None:
     name = sync.connector["name"]
     for month, events in sorted(months.items()):
         text = f"Calendar: {name}\nMonth: {month}\n\n" + "\n\n".join(events)
-        sync.upsert(f"month:{month}", f"Calendar {name} - {month}", f"calendar-{month}.txt",
-                    text.encode(), "calendar", {"month": month})
+        sync.upsert(f"month:{month}", f"{name} – {datetime.strptime(month, '%Y-%m'):%B %Y}", f"calendar-{month}.txt",
+                    text.encode(), "calendar", {"month": month, "events": len(events)})
     sync.remove_unseen()
 
 

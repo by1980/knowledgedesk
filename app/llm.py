@@ -43,10 +43,18 @@ numbered steps for procedures."""
 def stream_answer(question: str, sources_block: str, history: list[dict]) -> Iterator[str]:
     """Yield answer text as it is generated."""
     messages = list(history[-6:])  # a few previous turns for follow-up questions
+    from datetime import date
+
+    today = date.today()
     messages.append({
         "role": "user",
-        "content": f"<sources>\n{sources_block}\n</sources>\n\nQuestion: {question}",
+        "content": f"<sources>\n{sources_block}\n</sources>\n\nToday is {today:%A, %d %B %Y}. "
+                   f"Use this for questions like \"this week\" or \"next month\".\n\nQuestion: {question}",
     })
+    if settings.fake_llm:  # quality-assurance mode: no call to Claude
+        first = sources_block.split("\n", 2)[1][:200] if "\n" in sources_block else ""
+        yield f"(Test answer) According to the first source [1]: {first}"
+        return
     with client().beta.messages.stream(
         model=settings.llm_model,
         max_tokens=8000,

@@ -78,8 +78,24 @@ def configured() -> dict:
     return {p: bool(credentials(p)[0]) for p in PROVIDERS}
 
 
+class _SimulatorTransport(httpx.BaseTransport):
+    """Quality-assurance mode: send Google/Microsoft API calls to a local simulator instead of the internet."""
+
+    def __init__(self, base: str):
+        self.base = base.rstrip("/")
+        self.inner = httpx.HTTPTransport()
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        url = httpx.URL(f"{self.base}/{request.url.host}{request.url.raw_path.decode()}")
+        request.url = url
+        request.headers["host"] = url.netloc.decode()
+        return self.inner.handle_request(request)
+
+
 def http() -> httpx.Client:
     """Single place to create HTTP clients (tests replace this)."""
+    if settings.provider_override:
+        return httpx.Client(timeout=60, follow_redirects=True, transport=_SimulatorTransport(settings.provider_override))
     return httpx.Client(timeout=60, follow_redirects=True)
 
 
@@ -125,7 +141,10 @@ def start(provider: str, services: list[str], department_ids: list[int], company
     }
     if provider == "google":
         params["access_type"] = "offline"
-    return str(httpx.URL(cfg["auth_url"], params=params))
+    auth_url = cfg["auth_url"]
+    if settings.provider_override:  # quality-assurance mode: the simulator plays the sign-in page
+        auth_url = f"{settings.provider_override.rstrip('/')}/{httpx.URL(auth_url).host}{httpx.URL(auth_url).path}"
+    return str(httpx.URL(auth_url, params=params))
 
 
 def _token_request(provider: str, data: dict) -> dict:

@@ -57,8 +57,9 @@ class Sync:
     def note(self) -> str | None:
         if not self.skipped:
             return None
-        head = f"{len(self.skipped)} item(s) skipped"
-        return head + " – " + "; ".join(self.skipped[:3]) + (" …" if len(self.skipped) > 3 else "")
+        n = len(self.skipped)
+        head = "Skipped 1 item" if n == 1 else f"Skipped {n} items"
+        return head + ": " + "; ".join(self.skipped[:3]) + (" …" if n > 3 else "")
 
     def exists(self, external_id: str) -> bool:
         """True if this item was already imported (marks it as still present)."""

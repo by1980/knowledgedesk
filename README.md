@@ -72,11 +72,15 @@ The installer asks for the company name, admin login and Claude API key, creates
 random passwords, and starts everything with Docker. The first start downloads the AI models
 (a few GB). Then open `http://<server-ip>:8000` and log in as the admin.
 
-**First setup in the app:**
-1. **Admin → Departments:** create departments (Sales, Service, HR, Finance…).
-2. **Admin → Users:** add employees and tick their departments.
-3. **Admin → Documents:** upload files, or choose "Employee interview" for recordings.
-4. Employees log in and ask questions under **Ask**.
+**First setup in the app.** The **Home** page shows a 3-step checklist:
+1. **Sources:** connect Google or Microsoft accounts, add the website, and upload files,
+   interviews or WhatsApp chats. Each source shows its status (⏳ Importing, ✓ N items
+   searchable, or ⚠ a plain-English problem), and **View items** shows exactly what was imported.
+2. **People:** create departments (Sales, Service, HR…) and add employees.
+3. **Ask:** try a question. Employees see only **Ask** and **Library**.
+
+**Settings → Health check** shows whether answers, search, sources and the subscription are working,
+and lists recent problems. **Download report** saves it as a file to send to support.
 
 **Updating a customer to a new version:**
 ```bash
@@ -232,6 +236,17 @@ python -m pytest
 Tests use a small embedding model and a fake Claude, so they need no API key. They check that
 department permissions hold, Hebrew questions, folder sync, interviews, feedback and licensing.
 
+**End-to-end QA in a real browser** (needs Node and Playwright):
+```bash
+tests/e2e/run.sh
+```
+This starts a fresh copy of the app in test mode, together with a simulated Google and
+Microsoft (`tests/e2e/simulator.py`) that has sign-in pages, emails, events, files, a protected
+file and a temporary slow-down. It then clicks through every flow like a new customer: sign-in,
+connecting accounts, websites, uploads, people, permissions, asking, health and disconnecting.
+It takes screenshots on desktop and phone size and fails on any problem. Run it before every
+release.
+
 Run locally without Docker:
 ```bash
 export DATABASE_URL=postgresql://user:pass@localhost:5432/kd DATA_DIR=./data ANTHROPIC_API_KEY=sk-ant-...
@@ -245,8 +260,8 @@ uvicorn app.main:app --reload
 | `COMPANY_NAME` | | Shown in the app and used by the assistant |
 | `ANTHROPIC_API_KEY` | | Claude API key (required for answers) |
 | `LLM_MODEL` | `claude-opus-5-5` | Claude model for answers |
-| `LLM_EFFORT` | `medium` | `low` = faster and cheaper, `high` = more careful |
-| `EMBED_MODEL` | `intfloat/multilingual-e5-large` | Local search model. Changing it requires re-indexing |
+| `LLM_EFFORT` | `low` | `low` = answers in seconds; `medium`/`high` = more careful but slower |
+| `EMBED_MODEL` | `paraphrase-multilingual-mpnet-base-v2` | Local search model. Changing it re-indexes everything automatically |
 | `WHISPER_MODEL` | `small` | Speech-to-text size: `tiny`…`large-v3` |
 | `SUMMARIZE_INTERVIEWS` | `true` | Create knowledge notes from interviews |
 | `SCAN_INTERVAL_SECONDS` | `300` | How often `data/sources` is checked |

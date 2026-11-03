@@ -1,261 +1,11 @@
-// KnowledgeDesk web interface (plain JavaScript, no build step).
+// KnowledgeDesk web interface – plain JavaScript, no build step.
+"use strict";
+
+// ================================================================== basics
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-let token = null;
-try { token = localStorage.getItem("kd_token"); } catch {}
-let me = null;
-let departments = [];
-let history = [];
-
-async function api(path, opts = {}) {
-  const headers = opts.headers || {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
-  const res = await fetch(path, { ...opts, headers });
-  if (res.status === 401 && path !== "/api/login") { logout(); throw new Error("Please log in again"); }
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { msg = (await res.json()).detail || msg; } catch {}
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-  }
-  return res;
-}
-const getJSON = async (p) => (await api(p)).json();
-
-function show(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
-function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} show("#login-view"); }
-
-// ------------------------------------------------------------------ start
-async function boot() {
-  const st = await (await fetch("/api/status")).json();
-  $("#login-company").textContent = st.company;
-  $("#company-name").textContent = st.company;
-  const lic = st.license;
-  if (lic.message && lic.state !== "unchecked") { $("#banner").textContent = lic.message; $("#banner").classList.remove("hidden"); }
-  if (!st.llm_configured) { $("#banner").textContent = "The AI service key (ANTHROPIC_API_KEY) is not set. Answers will not work until it is configured."; $("#banner").classList.remove("hidden"); }
-  if (!token) return show("#login-view");
-  try { me = await getJSON("/api/me"); } catch { return show("#login-view"); }
-  $("#user-name").textContent = me.name || me.email;
-  $$(".admin-only").forEach((el) => el.classList.toggle("hidden", me.role !== "admin"));
-  departments = await getJSON("/api/departments");
-  $("#dept-filter").innerHTML = `<option value="">All my departments</option>` +
-    departments.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join("");
-  show("#app-view");
-  const connected = new URLSearchParams(location.search).get("connected");
-  if (connected !== null && me.role === "admin") {
-    window.history.replaceState(null, "", "/");
-    $("button[data-view=admin]").click(); openSub("conns");
-    showConnectedNotice(connected);
-  }
-  loadAskSummary();
-}
-
-$("#login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  $("#login-error").textContent = "";
-  try {
-    const r = await (await api("/api/login", { method: "POST", json: { email: f.get("email"), password: f.get("password") } })).json();
-    token = r.token; try { localStorage.setItem("kd_token", token); } catch {}
-    await boot();
-  } catch (err) { $("#login-error").textContent = err.message; }
-});
-$("#logout").addEventListener("click", logout);
-
-// ------------------------------------------------------------------ navigation
-$$(".tab").forEach((b) => b.addEventListener("click", () => {
-  $$(".tab").forEach((x) => x.classList.toggle("active", x === b));
-  $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== b.dataset.view));
-  if (b.dataset.view === "library") loadLibrary();
-  if (b.dataset.view === "admin") openSub("docs");
-}));
-$$(".subtab").forEach((b) => b.addEventListener("click", () => openSub(b.dataset.sub)));
-function openSub(name) {
-  $$(".subtab").forEach((x) => x.classList.toggle("active", x.dataset.sub === name));
-  $$(".sub").forEach((s) => s.classList.toggle("hidden", s.id !== `sub-${name}`));
-  ({ docs: loadDocs, conns: loadConns, depts: loadDepts, users: loadUsers, questions: loadQuestions, system: loadSystem })[name]();
-}
-
-// ------------------------------------------------------------------ chat
-async function loadAskSummary() {
-  try {
-    const o = await getJSON("/api/overview");
-    const names = { email: "emails", files: "files", file: "documents", calendar: "months of calendar events", web: "web pages",
-      whatsapp: "WhatsApp chats", interview: "interviews" };
-    const parts = Object.entries(o.ready).map(([k, n]) => `${n} ${names[k] || k}`);
-    $("#ask-summary").textContent = parts.length ? `You can ask about: ${parts.join(" · ")}.`
-      : (me.role === "admin" ? "Nothing to search yet – add sources in Admin → Connections." : "Nothing to search yet – ask your admin to add company information.");
-  } catch {}
-}
-const qBox = $("#question");
-qBox.addEventListener("input", () => { qBox.style.height = "auto"; qBox.style.height = qBox.scrollHeight + "px"; });
-qBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ask-form").requestSubmit(); } });
-$("#new-chat").addEventListener("click", () => { history = []; $("#messages").innerHTML = ""; $("#messages").append(emptyState); });
-const emptyState = $("#chat-empty");
-
-function renderAnswer(text, sources) {
-  // Turn [1] into hoverable citation markers.
-  return esc(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^#{1,4} (.+)$/gm, "<b>$1</b>").replace(/\[(\d+)\]/g, (m, n) => {
-    const s = sources[Number(n) - 1];
-    return s ? `<span class="cite" title="${esc(s.title + (s.location ? " – " + s.location : ""))}">[${n}]</span>` : m;
-  });
-}
-
-function addMsg(cls, html) {
-  emptyState.remove();
-  const div = document.createElement("div");
-  div.className = `msg ${cls}`; div.dir = "auto"; div.innerHTML = html;
-  $("#messages").append(div);
-  $("#messages").scrollTop = $("#messages").scrollHeight;
-  return div;
-}
-
-$("#ask-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const question = qBox.value.trim();
-  if (!question) return;
-  qBox.value = ""; qBox.style.height = "auto";
-  addMsg("user", esc(question));
-  const bot = addMsg("bot", `<span class="muted">Searching…</span>`);
-  $("#ask-btn").disabled = true;
-  const dept = $("#dept-filter").value;
-  let text = "", sources = [], qid = null;
-  try {
-    const res = await api("/api/ask", { method: "POST", json: { question, history, department_id: dept ? Number(dept) : null } });
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let nl;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
-        if (ev.type === "sources") sources = ev.sources;
-        if (ev.type === "text") { text += ev.text; bot.innerHTML = renderAnswer(text, sources); }
-        if (ev.type === "error") { text += (text ? "\n\n" : "") + ev.message; bot.innerHTML = `<span class="error">${esc(ev.message)}</span>`; }
-        if (ev.type === "done") qid = ev.question_id;
-        $("#messages").scrollTop = $("#messages").scrollHeight;
-      }
-    }
-  } catch (err) { bot.innerHTML = `<span class="error">${esc(err.message)}</span>`; }
-  $("#ask-btn").disabled = false;
-  history.push({ role: "user", content: question }, { role: "assistant", content: text });
-
-  const used = sources.filter((s) => text.includes(`[${s.n}]`));
-  if (used.length) {
-    bot.insertAdjacentHTML("beforeend", `<details class="sources" open><summary>Sources</summary><ol>${
-      used.map((s) => `<li value="${s.n}"><a href="#" data-doc="${s.document_id}">${esc(s.title)}</a>${s.location ? ` <span class="muted">(${esc(s.location)})</span>` : ""}</li>`).join("")}</ol></details>`);
-  }
-  if (qid) {
-    bot.insertAdjacentHTML("beforeend", `<div class="feedback"><button data-v="1" title="Helpful">👍</button><button data-v="-1" title="Not helpful">👎</button></div>`);
-    $$(".feedback button", bot).forEach((b) => b.addEventListener("click", async () => {
-      $$(".feedback button", bot).forEach((x) => x.classList.toggle("chosen", x === b));
-      await api(`/api/questions/${qid}/feedback`, { method: "POST", json: { value: Number(b.dataset.v) } });
-    }));
-  }
-});
-
-// Open source files (authenticated download).
-document.addEventListener("click", async (e) => {
-  const a = e.target.closest("a[data-doc]");
-  if (!a) return;
-  e.preventDefault();
-  try {
-    const res = await api(`/api/documents/${a.dataset.doc}/file`);
-    const url = URL.createObjectURL(await res.blob());
-    window.open(url, "_blank");
-  } catch (err) { alert(err.message); }
-});
-
-// ------------------------------------------------------------------ library
-let libDocs = [];
-async function loadLibrary() { libDocs = await getJSON("/api/documents"); drawLibrary(); }
-function drawLibrary() {
-  const f = $("#lib-search").value.toLowerCase();
-  $("#lib-rows").innerHTML = libDocs.filter((d) => d.status === "ready" && d.title.toLowerCase().includes(f)).map((d) => `
-    <tr><td dir="auto"><a href="#" data-doc="${d.id}">${esc(d.title)}</a></td><td>${KIND[d.kind] || "Document"}</td>
-    <td>${deptPills(d)}</td><td>${new Date(d.updated_at).toLocaleDateString()}</td></tr>`).join("") ||
-    `<tr><td colspan="4" class="muted">No documents yet.</td></tr>`;
-}
-$("#lib-search").addEventListener("input", drawLibrary);
-const KIND = { file: "Document", interview: "Interview", email: "Email", whatsapp: "WhatsApp", calendar: "Calendar", web: "Website" };
-const deptPills = (d) => (d.company_wide ? `<span class="pill">Everyone</span>` : "") + d.departments.map((x) => `<span class="pill">${esc(x.name)}</span>`).join("");
-
-// ------------------------------------------------------------------ admin: documents
-function deptChecks(container, name, selected = []) {
-  $(container).innerHTML = departments.map((d) =>
-    `<label class="radio"><input type="checkbox" name="${name}" value="${d.id}" ${selected.includes(d.id) ? "checked" : ""}> ${esc(d.name)}</label>`
-  ).join("") || `<span class="muted small">No departments yet – create them in the Departments tab.</span>`;
-}
-async function refreshDepartments() { departments = await getJSON("/api/departments"); }
-
-async function loadDocs() {
-  await refreshDepartments();
-  deptChecks("#upload-depts", "dept");
-  const docs = await getJSON("/api/documents");
-  $("#doc-rows").innerHTML = docs.map((d) => `
-    <tr><td dir="auto"><a href="#" data-doc="${d.id}">${esc(d.title)}</a><div class="muted small">${esc(d.filename)}${d.source === "folder" ? " · synced folder" : d.source === "connector" ? " · connected source" : ""}</div></td>
-    <td>${KIND[d.kind] || "Document"}</td><td>${deptPills(d)}</td>
-    <td class="status-${d.status}" title="${esc(d.error || "")}">${d.status}${d.status === "ready" ? ` <span class="muted small">(${d.chunks} parts)</span>` : ""}${d.error ? `<div class="small">${esc(d.error)}</div>` : ""}</td>
-    <td><button class="link" data-reindex="${d.id}">Re-index</button> <button class="danger" data-del="${d.id}">Delete</button></td></tr>`).join("") ||
-    `<tr><td colspan="5" class="muted">Nothing uploaded yet.</td></tr>`;
-  $$("[data-del]").forEach((b) => b.onclick = async () => {
-    if (!confirm("Delete this document from the knowledge base?")) return;
-    await api(`/api/documents/${b.dataset.del}`, { method: "DELETE" }); loadDocs();
-  });
-  $$("[data-reindex]").forEach((b) => b.onclick = async () => { await api(`/api/documents/${b.dataset.reindex}/reindex`, { method: "POST" }); loadDocs(); });
-  if (docs.some((d) => d.status === "pending" || d.status === "processing")) setTimeout(() => { if (!$("#sub-docs").classList.contains("hidden")) loadDocs(); }, 4000);
-}
-$("#refresh-docs").addEventListener("click", loadDocs);
-$("#rescan").addEventListener("click", async () => { const r = await (await api("/api/admin/rescan", { method: "POST" })).json(); alert(`${r.queued} new or changed files queued.`); loadDocs(); });
-$$("input[name=kind]").forEach((r) => r.addEventListener("change", () =>
-  $("#interview-fields").classList.toggle("hidden", $("input[name=kind]:checked").value !== "interview")));
-
-$("#upload-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.target; const f = new FormData(form);
-  const body = new FormData();
-  for (const file of form.files.files) body.append("files", file);
-  body.append("department_ids", $$("input[name=dept]:checked", form).map((x) => x.value).join(","));
-  body.append("company_wide", form.company_wide.checked ? "true" : "false");
-  body.append("kind", f.get("kind"));
-  for (const k of ["interviewee", "role", "interview_date"]) body.append(k, f.get(k) || "");
-  $("#upload-error").textContent = "";
-  const btn = $("button[type=submit]", form); btn.disabled = true; btn.textContent = "Uploading…";
-  try { await api("/api/documents", { method: "POST", body }); form.reset(); $("#interview-fields").classList.add("hidden"); loadDocs(); }
-  catch (err) { $("#upload-error").textContent = err.message; }
-  btn.disabled = false; btn.textContent = "Upload and index";
-});
-
-// ------------------------------------------------------------------ admin: connections
-// One screen that answers three questions: what is connected, is it working, and what can be searched.
-const PROVIDER_TYPES = {
-  google: { mail: "gmail", calendar: "gcal", files: "gdrive" },
-  microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" },
-};
-const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft" };
-const SERVICE_INFO = {
-  gmail: ["📧", "Gmail", "email", "emails"], ms_mail: ["📧", "Outlook mail", "email", "emails"],
-  gcal: ["📅", "Google Calendar", "month of events", "months of events"], ms_cal: ["📅", "Outlook calendar", "month of events", "months of events"],
-  gdrive: ["📁", "Google Drive", "file", "files"], ms_drive: ["📁", "OneDrive", "file", "files"],
-  imap: ["📧", "Email", "email", "emails"], ics: ["📅", "Calendar", "month of events", "months of events"],
-  website: ["🌐", "Website", "page", "pages"],
-};
-const SERVICE_OF = { gmail: "mail", ms_mail: "mail", gcal: "calendar", ms_cal: "calendar", gdrive: "files", ms_drive: "files" };
-const OAUTH_TYPES = Object.keys(SERVICE_OF);
-const TYPE_LABEL = Object.fromEntries(Object.entries(SERVICE_INFO).map(([t, i]) => [t, `${i[0]} ${i[1]}`]));
-
-let conns = [];
-let oauthState = { configured: {}, redirect_url: "" };
-let connPoll = null;
-let editing = false; // true while a "who can search" editor or the connect panel is open: don't redraw under the user
-const connForm = $("#conn-form");
-
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const plural = (n, one, many) => `${Number(n).toLocaleString()} ${n === 1 ? one : many}`;
 function ago(ts) {
   if (!ts) return "";
   const s = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
@@ -265,133 +15,525 @@ function ago(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-// One clear line per source: importing / preparing / ready / problem
-function statusLine(k) {
+let token = null;
+try { token = localStorage.getItem("kd_token"); } catch {}
+let me = null;
+let departments = [];
+let appStatus = {};
+let pagePoll = null;
+
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
+  let res;
+  try { res = await fetch(path, { ...opts, headers }); }
+  catch { throw new Error("Can't reach KnowledgeDesk. Check that it's running, then try again."); }
+  if (res.status === 401 && path !== "/api/login") { logout(); throw new Error("Please log in again."); }
+  if (!res.ok) {
+    let msg = `Something went wrong (${res.status}).`;
+    try { const d = (await res.json()).detail; if (d) msg = typeof d === "string" ? d : (d[0]?.msg || JSON.stringify(d)); } catch {}
+    throw new Error(msg);
+  }
+  return res;
+}
+const getJSON = async (p) => (await api(p)).json();
+
+function toast(message, bad = false) {
+  const t = document.createElement("div");
+  t.className = "toast" + (bad ? " bad" : ""); t.textContent = message; t.setAttribute("role", bad ? "alert" : "status");
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), bad ? 6000 : 3500);
+}
+
+// Dialogs: openDialog(html) shows a modal; confirmBox() asks yes/no.
+function openDialog(html) {
+  const d = $("#dialog");
+  $("#dialog-form").innerHTML = html;
+  if (!d.open) d.showModal();
+  return $("#dialog-form");
+}
+function closeDialog() { if ($("#dialog").open) $("#dialog").close(); }
+function confirmBox({ title, text, confirm = "OK", danger = false }) {
+  return new Promise((resolve) => {
+    const f = openDialog(`<h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>
+      <div class="dialog-actions"><button class="btn" value="no" type="button" data-no>Cancel</button>
+      <button class="btn ${danger ? "danger solid" : "primary"}" type="button" data-yes>${esc(confirm)}</button></div>`);
+    $("[data-no]", f).onclick = () => { closeDialog(); resolve(false); };
+    $("[data-yes]", f).onclick = () => { closeDialog(); resolve(true); };
+    $("#dialog").addEventListener("cancel", () => resolve(false), { once: true });
+  });
+}
+
+// Buttons show progress while something runs, and can't be clicked twice.
+async function busy(button, label, fn) {
+  const old = button.innerHTML; button.disabled = true;
+  button.innerHTML = `<span class="spinner"></span>${esc(label)}`;
+  try { return await fn(); } finally { button.disabled = false; button.innerHTML = old; }
+}
+
+// Who-can-find-this picker, used everywhere the same way.
+function visibilityPicker(selected = [], everyone = false, title = "Who can find this?") {
+  const boxes = departments.map((d) => `<label class="check"><input type="checkbox" value="${d.id}" ${selected.includes(d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("");
+  return `<div class="vis-block"><span class="label">${esc(title)}</span>
+    <label class="check"><input type="checkbox" class="vis-everyone" ${everyone ? "checked" : ""}> <b>Everyone in the company</b></label>
+    ${boxes ? `<span class="muted small">or only these departments:</span><div class="vis-depts ${everyone ? "off" : ""}">${boxes}</div>` :
+      '<div class="muted small">To limit it to certain teams, first create departments under People.</div>'}</div>`;
+}
+// Ticking "Everyone" clears and dims the departments; ticking a department clears "Everyone".
+document.addEventListener("change", (e) => {
+  const block = e.target.closest?.(".vis-block");
+  if (!block) return;
+  const everyone = $(".vis-everyone", block);
+  const depts = $$(".vis-depts input", block);
+  if (e.target === everyone && everyone.checked) depts.forEach((d) => (d.checked = false));
+  if (e.target !== everyone && e.target.checked) everyone.checked = false;
+  $(".vis-depts", block)?.classList.toggle("off", everyone.checked);
+});
+function readVisibility(root) {
+  const el = root.classList?.contains("vis-block") ? root : $(".vis-block", root);
+  return { company_wide: $(".vis-everyone", el).checked, department_ids: $$(".vis-depts input:checked", el).map((x) => Number(x.value)) };
+}
+function visibilityError(v) { return !v.company_wide && !v.department_ids.length ? "Choose who can find it: Everyone, or at least one department." : ""; }
+function visibilityPills(item) {
+  if (item.company_wide) return '<span class="pill">Everyone</span>';
+  return (item.departments || []).map((d) => `<span class="pill">${esc(d.name)}</span>`).join("") || '<span class="pill">Admins only</span>';
+}
+async function refreshDepartments() { departments = await getJSON("/api/departments"); }
+
+const KIND_ICON = { file: "📄", documents: "📄", interview: "🎙", whatsapp: "💬", email: "📧", calendar: "📅", web: "🌐" };
+const KIND_NAMES = { email: ["email", "emails"], documents: ["document", "documents"],
+  calendar: ["calendar event", "calendar events"], web: ["web page", "web pages"],
+  whatsapp: ["WhatsApp chat", "WhatsApp chats"], interview: ["interview", "interviews"] };
+function knowledgeChips(ready) {
+  return Object.entries(KIND_NAMES).filter(([k]) => ready[k]).map(([k, [one, many]]) =>
+    `<span class="chip info">${KIND_ICON[k]} ${plural(ready[k], one, many)}</span>`).join("");
+}
+function docStatusChip(d) {
+  if (d.status === "ready") return '<span class="chip ok">✓ Searchable</span>';
+  if (d.status === "error") return `<span class="chip bad">Couldn't read</span>`;
+  return '<span class="chip busy">⏳ Preparing…</span>';
+}
+
+// ================================================================== start, login, navigation
+const ADMIN_PAGES = [["home", "Home"], ["ask", "Ask"], ["sources", "Sources"], ["people", "People"], ["activity", "Activity"], ["settings", "Settings"]];
+const MEMBER_PAGES = [["ask", "Ask"], ["library", "Library"]];
+const LOADERS = {};
+
+function showView(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
+function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; showView("#login-view"); }
+
+async function boot() {
+  try { appStatus = await (await fetch("/api/status")).json(); } catch { appStatus = { company: "", license: {} }; }
+  $("#login-company").textContent = appStatus.company || "";
+  $("#company-name").textContent = appStatus.company || "";
+  if (!token) return showView("#login-view");
+  try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
+  await refreshDepartments();
+  $("#user-name").textContent = me.name || me.email;
+  const pages = me.role === "admin" ? ADMIN_PAGES : MEMBER_PAGES;
+  $("#nav").innerHTML = pages.map(([id, label]) => `<a href="#${id}" data-page="${id}">${label}</a>`).join("");
+  const banner = $("#banner");
+  const lic = appStatus.license || {};
+  const msg = !appStatus.llm_configured && me.role === "admin" ? "Answers are switched off: the Claude API key is missing. See Settings → Health check."
+    : (lic.message && lic.state !== "unchecked" ? lic.message : "");
+  banner.textContent = msg; banner.classList.toggle("hidden", !msg);
+  showView("#app-view");
+  const connected = new URLSearchParams(location.search).get("connected");
+  if (connected !== null) {
+    window.history.replaceState(null, "", "/#sources");
+    toast("✓ Account connected. Importing now – watch the progress on this page.");
+  }
+  route();
+}
+
+function route() {
+  if (!me) return;
+  clearTimeout(pagePoll);
+  const pages = me.role === "admin" ? ADMIN_PAGES : MEMBER_PAGES;
+  let name = location.hash.slice(1);
+  if (!pages.some(([id]) => id === name)) name = pages[0][0];
+  $$(".page").forEach((p) => p.classList.toggle("hidden", p.id !== `page-${name}`));
+  $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === name));
+  LOADERS[name]?.().catch((err) => toast(err.message, true));
+}
+window.addEventListener("hashchange", route);
+function poll(fn, ms) { clearTimeout(pagePoll); pagePoll = setTimeout(() => fn().catch(() => {}), ms); }
+
+$("#login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  $("#login-error").textContent = "";
+  await busy($("button", f), "Logging in…", async () => {
+    try {
+      const r = await (await api("/api/login", { method: "POST", json: { email: f.email.value, password: f.password.value } })).json();
+      token = r.token; try { localStorage.setItem("kd_token", token); } catch {}
+      f.password.value = "";
+      await boot();
+    } catch (err) { $("#login-error").textContent = err.message; }
+  });
+});
+$("#logout").addEventListener("click", logout);
+$("#user-name").addEventListener("click", () => {
+  const f = openDialog(`<h2>My account</h2><p class="muted">${esc(me.name || "")} · ${esc(me.email)}</p>
+    <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+    <label>New password (at least 8 characters) <input name="next" type="password" autocomplete="new-password" required minlength="8"></label>
+    <p class="error" role="alert"></p>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Change password</button></div>`);
+  $("[data-close]", f).onclick = closeDialog;
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    busy($("button[type=submit]", f), "Saving…", async () => {
+      try { await api("/api/me/password", { method: "POST", json: { current_password: f.current.value, new_password: f.next.value } }); closeDialog(); toast("✓ Password changed."); }
+      catch (err) { $(".error", f).textContent = err.message; }
+    });
+  };
+});
+
+// ================================================================== Home (admins)
+LOADERS.home = async function loadHome() {
+  const first = (me.name || "").split(" ")[0];
+  $("#home-title").textContent = first ? `Hi ${first}` : "Home";
+  const [setup, health, overview] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health"), getJSON("/api/overview")]);
+
+  const issues = health.checks.filter((c) => c.state !== "ok" && c.id !== "signin");
+  $("#home-health").innerHTML = !issues.length
+    ? `<div class="health-banner ok"><b>✓ Everything is working.</b></div>`
+    : `<div class="health-banner ${issues.some((c) => c.state === "bad") ? "bad" : "warn"}"><div>
+        <b>${issues.some((c) => c.state === "bad") ? "⚠ Some things need your attention" : "⏳ Almost ready"}</b>
+        <ul>${issues.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul>
+        <a href="#settings">Open the health check</a></div></div>`;
+
+  const steps = [
+    [setup.has_sources, "Connect your company's information", "Email, calendar, Drive, your website, documents.", "#sources", "Connect sources"],
+    [setup.has_team, "Add your team", "Create departments and add the people who will ask questions.", "#people", "Add people"],
+    [setup.has_asked, "Ask your first question", "See how KnowledgeDesk answers from your own information.", "#ask", "Ask a question"],
+  ];
+  const done = steps.filter((s) => s[0]).length;
+  $("#home-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
+      <span class="muted small">${done} of ${steps.length} done</span></div>
+    <ol class="steps">${steps.map(([ok, title, text, href, label], i) => `<li class="${ok ? "done" : ""}">
+      <span class="step-dot">${ok ? "✓" : i + 1}</span>
+      <div><div class="step-title"><b>${title}</b></div><div class="muted small">${text}</div></div>
+      ${ok ? '<span class="chip ok">Done</span>' : `<a class="btn ${steps.findIndex((s) => !s[0]) === i ? "primary" : ""}" href="${href}">${label}</a>`}</li>`).join("")}</ol></div>`;
+
+  $("#home-kb").innerHTML = `<h2>What can be searched</h2>
+    ${overview.total ? `<div class="chips">${knowledgeChips(overview.ready)}</div>` : '<p class="muted">Nothing yet.</p>'}
+    ${overview.importing ? `<p class="state-text busy small">⏳ ${plural(overview.importing, "item is", "items are")} still being prepared.</p>` : ""}
+    <div class="row">${overview.total ? '<a class="btn primary" href="#ask">Ask a question</a>' : ""}<a class="btn" href="#sources">Manage sources</a></div>`;
+  $("#home-activity").innerHTML = `<h2>Questions</h2>
+    <div class="grid2"><div><div class="big-number">${setup.questions_week}</div><div class="muted small">asked this week</div></div>
+    <div><div class="big-number">${setup.gaps}</div><div class="muted small">without a good answer (30 days)</div></div></div>
+    <div class="row"><a class="btn" href="#activity">See all questions</a></div>`;
+  if (overview.importing || issues.some((c) => c.state === "busy")) poll(LOADERS.home, 8000);
+};
+
+// ================================================================== Ask
+const chat = { history: [], busy: false };
+const EXAMPLES = {
+  calendar: "What meetings do I have this week?", email: "What were the latest emails about prices?",
+  documents: "What are our main procedures?", web: "What services do we offer?",
+  interview: "How do we handle a new customer order?", whatsapp: "What was decided in the team chat recently?",
+};
+LOADERS.ask = async function loadAsk() {
+  if (!$("#dept-filter").dataset.filled) {
+    const mine = me.role === "admin" ? departments : me.departments;
+    $("#dept-filter").innerHTML = `<option value="">Everything I can see</option>` +
+      mine.map((d) => `<option value="${d.id}">${esc(d.name)} only</option>`).join("");
+    $("#dept-filter").dataset.filled = "1";
+  }
+  if (!chat.history.length) await drawWelcome();
+  $("#question").focus();
+};
+async function drawWelcome() {
+  let o = { ready: {}, total: 0 };
+  try { o = await getJSON("/api/overview"); } catch {}
+  const examples = Object.keys(EXAMPLES).filter((k) => o.ready[k]).map((k) => EXAMPLES[k]).slice(0, 4);
+  $("#messages").innerHTML = `<div class="welcome">
+    <h2>What would you like to know?</h2>
+    ${o.total ? `<p class="muted">Answers come only from your company's own information, with sources.</p>
+      <div class="chips" style="justify-content:center">${knowledgeChips(o.ready)}</div>
+      <div class="examples">${examples.map((x) => `<button type="button">${esc(x)}</button>`).join("")}</div>`
+    : me.role === "admin" ? `<p class="muted">Nothing can be searched yet.</p><a class="btn primary" href="#sources">Connect your first source</a>`
+    : `<p class="muted">Nothing can be searched yet. Your admin is still adding the company's information.</p>`}</div>`;
+  $$(".examples button").forEach((b) => b.onclick = () => { $("#question").value = b.textContent; $("#ask-form").requestSubmit(); });
+}
+
+// Small, safe Markdown: paragraphs, lists, bold, headings, links, [n] citations.
+function renderAnswer(text, sources) {
+  const inline = (s) => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\[(\d+)\]/g, (m, n) => {
+      const s = sources[Number(n) - 1];
+      return s ? `<span class="cite" title="${esc(s.title + (s.location ? " – " + s.location : ""))}">[${n}]</span>` : m;
+    });
+  const out = []; let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^\s*[-*•]\s+(.*)/); const num = line.match(/^\s*\d+[.)]\s+(.*)/);
+    if (bullet || num) {
+      const type = bullet ? "ul" : "ol";
+      if (!list || list.type !== type) { if (list) out.push(`</${list.type}>`); out.push(`<${type}>`); list = { type }; }
+      out.push(`<li>${inline((bullet || num)[1])}</li>`); continue;
+    }
+    if (list) { out.push(`</${list.type}>`); list = null; }
+    if (!line.trim()) continue;
+    const h = line.match(/^#{1,4}\s+(.*)/);
+    out.push(h ? `<p><b>${inline(h[1])}</b></p>` : `<p>${inline(line)}</p>`);
+  }
+  if (list) out.push(`</${list.type}>`);
+  return out.join("");
+}
+
+function addMessage(cls, html) {
+  $(".welcome")?.remove();
+  const div = document.createElement("div");
+  div.className = `msg ${cls}`; div.dir = "auto"; div.innerHTML = html;
+  $("#messages").append(div);
+  $("#messages").scrollTop = $("#messages").scrollHeight;
+  return div;
+}
+
+const qBox = $("#question");
+qBox.addEventListener("input", () => { qBox.style.height = "auto"; qBox.style.height = qBox.scrollHeight + "px"; });
+qBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ask-form").requestSubmit(); } });
+$("#new-chat").addEventListener("click", () => { chat.history = []; drawWelcome(); qBox.focus(); });
+
+$("#ask-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = qBox.value.trim();
+  if (!question || chat.busy) return;
+  chat.busy = true; $("#ask-btn").disabled = true;
+  qBox.value = ""; qBox.style.height = "auto";
+  addMessage("user", esc(question));
+  const bot = addMessage("bot", `<div class="thinking"><span class="spinner"></span> Searching your company's information…</div>`);
+  const dept = $("#dept-filter").value;
+  let text = "", sources = [], qid = null, failed = "";
+  try {
+    const res = await api("/api/ask", { method: "POST", json: { question, history: chat.history, department_id: dept ? Number(dept) : null } });
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
+        if (ev.type === "sources") { sources = ev.sources; if (sources.length) $(".thinking", bot) && ($(".thinking", bot).lastChild.textContent = ` Found ${plural(sources.length, "relevant passage", "relevant passages")}, writing the answer…`); }
+        if (ev.type === "text") { text += ev.text; bot.innerHTML = renderAnswer(text, sources); }
+        if (ev.type === "error") failed = ev.message;
+        if (ev.type === "done") qid = ev.question_id;
+      }
+      $("#messages").scrollTop = $("#messages").scrollHeight;
+    }
+  } catch (err) { failed = err.message; }
+  chat.busy = false; $("#ask-btn").disabled = false;
+  if (failed && !text) {
+    bot.innerHTML = `<p class="state-text bad">${esc(failed)}</p><button class="btn small" type="button">Try again</button>`;
+    $("button", bot).onclick = () => { bot.previousElementSibling?.remove(); bot.remove(); qBox.value = question; $("#ask-form").requestSubmit(); };
+    return;
+  }
+  chat.history.push({ role: "user", content: question }, { role: "assistant", content: text });
+  const cited = sources.filter((s) => text.includes(`[${s.n}]`));
+  if (cited.length) {
+    bot.insertAdjacentHTML("beforeend", `<div class="sources"><b>Sources</b><ol>${cited.map((s) => `<li value="${s.n}">${KIND_ICON[s.kind] || "📄"}
+      ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : `<a href="#" data-doc="${s.document_id}">${esc(s.title)}</a>`}
+      ${s.location ? `<span class="muted">(${esc(s.location)})</span>` : ""}</li>`).join("")}</ol></div>`);
+  }
+  if (qid) {
+    bot.insertAdjacentHTML("beforeend", `<div class="feedback">Was this helpful? <button type="button" data-v="1" aria-label="Helpful">👍</button><button type="button" data-v="-1" aria-label="Not helpful">👎</button></div>`);
+    $$(".feedback button", bot).forEach((b) => b.onclick = async () => {
+      $$(".feedback button", bot).forEach((x) => x.classList.toggle("chosen", x === b));
+      try { await api(`/api/questions/${qid}/feedback`, { method: "POST", json: { value: Number(b.dataset.v) } }); toast("Thanks – your feedback helps improve the answers."); }
+      catch (err) { toast(err.message, true); }
+    });
+  }
+  qBox.focus();
+});
+
+// Opening a source document (needs the login token, so it's fetched rather than linked)
+document.addEventListener("click", async (e) => {
+  const a = e.target.closest("a[data-doc]");
+  if (!a) return;
+  e.preventDefault();
+  try {
+    const res = await api(`/api/documents/${a.dataset.doc}/file`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const name = (res.headers.get("content-disposition") || "").match(/filename\*?=(?:UTF-8'')?"?([^";]+)/i)?.[1];
+    const link = Object.assign(document.createElement("a"), { href: url, target: "_blank", rel: "noopener" });
+    if (name && !/\.(pdf|txt|html?|png|jpe?g)$/i.test(decodeURIComponent(name))) link.download = decodeURIComponent(name);
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { toast(err.message, true); }
+});
+
+// ================================================================== Document lists (Library, uploads, "view items")
+function docRow(d, { manage = false } = {}) {
+  const when = new Date(d.updated_at).toLocaleDateString();
+  const link = d.metadata?.url || d.metadata?.link;
+  return `<div class="list-row"><div>
+      <div class="title" dir="auto">${KIND_ICON[d.kind] || "📄"} ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(d.title)}</a>`
+        : `<a href="#" data-doc="${d.id}">${esc(d.title)}</a>`}</div>
+      <div class="meta">${when} · ${visibilityPills(d)} ${manage ? docStatusChip(d) : ""}
+        ${manage && d.error ? `<div class="state-text bad small">${esc(d.error)}</div>` : ""}</div></div>
+    ${manage ? `<div class="actions">${d.status === "error" ? `<button type="button" class="btn link" data-retry="${d.id}">Try again</button>` : ""}
+      <button type="button" class="btn link danger" data-del-doc="${d.id}" data-title="${esc(d.title)}">Delete</button></div>` : "<div></div>"}</div>`;
+}
+async function pagedDocs(container, params, { manage = false, pageSize = 25, empty = "Nothing here yet." } = {}) {
+  const state = container._state || (container._state = { offset: 0 });
+  if (params.reset) state.offset = 0;
+  const q = new URLSearchParams({ ...params.query, limit: pageSize, offset: state.offset });
+  const res = await api(`/api/documents?${q}`);
+  const rows = await res.json(); const total = Number(res.headers.get("X-Total-Count") || rows.length);
+  container.innerHTML = rows.length ? rows.map((d) => docRow(d, { manage })).join("") +
+    (total > pageSize ? `<div class="pager"><span>${state.offset + 1}–${state.offset + rows.length} of ${total.toLocaleString()}</span><span>
+      <button type="button" class="btn small" data-prev ${state.offset ? "" : "disabled"}>← Newer</button>
+      <button type="button" class="btn small" data-next ${state.offset + pageSize < total ? "" : "disabled"}>Older →</button></span></div>` : "")
+    : `<div class="empty">${esc(empty)}</div>`;
+  const again = () => pagedDocs(container, { query: params.query }, { manage, pageSize, empty });
+  $("[data-prev]", container)?.addEventListener("click", () => { state.offset = Math.max(0, state.offset - pageSize); again(); });
+  $("[data-next]", container)?.addEventListener("click", () => { state.offset += pageSize; again(); });
+  $$("[data-del-doc]", container).forEach((b) => b.onclick = async () => {
+    if (!await confirmBox({ title: "Delete this file?", text: `"${b.dataset.title}" will no longer be searchable.`, confirm: "Delete", danger: true })) return;
+    try { await api(`/api/documents/${b.dataset.delDoc}`, { method: "DELETE" }); toast("Deleted."); again(); } catch (err) { toast(err.message, true); }
+  });
+  $$("[data-retry]", container).forEach((b) => b.onclick = async () => {
+    await api(`/api/documents/${b.dataset.retry}/reindex`, { method: "POST" }); toast("Trying again…"); again();
+  });
+  return { rows, total };
+}
+function debounce(fn, ms = 300) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+// ---------- Library (members)
+LOADERS.library = async () => pagedDocs($("#lib-list"), { reset: true, query: { q: $("#lib-search").value, status: "ready" } },
+  { empty: "Nothing to show yet. Your admin is still adding the company's information." });
+$("#lib-search").addEventListener("input", debounce(() => LOADERS.library()));
+
+// ================================================================== Sources
+const PROVIDER_TYPES = { google: { mail: "gmail", calendar: "gcal", files: "gdrive" }, microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" } };
+const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft" };
+const SERVICE_INFO = {
+  gmail: ["📧", "Gmail", "email", "emails"], ms_mail: ["📧", "Outlook mail", "email", "emails"],
+  gcal: ["📅", "Google Calendar", "event", "events"], ms_cal: ["📅", "Outlook calendar", "event", "events"],
+  gdrive: ["📁", "Google Drive", "file", "files"], ms_drive: ["📁", "OneDrive", "file", "files"],
+  imap: ["📧", "Mailbox", "email", "emails"], ics: ["📅", "Calendar", "event", "events"], website: ["🌐", "Website", "page", "pages"],
+};
+let conns = [];
+let oauthState = { configured: {}, redirect_url: "" };
+let editing = false; // a form or panel is open: refreshes must not redraw it
+
+const CALENDAR_TYPES = ["gcal", "ms_cal", "ics"];
+function sourceStatus(k) {
   const [, , one, many] = SERVICE_INFO[k.type] || ["", "", "item", "items"];
+  if (CALENDAR_TYPES.includes(k.type)) k = { ...k, ready: k.events, documents: Math.max(k.documents, k.events) };
   const note = k.last_note ? `<div class="muted small">${esc(k.last_note)}</div>` : "";
-  if (k.syncing || !k.last_sync)
-    return `<span class="st st-busy">⏳ Importing… ${plural(k.documents, one, many)} found so far</span>${note}`;
-  if (k.indexing)
-    return `<span class="st st-busy">⏳ Getting ready for search: ${k.ready} of ${k.documents} done</span>${note}`;
+  if (k.syncing || !k.last_sync) return `<span class="chip busy">⏳ Importing</span> <span class="muted small">${plural(k.documents, one, many)} found so far</span>${note}`;
+  if (k.indexing) return `<span class="chip busy">⏳ Preparing for search</span> <span class="muted small">${k.ready.toLocaleString()} of ${k.documents.toLocaleString()} ready</span>${note}`;
   const checked = `<span class="muted small"> · checked ${ago(k.last_sync)}</span>`;
-  if (k.last_error)
-    return `<span class="st st-bad">⚠ ${esc(k.last_error)}</span>` +
-      (k.ready ? `<div class="small">${plural(k.ready, one, many)} already searchable.</div>` : "") + note;
-  if (!k.ready) return `<span class="st st-ok">✓ Connected – nothing found to import</span>${checked}${note}`;
-  return `<span class="st st-ok">✓ ${plural(k.ready, one, many)} searchable</span>${checked}${note}`;
+  if (k.last_error) return `<span class="chip bad">⚠ Problem</span>${checked}<div class="state-text bad small">${esc(k.last_error)}</div>` +
+    (k.ready ? `<div class="muted small">${plural(k.ready, one, many)} already searchable.</div>` : "") + note;
+  if (!k.ready) return `<span class="chip ok">✓ Connected</span>${checked}<div class="muted small">Nothing found to import yet.</div>${note}`;
+  return `<span class="chip ok">✓ ${plural(k.ready, one, many)} searchable</span>${checked}${note}`;
 }
 
-function visibilityEditor(id, selectedDepts, everyone) {
-  return `<div class="vis-edit" data-vis="${id}">
-    <span class="label">Who can search this</span>
-    <div class="checks">${departments.map((d) => `<label class="radio"><input type="checkbox" value="${d.id}"
-      ${selectedDepts.includes(d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("") ||
-      '<span class="muted small">No departments yet – you can create them in the Departments tab.</span>'}</div>
-    <label class="radio"><input type="checkbox" class="vis-everyone" ${everyone ? "checked" : ""}> Everyone in the company</label>
-  </div>`;
-}
-function readVisibility(el) {
-  return { department_ids: $$(".checks input:checked", el).map((x) => Number(x.value)), company_wide: $(".vis-everyone", el).checked };
-}
+LOADERS.sources = async function loadSources() {
+  await refreshDepartments();
+  try { oauthState = await getJSON("/api/oauth/status"); } catch {}
+  editing = false;
+  $$(".pc-connect").forEach((el) => (el.innerHTML = ""));
+  $("#web-visibility").innerHTML = visibilityPicker([], true, "Who can find its pages?");
+  $("#upload-visibility").innerHTML = visibilityPicker([], false);
+  resetConnForm();
+  await refreshSources(true);
+};
 
-// ---------- Summary: what can be searched now
-async function drawSummary() {
+async function refreshSources(withFiles = false) {
+  conns = await getJSON("/api/connectors");
   const o = await getJSON("/api/overview");
-  const labels = [["email", "📧", "email", "emails"], ["files", "📁", "file", "files"], ["file", "📄", "document", "documents"],
-    ["calendar", "📅", "month of calendar events", "months of calendar events"], ["web", "🌐", "web page", "web pages"],
-    ["whatsapp", "💬", "WhatsApp chat", "WhatsApp chats"], ["interview", "🎙", "interview", "interviews"]];
-  const parts = labels.filter(([k]) => o.ready[k]).map(([k, icon, one, many]) => `<span class="kb-item">${icon} ${plural(o.ready[k], one, many)}</span>`);
-  const busy = conns.some((k) => k.syncing || !k.last_sync) || o.importing;
-  $("#kb-summary").innerHTML = `
-    <div class="row spread"><h2>What KnowledgeDesk can search now</h2>
-      ${o.total ? '<button class="primary" id="kb-ask">Ask a question →</button>' : ""}</div>
-    ${parts.length ? `<div class="kb-items">${parts.join("")}</div>` :
-      '<p class="muted">Nothing yet. Connect an account or add your website below – it takes a minute.</p>'}
-    ${busy ? `<p class="st st-busy small">⏳ Still importing${o.importing ? ` (${o.importing} item${o.importing === 1 ? "" : "s"} waiting)` : ""} – new items become searchable automatically. You can ask questions meanwhile.</p>` : ""}`;
-  const ask = $("#kb-ask");
-  if (ask) ask.onclick = () => $("button[data-view=chat]").click();
+  $("#kb-summary").innerHTML = `<div class="toolbar"><h2>Searchable now</h2>${o.total ? '<a class="btn primary" href="#ask">Ask a question</a>' : ""}</div>
+    ${o.total ? `<div class="chips">${knowledgeChips(o.ready)}</div>` : '<p class="muted">Nothing yet. Connect an account, add your website, or upload files below.</p>'}
+    ${o.importing || conns.some((k) => k.syncing || !k.last_sync) ? `<p class="state-text busy small">⏳ Still importing – new items become searchable automatically. You can already ask questions.</p>` : ""}`;
+  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawWebsites(); drawManual(); }
+  // Refresh the file list while anything is importing, and once more right after it finishes.
+  if (withFiles || o.importing || refreshSources.wasImporting) await loadFiles(false);
+  refreshSources.wasImporting = o.importing > 0;
+  if (o.importing || conns.some((k) => k.syncing || !k.last_sync || k.indexing)) poll(() => refreshSources(), 4000);
 }
 
-// ---------- Google / Microsoft cards
 function drawProvider(provider) {
   const card = $(`.provider-card[data-provider=${provider}]`);
   const types = Object.values(PROVIDER_TYPES[provider]);
-  const mine = conns.filter((k) => types.includes(k.type));
   const accounts = {};
-  mine.forEach((k) => { (accounts[k.config.account_id] ||= []).push(k); });
+  conns.filter((k) => types.includes(k.type)).forEach((k) => { (accounts[k.config.account_id] ||= []).push(k); });
 
   $(".pc-accounts", card).innerHTML = Object.entries(accounts).map(([accountId, list]) => {
-    const email = list[0].config.username || "Connected account";
     const first = list[0];
-    const deptIds = first.departments.map((d) => d.id);
+    const anyBusy = list.some((k) => k.syncing);
     const rows = Object.entries(PROVIDER_TYPES[provider]).map(([svc, type]) => {
       const k = list.find((x) => x.type === type);
       const [icon, label] = SERVICE_INFO[type];
-      if (!k) return `<div class="svc off"><div class="svc-name">${icon} ${label}</div>
-        <div class="muted small">Not connected</div>
-        <div><button class="link" data-add-svc="${svc}" data-account="${accountId}">Connect</button></div></div>`;
-      return `<div class="svc"><div class="svc-name">${icon} ${label}${k.enabled ? "" : ' <span class="muted small">(paused)</span>'}</div>
-        <div>${statusLine(k)}</div><div></div></div>`;
+      if (!k) return `<div class="svc"><div class="svc-name">${icon} ${label}</div><div class="muted small">Not connected</div>
+        <div><button class="btn link" data-add-svc="${svc}" data-account="${accountId}">Connect</button></div></div>`;
+      return `<div class="svc"><div class="svc-name">${icon} ${label}</div><div>${sourceStatus(k)}</div>
+        <div>${k.documents ? `<button class="btn link" data-items="${k.id}">View items</button>` : ""}</div></div>`;
     }).join("");
-    return `<div class="account" data-account="${accountId}">
+    return `<div class="account">
       <div class="acc-head">
-        <div><b dir="ltr">${esc(email)}</b> <span class="badge-ok">Connected</span>
-          <div class="muted small">Can be searched by: ${deptPills(first) || "nobody yet"}
-            <button class="link small" data-edit-vis="${accountId}">Change</button></div></div>
+        <div><b dir="ltr">${esc(first.config.username || "Connected account")}</b> <span class="chip ok">Connected</span>
+          <div class="muted small">Who can find this: ${visibilityPills(first)} <button class="btn link small" data-edit-vis="${accountId}">Change</button></div></div>
         <div class="acc-actions">
-          <button class="secondary small-btn" data-sync-account="${accountId}" ${list.some((k) => k.syncing) ? "disabled" : ""}>
-            ${list.some((k) => k.syncing) ? "Importing…" : "Check for new items"}</button>
-          <button class="danger" data-disconnect="${accountId}">Disconnect</button>
+          <button class="btn small" data-sync-account="${accountId}" ${anyBusy ? "disabled" : ""}>${anyBusy ? '<span class="spinner"></span>Importing…' : "Check for new items"}</button>
+          <button class="btn link danger" data-disconnect="${accountId}">Disconnect</button>
         </div>
-      </div>
-      ${rows}
-      <div class="vis-slot"></div>
-    </div>`;
+      </div>${rows}<div class="vis-slot"></div></div>`;
   }).join("");
 
-  // Connect button: clearly says "another" once an account is connected
   const slot = $(".pc-connect", card);
-  if (!slot.querySelector(".connect-panel")) {
-    const configured = oauthState.configured[provider];
+  if (!slot.querySelector(".panel")) {
     const has = Object.keys(accounts).length > 0;
-    slot.innerHTML = !configured
-      ? `<p class="muted small">One-click ${PROVIDER_NAME[provider]} sign-in isn't set up on this installation yet
-         (see README → "Setting up one-click sign-in"). Return address to register: <code>${esc(oauthState.redirect_url)}</code></p>`
-      : `<button class="${has ? "link" : "primary"}" data-open-connect>${has ? `+ Connect another ${PROVIDER_NAME[provider]} account` : `Connect ${PROVIDER_NAME[provider]} account`}</button>`;
+    slot.innerHTML = !oauthState.configured[provider]
+      ? `<p class="muted small">${PROVIDER_NAME[provider]} sign-in isn't set up on this installation yet (README → "Setting up one-click sign-in").
+         Return address to register: <code>${esc(oauthState.redirect_url)}</code></p>`
+      : `<button class="btn ${has ? "link" : "primary"}" data-open-connect>${has ? `+ Connect another ${PROVIDER_NAME[provider]} account` : `Connect ${PROVIDER_NAME[provider]} account`}</button>`;
     const open = $("[data-open-connect]", slot);
     if (open) open.onclick = () => openConnectPanel(provider);
   }
 
+  $$("[data-items]", card).forEach((b) => b.onclick = () => itemsDialog(conns.find((k) => k.id === Number(b.dataset.items))));
   $$("[data-edit-vis]", card).forEach((b) => b.onclick = () => {
     const acc = b.closest(".account"); const list = accounts[b.dataset.editVis];
     editing = true;
-    $(".vis-slot", acc).innerHTML = visibilityEditor(b.dataset.editVis, list[0].departments.map((d) => d.id), list[0].company_wide) +
-      `<div class="row"><button class="primary" data-save-vis>Save</button><button class="secondary" data-cancel-vis>Cancel</button></div>
-       <p class="error"></p>`;
-    $("[data-cancel-vis]", acc).onclick = () => { editing = false; refreshConnections(); };
-    $("[data-save-vis]", acc).onclick = async () => {
-      const v = readVisibility($(".vis-edit", acc));
-      if (!v.department_ids.length && !v.company_wide) { $(".vis-slot .error", acc).textContent = "Choose at least one department, or Everyone."; return; }
-      for (const k of list)
-        await api(`/api/connectors/${k.id}`, { method: "PUT", json: { type: k.type, name: k.name, config: {}, enabled: k.enabled, ...v } });
-      editing = false; refreshConnections();
-    };
+    $(".vis-slot", acc).innerHTML = `<div class="panel">${visibilityPicker(list[0].departments.map((d) => d.id), list[0].company_wide)}
+      <div class="row"><button class="btn primary" data-save-vis>Save</button><button class="btn" data-cancel-vis>Cancel</button></div><p class="error"></p></div>`;
+    $("[data-cancel-vis]", acc).onclick = () => { editing = false; refreshSources(); };
+    $("[data-save-vis]", acc).onclick = (ev) => busy(ev.target, "Saving…", async () => {
+      const v = readVisibility($(".panel", acc));
+      const err = visibilityError(v);
+      if (err) { $(".panel .error", acc).textContent = err; return; }
+      for (const k of list) await api(`/api/connectors/${k.id}`, { method: "PUT", json: { type: k.type, name: k.name, config: {}, enabled: k.enabled, ...v } });
+      editing = false; toast("✓ Saved. This applies to everything already imported."); refreshSources();
+    });
   });
   $$("[data-sync-account]", card).forEach((b) => b.onclick = async () => {
-    b.disabled = true; b.textContent = "Importing…";
+    b.disabled = true; b.innerHTML = '<span class="spinner"></span>Importing…';
     for (const k of accounts[b.dataset.syncAccount]) await api(`/api/connectors/${k.id}/sync`, { method: "POST" });
-    setTimeout(refreshConnections, 800);
+    setTimeout(() => refreshSources(), 800);
   });
   $$("[data-disconnect]", card).forEach((b) => b.onclick = async () => {
     const list = accounts[b.dataset.disconnect];
-    if (!confirm(`Disconnect ${list[0].config.username || "this account"}?\n\nEverything imported from it will be removed from the knowledge base, and KnowledgeDesk will forget its sign-in.`)) return;
-    b.disabled = true; b.textContent = "Disconnecting…";
-    try { for (const k of list) await api(`/api/connectors/${k.id}`, { method: "DELETE" }); } catch (err) { alert(err.message); }
-    refreshConnections();
+    const ok = await confirmBox({ title: `Disconnect ${list[0].config.username || "this account"}?`, confirm: "Disconnect", danger: true,
+      text: "Everything imported from this account will be removed from KnowledgeDesk, and its sign-in will be forgotten. Nothing is deleted in the account itself." });
+    if (!ok) return;
+    await busy(b, "Disconnecting…", async () => {
+      try { for (const k of list) await api(`/api/connectors/${k.id}`, { method: "DELETE" }); toast("Disconnected."); } catch (err) { toast(err.message, true); }
+    });
+    refreshSources();
   });
-  $$("[data-add-svc]", card).forEach((b) => b.onclick = async () => {
+  $$("[data-add-svc]", card).forEach((b) => b.onclick = () => {
     const list = accounts[b.dataset.account];
-    await startSignIn(provider, [b.dataset.addSvc], list[0].departments.map((d) => d.id), list[0].company_wide, b);
+    startSignIn(provider, [b.dataset.addSvc], { department_ids: list[0].departments.map((d) => d.id), company_wide: list[0].company_wide }, b);
   });
 }
 
@@ -399,35 +541,47 @@ function openConnectPanel(provider) {
   editing = true;
   const slot = $(`.provider-card[data-provider=${provider}] .pc-connect`);
   const names = { google: ["Gmail", "Google Calendar", "Google Drive"], microsoft: ["Outlook mail", "Outlook calendar", "OneDrive"] }[provider];
-  slot.innerHTML = `<div class="connect-panel">
+  slot.innerHTML = `<div class="panel">
     <span class="label">What should KnowledgeDesk read?</span>
-    <div class="checks">
-      <label class="radio"><input type="checkbox" name="svc" value="mail" checked> 📧 ${names[0]}</label>
-      <label class="radio"><input type="checkbox" name="svc" value="calendar" checked> 📅 ${names[1]}</label>
-      <label class="radio"><input type="checkbox" name="svc" value="files" checked> 📁 ${names[2]}</label>
-    </div>
-    ${visibilityEditor("new-" + provider, [], false)}
+    <label class="check"><input type="checkbox" name="svc" value="mail" checked> 📧 ${names[0]}</label>
+    <label class="check"><input type="checkbox" name="svc" value="calendar" checked> 📅 ${names[1]}</label>
+    <label class="check"><input type="checkbox" name="svc" value="files" checked> 📁 ${names[2]}</label>
+    ${visibilityPicker([], false)}
     <p class="muted small">You'll sign in on ${PROVIDER_NAME[provider]}'s own page. KnowledgeDesk only reads – it never sends, changes or deletes anything.
-      ${provider === "google" ? 'If Google shows "Google hasn\'t verified this app", click <b>Continue</b>, and tick <b>all</b> the boxes on the next page.' : ""}</p>
-    <div class="row"><button class="primary" data-go>Continue to ${PROVIDER_NAME[provider]}</button>
-      <button class="secondary" data-cancel>Cancel</button></div>
-    <p class="error"></p></div>`;
-  $("[data-cancel]", slot).onclick = () => { editing = false; slot.innerHTML = ""; refreshConnections(); };
-  $("[data-go]", slot).onclick = async (e) => {
+      ${provider === "google" ? "If Google says the app isn't verified, click <b>Continue</b>, then tick <b>all</b> the boxes on the next page." : ""}</p>
+    <div class="row"><button class="btn primary" data-go>Continue to ${PROVIDER_NAME[provider]}</button><button class="btn" data-cancel>Cancel</button></div>
+    <p class="error" role="alert"></p></div>`;
+  $("[data-cancel]", slot).onclick = () => { editing = false; slot.innerHTML = ""; refreshSources(); };
+  $("[data-go]", slot).onclick = (e) => {
     const services = $$("input[name=svc]:checked", slot).map((x) => x.value);
-    const v = readVisibility($(".vis-edit", slot));
-    if (!services.length) { $(".error", slot).textContent = "Tick at least one thing to read."; return; }
-    if (!v.department_ids.length && !v.company_wide) { $(".error", slot).textContent = "Choose who can search it: at least one department, or Everyone."; return; }
-    await startSignIn(provider, services, v.department_ids, v.company_wide, e.target, $(".error", slot));
+    const v = readVisibility(slot);
+    const err = !services.length ? "Tick at least one thing to read." : visibilityError(v);
+    if (err) { $(".error", slot).textContent = err; return; }
+    startSignIn(provider, services, v, e.target, $(".error", slot));
   };
 }
-
-async function startSignIn(provider, services, department_ids, company_wide, button, errorEl) {
-  button.disabled = true;
+async function startSignIn(provider, services, visibility, button, errorEl) {
+  button.disabled = true; button.innerHTML = `<span class="spinner"></span>Opening ${PROVIDER_NAME[provider]}…`;
   try {
-    const r = await (await api("/api/oauth/start", { method: "POST", json: { provider, services, department_ids, company_wide } })).json();
+    const r = await (await api("/api/oauth/start", { method: "POST", json: { provider, services, ...visibility } })).json();
     window.location.href = r.url;
-  } catch (err) { button.disabled = false; if (errorEl) errorEl.textContent = err.message; else alert(err.message); }
+  } catch (err) {
+    button.disabled = false; button.textContent = `Continue to ${PROVIDER_NAME[provider]}`;
+    if (errorEl) errorEl.textContent = err.message; else toast(err.message, true);
+  }
+}
+
+async function itemsDialog(k) {
+  const [icon, label] = SERVICE_INFO[k.type];
+  const f = openDialog(`<h2>${icon} ${esc(label)}${k.config.username ? ` <span class="muted small">${esc(k.config.username)}</span>` : ""}</h2>
+    <p class="muted small">What was imported from this source, newest first.</p>
+    <input type="search" placeholder="Search…" data-q dir="auto"><div data-list style="margin-top:8px"></div>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Close</button></div>`);
+  const list = $("[data-list]", f);
+  const load = () => pagedDocs(list, { reset: true, query: { connector_id: k.id, q: $("[data-q]", f).value } }, { pageSize: 15, empty: "Nothing found." });
+  $("[data-q]", f).addEventListener("input", debounce(load));
+  $("[data-close]", f).onclick = closeDialog;
+  await load();
 }
 
 // ---------- Websites
@@ -435,72 +589,111 @@ function drawWebsites() {
   const sites = conns.filter((k) => k.type === "website");
   $("#web-list").innerHTML = sites.map((k) => `<div class="svc">
       <div class="svc-name" dir="ltr">${esc((k.config.url || "").replace(/^https?:\/\//, ""))}</div>
-      <div>${statusLine(k)}<div class="muted small">Can be searched by: ${deptPills(k)}</div></div>
-      <div class="acc-actions"><button class="link" data-web-sync="${k.id}" ${k.syncing ? "disabled" : ""}>Check now</button>
-        <button class="danger" data-web-del="${k.id}">Remove</button></div></div>`).join("");
-  $$("[data-web-sync]").forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/api/connectors/${b.dataset.webSync}/sync`, { method: "POST" }); setTimeout(refreshConnections, 800); });
+      <div>${sourceStatus(k)}<div class="muted small">Who can find it: ${visibilityPills(k)}</div></div>
+      <div class="acc-actions">${k.documents ? `<button class="btn link" data-items="${k.id}">View pages</button>` : ""}
+        <button class="btn link" data-web-sync="${k.id}" ${k.syncing ? "disabled" : ""}>Check now</button>
+        <button class="btn link danger" data-web-del="${k.id}">Remove</button></div></div>`).join("");
+  $$("#web-list [data-items]").forEach((b) => b.onclick = () => itemsDialog(conns.find((k) => k.id === Number(b.dataset.items))));
+  $$("[data-web-sync]").forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/api/connectors/${b.dataset.webSync}/sync`, { method: "POST" }); toast("Checking the website…"); setTimeout(() => refreshSources(), 800); });
   $$("[data-web-del]").forEach((b) => b.onclick = async () => {
-    if (!confirm("Remove this website? Its pages will no longer be searchable.")) return;
-    await api(`/api/connectors/${b.dataset.webDel}`, { method: "DELETE" }); refreshConnections();
+    if (!await confirmBox({ title: "Remove this website?", text: "Its pages will no longer be searchable.", confirm: "Remove", danger: true })) return;
+    await api(`/api/connectors/${b.dataset.webDel}`, { method: "DELETE" }); toast("Website removed."); refreshSources();
   });
 }
-$("#web-form").addEventListener("submit", async (e) => {
+$("#web-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const url = e.target.url.value.trim();
-  const v = readVisibility($("#web-visibility .vis-edit"));
+  const v = readVisibility($("#web-visibility"));
   $("#web-error").textContent = "";
-  if (!url) { $("#web-error").textContent = "Type the website address first."; return; }
-  if (!v.department_ids.length && !v.company_wide) { $("#web-error").textContent = "Choose who can search it."; return; }
-  const btn = $("button", e.target); btn.disabled = true; btn.textContent = "Checking the website…";
-  try {
-    await api("/api/connectors", { method: "POST", json: { type: "website", name: url, config: { url }, ...v } });
-    e.target.reset(); refreshConnections();
-  } catch (err) { $("#web-error").textContent = err.message; }
-  btn.disabled = false; btn.textContent = "Add website";
+  if (!url) { $("#web-error").textContent = "Type the website address first, for example www.yourcompany.com."; return; }
+  const err = visibilityError(v);
+  if (err) { $("#web-error").textContent = err; return; }
+  busy($("button", e.target), "Checking the website…", async () => {
+    try {
+      await api("/api/connectors", { method: "POST", json: { type: "website", name: url, config: { url }, ...v } });
+      e.target.reset(); toast("✓ Website added. Reading its pages now."); refreshSources();
+    } catch (err2) { $("#web-error").textContent = err2.message; }
+  });
 });
 
-// ---------- More ways (other email, calendar link, WhatsApp)
+// ---------- Files and recordings
+const uploadForm = $("#upload-form");
+function uploadKind() { return $("input[name=kind]:checked", uploadForm).value; }
+$$("input[name=kind]", uploadForm).forEach((r) => r.addEventListener("change", () => {
+  $$(".kind-help", uploadForm).forEach((p) => p.classList.toggle("hidden", p.dataset.kind !== uploadKind()));
+  $(".interview-fields", uploadForm).classList.toggle("hidden", uploadKind() !== "interview");
+}));
+const dz = $("#dropzone"); const fileInput = $("input[type=file]", dz);
+function showChosen() { $(".dz-files", dz).textContent = [...fileInput.files].map((f) => f.name).join(", "); }
+fileInput.addEventListener("change", showChosen);
+["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, () => dz.classList.remove("drag")));
+dz.addEventListener("drop", (e) => { e.preventDefault(); fileInput.files = e.dataTransfer.files; showChosen(); });
+
+uploadForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  $("#upload-error").textContent = "";
+  const files = [...fileInput.files];
+  const v = readVisibility($("#upload-visibility"));
+  const err = !files.length ? "Choose at least one file." : visibilityError(v);
+  if (err) { $("#upload-error").textContent = err; return; }
+  const body = new FormData();
+  files.forEach((f) => body.append("files", f));
+  body.append("department_ids", v.department_ids.join(","));
+  body.append("company_wide", v.company_wide ? "true" : "false");
+  body.append("kind", uploadKind());
+  for (const k of ["interviewee", "role", "interview_date"]) body.append(k, uploadForm[k].value || "");
+  busy($("button[type=submit]", uploadForm), "Uploading…", async () => {
+    try {
+      await api("/api/documents", { method: "POST", body });
+      fileInput.value = ""; showChosen(); ["interviewee", "role", "interview_date"].forEach((k) => (uploadForm[k].value = ""));
+      $("#upload-visibility").innerHTML = visibilityPicker([], false);
+      toast(`✓ Uploaded ${plural(files.length, "file", "files")}. ${uploadKind() === "interview" ? "Recordings take a few minutes to turn into text." : "They'll be searchable in a moment."}`);
+      await loadFiles(true); refreshSources();
+    } catch (err2) { $("#upload-error").textContent = err2.message; }
+  });
+});
+async function loadFiles(reset) {
+  await pagedDocs($("#files-list"), { reset, query: { source: "uploads", q: $("#files-search").value } },
+    { manage: true, pageSize: 10, empty: "No files uploaded yet." });
+}
+$("#files-search").addEventListener("input", debounce(() => loadFiles(true)));
+
+// ---------- Other sources (IMAP mailbox, calendar link)
+const connForm = $("#conn-form");
 function connType() { return $("input[name=type]:checked", connForm).value; }
 function showConnFields() {
   const t = connType();
-  $$(".conn-fields", connForm).forEach((el) => {
-    const on = el.dataset.for === t;
-    el.classList.toggle("hidden", !on);
-    $$("input", el).forEach((i) => (i.disabled = !on));
-  });
-  const isWa = t === "whatsapp";
-  $(".conn-visibility", connForm).classList.toggle("hidden", isWa);
-  $(".conn-actions", connForm).classList.toggle("hidden", isWa);
+  $$(".conn-fields", connForm).forEach((el) => { const on = el.dataset.for === t; el.classList.toggle("hidden", !on); $$("input", el).forEach((i) => (i.disabled = !on)); });
   $("#conn-test").classList.toggle("hidden", t !== "imap");
 }
-$$("input[name=type]", connForm).forEach((r) => r.addEventListener("change", () => {
-  $("#conn-error").textContent = ""; $("#conn-ok").textContent = ""; $("#imap-folders").textContent = ""; showConnFields();
-}));
+$$("input[name=type]", connForm).forEach((r) => r.addEventListener("change", () => { $("#conn-error").textContent = ""; $("#imap-folders").textContent = ""; showConnFields(); }));
 function connBody() {
   const t = connType(); const config = {};
   $$(`.conn-fields[data-for=${t}] input`, connForm).forEach((i) => (config[i.name] = i.value));
-  const name = config.name || config.username || "Calendar"; delete config.name;
-  return { type: t, name, config, company_wide: connForm.company_wide.checked, enabled: connForm.enabled.checked,
-    department_ids: $$("input[name=cdept]:checked", connForm).map((x) => Number(x.value)) };
+  const name = config.name || config.username || (t === "ics" ? "Calendar" : "Mailbox"); delete config.name;
+  return { type: t, name, config, enabled: true, ...readVisibility($("#conn-visibility")) };
 }
 function resetConnForm() {
   connForm.reset(); connForm.id.value = "";
-  $("#conn-types").classList.remove("hidden"); $("#conn-form-title").classList.add("hidden");
-  $("#conn-cancel").classList.add("hidden"); $("#conn-error").textContent = ""; $("#imap-folders").textContent = "";
+  $("#conn-types").classList.remove("hidden"); $("#conn-form-title").classList.add("hidden"); $("#conn-cancel").classList.add("hidden");
+  $("#conn-error").textContent = ""; $("#imap-folders").textContent = "";
   $$("input[name=password], .conn-fields[data-for=ics] input[name=url]", connForm).forEach((i) => (i.placeholder = ""));
-  deptChecks("#conn-depts", "cdept"); showConnFields();
+  $("#conn-visibility").innerHTML = visibilityPicker([], false);
+  showConnFields();
 }
 function drawManual() {
   const list = conns.filter((k) => k.type === "imap" || k.type === "ics");
-  $("#manual-list").innerHTML = list.length ? `<div class="manual">${list.map((k) => `<div class="svc">
-      <div class="svc-name">${TYPE_LABEL[k.type]}<div class="muted small" dir="auto">${esc(k.config.username || k.name)}</div></div>
-      <div>${statusLine(k)}<div class="muted small">Can be searched by: ${deptPills(k)}</div></div>
-      <div class="acc-actions"><button class="link" data-m-sync="${k.id}" ${k.syncing ? "disabled" : ""}>Check now</button>
-        <button class="link" data-m-edit="${k.id}">Edit</button><button class="danger" data-m-del="${k.id}">Remove</button></div></div>`).join("")}</div>` : "";
-  $$("[data-m-sync]").forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/api/connectors/${b.dataset.mSync}/sync`, { method: "POST" }); setTimeout(refreshConnections, 800); });
+  $("#manual-list").innerHTML = list.length ? list.map((k) => `<div class="svc">
+      <div class="svc-name">${SERVICE_INFO[k.type][0]} ${esc(k.name)}</div>
+      <div>${sourceStatus(k)}<div class="muted small">Who can find it: ${visibilityPills(k)}</div></div>
+      <div class="acc-actions">${k.documents ? `<button class="btn link" data-items="${k.id}">View items</button>` : ""}
+        <button class="btn link" data-m-edit="${k.id}">Edit</button><button class="btn link danger" data-m-del="${k.id}">Remove</button></div></div>`).join("") + "<hr>" : "";
+  if (list.length) $("#more-sources").open = true;
+  $$("#manual-list [data-items]").forEach((b) => b.onclick = () => itemsDialog(conns.find((k) => k.id === Number(b.dataset.items))));
   $$("[data-m-del]").forEach((b) => b.onclick = async () => {
-    if (!confirm("Remove this source? Everything imported from it will be removed.")) return;
-    await api(`/api/connectors/${b.dataset.mDel}`, { method: "DELETE" }); refreshConnections();
+    if (!await confirmBox({ title: "Remove this source?", text: "Everything imported from it will no longer be searchable.", confirm: "Remove", danger: true })) return;
+    await api(`/api/connectors/${b.dataset.mDel}`, { method: "DELETE" }); toast("Removed."); refreshSources();
   });
   $$("[data-m-edit]").forEach((b) => b.onclick = () => {
     const k = conns.find((x) => x.id === Number(b.dataset.mEdit));
@@ -512,153 +705,171 @@ function drawManual() {
     const fields = $(`.conn-fields[data-for=${k.type}]`, connForm);
     $("input[name=name]", fields).value = k.name;
     for (const [key, val] of Object.entries(k.config)) { const i = $(`input[name=${key}]`, fields); if (i && val) i.value = val; }
-    $$("input[name=password], input[name=url]", fields).forEach((i) => (i.placeholder = "leave empty to keep the saved one"));
-    connForm.company_wide.checked = k.company_wide; connForm.enabled.checked = k.enabled;
-    deptChecks("#conn-depts", "cdept", k.departments.map((d) => d.id));
+    $$("input[name=password], input[name=url]", fields).forEach((i) => (i.placeholder = "Leave empty to keep the saved one"));
+    $("#conn-visibility").innerHTML = visibilityPicker(k.departments.map((d) => d.id), k.company_wide);
     $("#conn-cancel").classList.remove("hidden");
     connForm.scrollIntoView({ behavior: "smooth" });
   });
 }
-$("#conn-cancel").addEventListener("click", () => { editing = false; resetConnForm(); });
-$("#conn-test").addEventListener("click", async () => {
-  $("#conn-error").textContent = ""; $("#conn-ok").textContent = "Testing…";
+$("#conn-cancel").addEventListener("click", () => { editing = false; resetConnForm(); refreshSources(); });
+$("#conn-test").addEventListener("click", (e) => busy(e.target, "Testing…", async () => {
+  $("#conn-error").textContent = "";
   try {
-    const r = await (await api("/api/connectors/test", { method: "POST", json: connBody() })).json();
-    $("#conn-ok").textContent = "✓ Connected successfully.";
+    const r = await (await api("/api/connectors/test", { method: "POST", json: { ...connBody(), company_wide: true } })).json();
+    toast("✓ Connected successfully.");
     if (r.folders.length) $("#imap-folders").textContent = "Folders in this mailbox: " + r.folders.join(", ");
-  } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
-});
-connForm.addEventListener("submit", async (e) => {
+  } catch (err) { $("#conn-error").textContent = err.message; }
+}));
+connForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  $("#conn-error").textContent = ""; $("#conn-ok").textContent = "Connecting…";
-  const btn = $("button[type=submit]", connForm); btn.disabled = true;
-  try {
-    const id = connForm.id.value;
-    await api(id ? `/api/connectors/${id}` : "/api/connectors", { method: id ? "PUT" : "POST", json: connBody() });
-    editing = false; resetConnForm(); $("#conn-ok").textContent = "✓ Saved. Importing now – see the status above.";
-    refreshConnections();
-  } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
-  btn.disabled = false;
-});
-
-// ---------- Loading and refreshing
-async function loadConns() {
-  await refreshDepartments();
-  try { oauthState = await getJSON("/api/oauth/status"); } catch {}
-  editing = false;
-  $$(".pc-connect").forEach((el) => (el.innerHTML = ""));
-  $("#web-visibility").innerHTML = visibilityEditor("web", [], true);
-  resetConnForm();
-  await refreshConnections();
-}
-
-async function refreshConnections() {
-  clearTimeout(connPoll);
-  conns = await getJSON("/api/connectors");
-  if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawWebsites(); drawManual(); }
-  await drawSummary();
-  const busy = conns.some((k) => k.syncing || !k.last_sync || k.indexing);
-  if (busy || editing)
-    connPoll = setTimeout(() => { if (!$("#sub-conns").classList.contains("hidden")) refreshConnections(); }, 4000);
-}
-
-function showConnectedNotice(count) {
-  $("#conn-notice").innerHTML = `<b>✓ Account connected.</b> KnowledgeDesk is importing it now – watch each item below change from
-    <span class="st st-busy">⏳ Importing</span> to <span class="st st-ok">✓ searchable</span>. You can already
-    <button class="link" id="notice-ask">ask questions</button> about anything that's searchable.`;
-  $("#conn-notice").classList.remove("hidden");
-  $("#notice-ask").onclick = () => $("button[data-view=chat]").click();
-}
-
-// ------------------------------------------------------------------ admin: departments
-async function loadDepts() {
-  await refreshDepartments();
-  $("#dept-rows").innerHTML = departments.map((d) => `<tr><td dir="auto">${esc(d.name)}</td><td>${d.users}</td><td>${d.documents}</td>
-    <td><button class="danger" data-deldept="${d.id}">Delete</button></td></tr>`).join("");
-  $$("[data-deldept]").forEach((b) => b.onclick = async () => {
-    if (!confirm("Delete this department? Users and documents stay, but lose this department.")) return;
-    await api(`/api/departments/${b.dataset.deldept}`, { method: "DELETE" }); loadDepts();
+  $("#conn-error").textContent = "";
+  const body = connBody();
+  const err = visibilityError(body);
+  if (err) { $("#conn-error").textContent = err; return; }
+  busy($("button[type=submit]", connForm), "Connecting…", async () => {
+    try {
+      const id = connForm.id.value;
+      await api(id ? `/api/connectors/${id}` : "/api/connectors", { method: id ? "PUT" : "POST", json: body });
+      editing = false; resetConnForm(); toast("✓ Saved. Importing now."); refreshSources();
+    } catch (err2) { $("#conn-error").textContent = err2.message; }
   });
-}
-$("#dept-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  try { await api("/api/departments", { method: "POST", json: { name: e.target.name.value } }); e.target.reset(); loadDepts(); }
-  catch (err) { alert(err.message); }
 });
 
-// ------------------------------------------------------------------ admin: users
-let users = [];
-async function loadUsers() {
+// ================================================================== People
+LOADERS.people = async function loadPeople() {
   await refreshDepartments();
-  resetUserForm();
-  users = await getJSON("/api/users");
-  $("#user-rows").innerHTML = users.map((u) => `<tr><td dir="auto">${esc(u.name)}${u.active ? "" : ' <span class="muted">(disabled)</span>'}</td><td>${esc(u.email)}</td>
-    <td>${u.role}</td><td>${u.departments.map((d) => `<span class="pill">${esc(d.name)}</span>`).join("")}</td>
-    <td><button class="link" data-edit="${u.id}">Edit</button></td></tr>`).join("");
-  $$("[data-edit]").forEach((b) => b.onclick = () => editUser(users.find((u) => u.id === Number(b.dataset.edit))));
-}
-function resetUserForm() {
-  const f = $("#user-form"); f.reset(); f.id.value = "";
-  $("#user-form-title").textContent = "Add user"; $("#user-cancel").classList.add("hidden");
-  deptChecks("#user-depts", "udept");
-}
-function editUser(u) {
-  const f = $("#user-form");
-  f.id.value = u.id; f.name.value = u.name; f.email.value = u.email; f.password.value = "";
-  f.role.value = u.role; f.active.checked = u.active;
-  deptChecks("#user-depts", "udept", u.departments.map((d) => d.id));
-  $("#user-form-title").textContent = `Edit ${u.name || u.email}`; $("#user-cancel").classList.remove("hidden");
-  f.scrollIntoView({ behavior: "smooth" });
-}
-$("#user-cancel").addEventListener("click", resetUserForm);
-$("#user-form").addEventListener("submit", async (e) => {
+  $("#dept-chips").innerHTML = departments.length ? departments.map((d) => `<span class="chip">${esc(d.name)}
+      <span class="muted small">· ${plural(d.users, "person", "people")}</span>
+      <button class="btn link danger small" data-del-dept="${d.id}" data-name="${esc(d.name)}" aria-label="Delete ${esc(d.name)}">✕</button></span>`).join("")
+    : '<p class="muted">No departments yet. Without departments, everything is visible to everyone in the company.</p>';
+  $$("[data-del-dept]").forEach((b) => b.onclick = async () => {
+    if (!await confirmBox({ title: `Delete the ${b.dataset.name} department?`, confirm: "Delete", danger: true,
+      text: "People and information stay, but they will no longer be grouped under this department. Information that was only visible to this department will be visible to admins only." })) return;
+    await api(`/api/departments/${b.dataset.delDept}`, { method: "DELETE" }); toast("Department deleted."); LOADERS.people();
+  });
+  const users = await getJSON("/api/users");
+  $("#user-list").innerHTML = users.map((u) => `<div class="list-row"><div>
+      <div class="title">${esc(u.name || u.email)} ${u.role === "admin" ? '<span class="chip info">Admin</span>' : ""} ${u.active ? "" : '<span class="chip">Disabled</span>'}</div>
+      <div class="meta">${esc(u.email)} · ${u.role === "admin" ? "Sees everything" : (u.departments.map((d) => `<span class="pill">${esc(d.name)}</span>`).join("") || "Only information for everyone")}</div></div>
+      <div class="actions"><button class="btn link" data-edit-user="${u.id}">Edit</button></div></div>`).join("");
+  $$("[data-edit-user]").forEach((b) => b.onclick = () => userDialog(users.find((u) => u.id === Number(b.dataset.editUser))));
+};
+$("#dept-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const f = e.target;
-  const body = { name: f.name.value, email: f.email.value, password: f.password.value || null, role: f.role.value,
-    active: f.active.checked, department_ids: $$("input[name=udept]:checked", f).map((x) => Number(x.value)) };
-  $("#user-error").textContent = "";
-  try {
-    if (f.id.value) await api(`/api/users/${f.id.value}`, { method: "PUT", json: body });
-    else await api("/api/users", { method: "POST", json: body });
-    loadUsers();
-  } catch (err) { $("#user-error").textContent = err.message; }
+  $("#dept-error").textContent = "";
+  const name = e.target.name.value.trim();
+  if (!name) { $("#dept-error").textContent = "Type a department name."; return; }
+  busy($("button", e.target), "Adding…", async () => {
+    try { await api("/api/departments", { method: "POST", json: { name } }); e.target.reset(); toast(`✓ ${name} added.`); LOADERS.people(); }
+    catch (err) { $("#dept-error").textContent = err.message; }
+  });
 });
+$("#add-user").addEventListener("click", () => userDialog(null));
+function userDialog(u) {
+  const f = openDialog(`<h2>${u ? "Edit " + esc(u.name || u.email) : "Add a person"}</h2>
+    <label>Full name <input name="name" value="${esc(u?.name || "")}" dir="auto" required></label>
+    <label>Email (used to log in) <input name="email" type="email" value="${esc(u?.email || "")}" required></label>
+    <label>${u ? "New password (leave empty to keep the current one)" : "Password (at least 8 characters – give it to them)"}
+      <input name="password" type="text" autocomplete="off" ${u ? "" : "required minlength=8"}></label>
+    <label>Role <select name="role"><option value="member">Team member – finds information for their departments</option>
+      <option value="admin">Admin – sees everything and manages KnowledgeDesk</option></select></label>
+    <span class="label">Departments</span>
+    <div>${departments.map((d) => `<label class="check"><input type="checkbox" name="dept" value="${d.id}" ${u?.departments.some((x) => x.id === d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("") || '<span class="muted small">No departments yet.</span>'}</div>
+    ${u ? `<label class="check" style="margin-top:8px"><input type="checkbox" name="active" ${u.active ? "checked" : ""}> Can log in</label>` : ""}
+    <p class="error" role="alert"></p>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">${u ? "Save" : "Add person"}</button></div>`);
+  f.role.value = u?.role || "member";
+  if (!u) f.password.value = Math.random().toString(36).slice(2, 7) + "-" + Math.random().toString(36).slice(2, 7);
+  $("[data-close]", f).onclick = closeDialog;
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    const body = { name: f.name.value.trim(), email: f.email.value.trim(), password: f.password.value || null, role: f.role.value,
+      active: u ? f.active.checked : true, department_ids: $$("input[name=dept]:checked", f).map((x) => Number(x.value)) };
+    if (!body.name || !body.email) { $(".error", f).textContent = "Name and email are required."; return; }
+    if (body.password && body.password.length < 8) { $(".error", f).textContent = "The password must be at least 8 characters."; return; }
+    busy($("button[type=submit]", f), "Saving…", async () => {
+      try {
+        await api(u ? `/api/users/${u.id}` : "/api/users", { method: u ? "PUT" : "POST", json: body });
+        if (u) { closeDialog(); toast("✓ Saved."); LOADERS.people(); return; }
+        const details = `KnowledgeDesk – ${appStatus.company || "our company"}\nAddress: ${location.origin}\nEmail: ${body.email}\nPassword: ${body.password}`;
+        const d = openDialog(`<h2>✓ ${esc(body.name)} was added</h2>
+          <p class="muted">Send them these login details. They can change the password after logging in (Settings).</p>
+          <textarea rows="4" readonly data-details>${esc(details)}</textarea>
+          <div class="dialog-actions"><button class="btn" type="button" data-copy>Copy</button><button class="btn primary" type="button" data-done>Done</button></div>`);
+        $("[data-copy]", d).onclick = async () => {
+          try { await navigator.clipboard.writeText(details); toast("Copied."); }
+          catch { $("[data-details]", d).select(); document.execCommand("copy"); toast("Copied."); }
+        };
+        $("[data-done]", d).onclick = closeDialog;
+        LOADERS.people();
+      } catch (err) { $(".error", f).textContent = err.message; }
+    });
+  };
+}
 
-// ------------------------------------------------------------------ admin: questions
+// ================================================================== Activity
 let qData = null;
-async function loadQuestions() { qData = await getJSON("/api/admin/questions"); drawQuestions(); }
+LOADERS.activity = async function loadActivity() { qData = await getJSON("/api/admin/questions"); drawQuestions(); };
 function drawQuestions() {
   const s = qData.stats;
-  $("#q-stats").innerHTML = [["Questions (total)", s.total], ["Last 7 days", s.last_7_days], ["👍 Helpful", s.helpful],
-    ["👎 Not helpful", s.not_helpful], ["No sources found", s.no_sources]].map(([l, v]) => `<div class="stat"><b>${v}</b><span class="muted small">${l}</span></div>`).join("");
+  $("#q-stats").innerHTML = [["Asked in total", s.total], ["This week", s.last_7_days], ["👍 Helpful", s.helpful], ["👎 Not helpful", s.not_helpful], ["No answer found", s.no_sources]]
+    .map(([l, v]) => `<div class="stat"><div class="big-number">${v}</div><div class="muted small">${l}</div></div>`).join("");
   const gaps = $("#q-gaps").checked;
-  $("#q-rows").innerHTML = qData.questions.filter((q) => !gaps || !q.found_sources || q.feedback === -1).map((q) => `
-    <tr><td class="small">${new Date(q.created_at).toLocaleString()}</td><td class="small">${esc(q.user_name || q.user_email || "")}</td>
-    <td dir="auto"><details><summary>${esc(q.question)}</summary><div class="small muted" style="white-space:pre-wrap">${esc(q.answer || "")}</div></details></td>
-    <td>${!q.found_sources ? '<span class="status-error">no sources</span>' : q.feedback === 1 ? "👍" : q.feedback === -1 ? "👎" : ""}</td></tr>`).join("") ||
-    `<tr><td colspan="4" class="muted">No questions yet.</td></tr>`;
+  const list = qData.questions.filter((q) => !gaps || !q.found_sources || q.feedback === -1);
+  $("#q-list").innerHTML = list.map((q) => `<div class="list-row"><div>
+      <details><summary class="title" dir="auto">${esc(q.question)}</summary><div class="muted small" style="white-space:pre-wrap;margin-top:6px" dir="auto">${esc(q.answer || "")}</div></details>
+      <div class="meta">${esc(q.user_name || q.user_email || "")} · ${new Date(q.created_at).toLocaleString()}</div></div>
+      <div>${!q.found_sources ? '<span class="chip bad">No answer found</span>' : q.feedback === -1 ? '<span class="chip bad">👎</span>' : q.feedback === 1 ? '<span class="chip ok">👍</span>' : ""}</div></div>`).join("")
+    || `<div class="empty">${gaps ? "No unanswered questions. 🎉" : "No questions yet."}</div>`;
 }
 $("#q-gaps").addEventListener("change", drawQuestions);
 
-// ------------------------------------------------------------------ admin: system
-async function loadSystem() {
+// ================================================================== Settings
+let lastHealth = null;
+LOADERS.settings = async function loadSettings() {
+  await drawHealth();
   const st = await (await fetch("/api/status")).json();
   const l = st.license;
-  $("#license-info").innerHTML = l.state === "unchecked" ? `<p class="muted">Licensing is not configured on this installation.</p>` :
-    `<p>Status: <b>${esc(l.state)}</b>${l.customer ? ` · ${esc(l.customer)}` : ""}${l.expires ? ` · valid until ${esc(l.expires)}` : ""}${l.max_users ? ` · up to ${l.max_users} users` : ""}</p>${l.message ? `<p class="muted">${esc(l.message)}</p>` : ""}`;
+  $("#license-info").innerHTML = l.state === "unchecked" ? '<p class="muted">Licensing is not configured on this installation.</p>'
+    : `<p><span class="chip ${l.state === "valid" ? "ok" : l.state === "grace" ? "busy" : "bad"}">${esc(l.state)}</span>
+       ${l.customer ? esc(l.customer) : ""}${l.expires ? ` · valid until ${esc(l.expires)}` : ""}${l.max_users ? ` · up to ${l.max_users} people` : ""}</p>
+       ${l.message ? `<p class="muted">${esc(l.message)}</p>` : ""}`;
+};
+async function drawHealth() {
+  $("#health-list").innerHTML = '<div class="muted"><span class="spinner"></span> Checking…</div>';
+  lastHealth = await getJSON("/api/admin/health");
+  const icon = { ok: "✅", busy: "⏳", warn: "⚠️", bad: "❌" };
+  $("#health-list").innerHTML = lastHealth.checks.map((c) => `<div class="check-row"><span>${icon[c.state]}</span>
+      <b>${esc(c.label)}</b><span class="${c.state === "ok" ? "" : "state-text " + (c.state === "warn" ? "busy" : c.state)}">${esc(c.detail)}</span></div>`).join("");
+  $("#problem-list").innerHTML = lastHealth.problems.length ? lastHealth.problems.map((p) =>
+    `<div class="problem"><span class="muted">${new Date(p.time).toLocaleString()} · ${esc(p.where)}</span><br>${esc(p.message)}</div>`).join("")
+    : '<p class="muted small">No problems recorded since the last restart.</p>';
+  if (lastHealth.checks.some((c) => c.state === "busy")) poll(drawHealth, 10000);
 }
-$("#license-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const body = new FormData(); body.append("file", e.target.file.files[0]);
-  $("#license-error").textContent = "";
-  try { await api("/api/admin/license", { method: "POST", body }); e.target.reset(); loadSystem(); location.reload(); }
-  catch (err) { $("#license-error").textContent = err.message; }
+$("#health-refresh").addEventListener("click", (e) => busy(e.target, "Checking…", drawHealth));
+$("#health-download").addEventListener("click", () => {
+  const report = { generated: new Date().toISOString(), company: appStatus.company, browser: navigator.userAgent, ...lastHealth };
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" })),
+    download: `knowledgedesk-health-${new Date().toISOString().slice(0, 10)}.json` });
+  a.click();
 });
-$("#pw-form").addEventListener("submit", async (e) => {
+$("#license-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  $("#license-error").textContent = "";
+  const body = new FormData(); body.append("file", e.target.file.files[0]);
+  busy($("button", e.target), "Installing…", async () => {
+    try { await api("/api/admin/license", { method: "POST", body }); e.target.reset(); toast("✓ License installed."); LOADERS.settings(); }
+    catch (err) { $("#license-error").textContent = err.message; }
+  });
+});
+$("#pw-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target; $("#pw-error").textContent = "";
-  try { await api("/api/me/password", { method: "POST", json: { current_password: f.current_password.value, new_password: f.new_password.value } }); f.reset(); alert("Password changed."); }
-  catch (err) { $("#pw-error").textContent = err.message; }
+  busy($("button", f), "Saving…", async () => {
+    try { await api("/api/me/password", { method: "POST", json: { current_password: f.current_password.value, new_password: f.new_password.value } }); f.reset(); toast("✓ Password changed."); }
+    catch (err) { $("#pw-error").textContent = err.message; }
+  });
 });
 
 boot();

@@ -44,16 +44,20 @@ def init_schema(embedding_dim: int) -> None:
     with psycopg.connect(settings.database_url, autocommit=True) as c:
         c.execute(sql)
         row = c.execute("SELECT value FROM meta WHERE key = 'embedding_dim'").fetchone()
-        if row and int(row[0]) != embedding_dim:
-            raise RuntimeError(
-                f"The database was indexed with embeddings of size {row[0]}, but the current "
-                f"EMBED_MODEL produces size {embedding_dim}. Run `python -m tools.reindex` "
-                "after changing the embedding model."
-            )
-        c.execute(
-            "INSERT INTO meta(key, value) VALUES ('embedding_dim', %s) ON CONFLICT (key) DO NOTHING",
-            (str(embedding_dim),),
-        )
+        model = c.execute("SELECT value FROM meta WHERE key = 'embedding_model'").fetchone()
+        changed = (row and int(row[0]) != embedding_dim) or (model and model[0] != settings.embed_model) \
+            or (row and not model)
+        if changed:
+            # The search model changed: rebuild the search index from the stored files (automatic, in the background).
+            import logging
+
+            logging.getLogger("db").warning("Search model changed to %s: re-indexing everything", settings.embed_model)
+            c.execute("DROP TABLE IF EXISTS chunks")
+            c.execute("UPDATE documents SET status='pending', error=NULL")
+        c.execute("INSERT INTO meta(key, value) VALUES ('embedding_dim', %s) "
+                  "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (str(embedding_dim),))
+        c.execute("INSERT INTO meta(key, value) VALUES ('embedding_model', %s) "
+                  "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (settings.embed_model,))
         c.execute(
             f"""
             CREATE TABLE IF NOT EXISTS chunks (

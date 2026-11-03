@@ -33,6 +33,22 @@ def _read_text(path: Path) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def strip_quoted_reply(text: str) -> str:
+    """Drop the quoted earlier messages at the bottom of a reply (each email in a thread is indexed on its own)."""
+    import re
+
+    markers = [r"^On .{5,200} wrote:\s*$", r"^בתאריך .{5,200} מאת .*$", r"^.{0,80}כתב\(ה\):\s*$",
+               r"^-{2,}\s*Original Message\s*-{2,}", r"^From: .+\nSent: ", r"^_{20,}$"]
+    cut = len(text)
+    for m in markers:
+        found = re.search(m, text, flags=re.MULTILINE | re.IGNORECASE)
+        if found and found.start() > 20:
+            cut = min(cut, found.start())
+    kept = text[:cut]
+    kept = "\n".join(line for line in kept.splitlines() if not line.lstrip().startswith(">"))
+    return kept.strip() or text.strip()
+
+
 def extract(path: Path) -> list[Section]:
     ext = path.suffix.lower()
 
@@ -145,7 +161,7 @@ def extract(path: Path) -> list[Section]:
 
             content = BeautifulSoup(content, "html.parser").get_text("\n")
         head = f"From: {msg['from']}\nTo: {msg['to']}\nDate: {msg['date']}\nSubject: {msg['subject']}\n\n"
-        return [(head + content, "")]
+        return [(head + strip_quoted_reply(content), "")]
 
     if ext in AUDIO_VIDEO_EXT:
         from .transcribe import transcribe
