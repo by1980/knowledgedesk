@@ -26,6 +26,7 @@ class Settings:
     # LLM (Claude)
     anthropic_api_key = _env("ANTHROPIC_API_KEY")
     llm_model = _env("LLM_MODEL", "claude-opus-5-5")
+    planner_model = _env("PLANNER_MODEL", "claude-haiku-5-5")  # fast model that turns a question into a search plan
     llm_effort = _env("LLM_EFFORT", "low")  # low = fast answers (a few seconds); medium/high = more careful
     summarize_interviews = _env("SUMMARIZE_INTERVIEWS", "true").lower() == "true"
 

@@ -143,3 +143,20 @@ BEGIN
         UPDATE questions SET conversation_id = cid WHERE id = r.id;
     END LOOP;
 END $$;
+
+-- v0.9.9: precise search. The real date of each item (when an email was sent, a post published),
+-- and its people and addresses as searchable words ("dima@cutinside.com" -> dima, cutinside, com).
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS doc_date TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS documents_doc_date ON documents(doc_date DESC NULLS LAST);
+-- Attachments learn who their email was from and to.
+UPDATE documents a SET metadata = a.metadata || jsonb_build_object('to', e.metadata->>'to', 'folder', e.metadata->>'folder')
+  FROM documents e
+ WHERE a.kind <> 'email' AND e.kind = 'email' AND a.connector_id = e.connector_id
+   AND a.external_id LIKE e.external_id || ':att:%' AND NOT (a.metadata ? 'to');
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS meta_tsv tsvector GENERATED ALWAYS AS (
+    to_tsvector('simple', regexp_replace(
+        coalesce(title, '') || ' ' || coalesce(metadata->>'from', '') || ' ' || coalesce(metadata->>'to', '') || ' ' ||
+        coalesce(metadata->>'cc', '') || ' ' || coalesce(metadata->>'email_subject', '') || ' ' ||
+        coalesce(metadata->>'attachments', '') || ' ' || coalesce(metadata->>'account', '') || ' ' || coalesce(filename, ''),
+        '[@._/:+=<>(),;|*#&~-]+', ' ', 'g'))) STORED;
+CREATE INDEX IF NOT EXISTS documents_meta_tsv ON documents USING gin(meta_tsv);

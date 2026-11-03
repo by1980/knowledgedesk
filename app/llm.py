@@ -1,6 +1,8 @@
 """Claude calls: answering questions and turning interview transcripts into knowledge notes."""
 from collections.abc import Iterator
 
+import logging
+
 import anthropic
 
 from .config import settings
@@ -55,6 +57,8 @@ def client() -> anthropic.Anthropic:
     return _client
 
 
+log = logging.getLogger("llm")
+
 ANSWER_SYSTEM = """You are the internal knowledge assistant of {company}. Employees ask you questions \
 about how the business works: processes, policies, products, customers, suppliers, prices, tools and \
 "who handles what".
@@ -70,6 +74,9 @@ about this company, and do not guess names, numbers, prices or dates.
 say who said it and when (e.g. "according to Moshe's email from March") when relying on it.
 - Social media numbers (likes, views, followers) are as of the date written in the source; say that date. \
 For "last week" or "latest post" questions, prefer the account summary source.
+- When asked to find something specific (an email, a proposal, a file, a message), say exactly which source it is, \
+with its date and who it was from and to. If several match, list them newest first. Each source has a date and, for \
+emails, from/to/cc.
 - Reply in the same language the question was written in. Be concise and practical: short paragraphs, \
 numbered steps for procedures."""
 
@@ -145,3 +152,58 @@ def interview_notes(transcript: str, who: str) -> str:
     if resp.stop_reason == "refusal":
         return ""
     return "".join(b.text for b in resp.content if b.type == "text")
+
+
+# ---------------------------------------------------------------- search planning
+PLAN_TOOL = {
+    "name": "search_plan",
+    "description": "How to search the company's knowledge base (emails, files, chats, calendar, website, social media) for this question.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "The request rewritten as a complete, standalone search query (resolve follow-ups using the conversation)."},
+            "keywords": {"type": "array", "items": {"type": "string"}, "maxItems": 12,
+                         "description": "Words the item itself probably contains: the topic and its synonyms, in English AND Hebrew (e.g. proposal, quote, offer, הצעה, הצעת מחיר). Not the names of people or companies."},
+            "people": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
+                       "description": "People, companies, email addresses or domains the item is from, to or about, with spelling variants (e.g. 'cutinside', 'cut inside', 'קאט אינסייד'). Empty if none."},
+            "direction": {"type": "string", "enum": ["sent", "received", "any"],
+                          "description": "'sent' when the user means something they or their company sent; 'received' for something sent to them."},
+            "kinds": {"type": "array", "items": {"type": "string", "enum": ["email", "file", "calendar", "slack", "whatsapp", "web", "interview", "social"]},
+                      "description": "Only when the user clearly limits the type (e.g. 'the email', 'in Slack'). Usually empty."},
+            "after": {"type": "string", "description": "YYYY-MM-DD, only if the question gives a time frame."},
+            "before": {"type": "string", "description": "YYYY-MM-DD, only if the question gives a time frame."},
+            "newest_first": {"type": "boolean", "description": "True when the user wants the latest / last / most recent item."},
+        },
+        "required": ["query", "keywords", "people", "direction", "newest_first"],
+    },
+}
+PLAN_SYSTEM = ("You plan searches for a company knowledge assistant. Read the user's request and fill in search_plan. "
+               "Be generous with keyword synonyms and Hebrew/English translations, and with name spellings. Never answer the question.")
+
+
+def plan_search(question: str, history: list[dict]) -> dict | None:
+    """Turn the question into a search plan (who, which way, when, newest first...). None = plain search."""
+    if settings.fake_llm:
+        return None
+    try:
+        c = client()
+    except LLMNotConfigured:
+        return None
+    from datetime import date
+
+    messages = list(history[-4:]) + [{"role": "user", "content": f"Today is {date.today():%Y-%m-%d}.\n\nRequest: {question}"}]
+    for model in dict.fromkeys([settings.planner_model, settings.llm_model]):
+        try:
+            r = c.messages.create(model=model, max_tokens=700, system=PLAN_SYSTEM, messages=messages, tools=[PLAN_TOOL],
+                                  tool_choice={"type": "tool", "name": "search_plan"}, timeout=25)
+        except (anthropic.NotFoundError, anthropic.BadRequestError, anthropic.PermissionDeniedError):
+            continue  # this model isn't available on the account: try the main one
+        except Exception:  # noqa: BLE001 - search still works without a plan
+            log.warning("Search planning failed", exc_info=True)
+            return None
+        for block in r.content:
+            if block.type == "tool_use":
+                plan = dict(block.input)
+                log.info("Search plan: %s", plan)
+                return plan
+    return None

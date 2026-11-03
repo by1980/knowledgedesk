@@ -536,7 +536,8 @@ $("#ask-form").addEventListener("submit", async (e) => {
       while ((nl = buf.indexOf("\n")) >= 0) {
         const ev = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
         if (ev.type === "conversation") chat.cid = ev.id;
-        if (ev.type === "sources") { sources = ev.sources; const t = $(".thinking span:last-child", bot); if (t && sources.length) t.textContent = `Found ${plural(sources.length, "relevant passage", "relevant passages")}. Writing the answer`; }
+        if (ev.type === "plan" && ev.summary) { const t = $(".thinking span:last-child", bot); if (t) t.textContent = `Looking for: ${ev.summary}`; }
+        if (ev.type === "sources") { sources = ev.sources; const t = $(".thinking span:last-child", bot); if (t && sources.length) t.textContent = `${t.textContent.startsWith("Looking for") ? t.textContent + ". " : ""}Found ${plural(sources.length, "match", "matches")}. Writing the answer`; }
         if (ev.type === "text") { text += ev.text; answerEl.innerHTML = renderAnswer(text, sources) + '<span class="caret"></span>'; }
         if (ev.type === "error") failed = ev.message;
         if (ev.type === "done") qid = ev.question_id;

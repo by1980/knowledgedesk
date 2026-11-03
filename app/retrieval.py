@@ -4,6 +4,7 @@ Permission filtering happens here in SQL, before anything reaches the language m
 can never get an answer built from another department's files.
 """
 import re
+from html import escape
 
 from . import embeddings
 from .config import settings
@@ -37,16 +38,16 @@ _SQL = f"""
 WITH vec AS (
     SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> %(qvec)s) AS r
     FROM chunks c JOIN documents d ON d.id = c.document_id
-    WHERE {_ACCESS}
+    WHERE {_ACCESS} AND {{extra}}
     ORDER BY c.embedding <=> %(qvec)s
     LIMIT 40
 ),
 kw AS (
-    SELECT c.id, row_number() OVER (ORDER BY ts_rank_cd(c.tsv, q) + 0.5 * ts_rank_cd(to_tsvector('simple', d.title), q) DESC) AS r
+    SELECT c.id, row_number() OVER (ORDER BY ts_rank_cd(c.tsv, q) + 0.5 * ts_rank_cd(d.meta_tsv, q) DESC) AS r
     FROM chunks c JOIN documents d ON d.id = c.document_id,
          to_tsquery('simple', %(tsq)s) q
-    WHERE %(tsq)s <> '' AND (c.tsv @@ q OR to_tsvector('simple', d.title) @@ q) AND {_ACCESS}
-    ORDER BY ts_rank_cd(c.tsv, q) + 0.5 * ts_rank_cd(to_tsvector('simple', d.title), q) DESC
+    WHERE %(tsq)s <> '' AND (c.tsv @@ q OR d.meta_tsv @@ q) AND {_ACCESS} AND {{extra}}
+    ORDER BY ts_rank_cd(c.tsv, q) + 0.5 * ts_rank_cd(d.meta_tsv, q) DESC
     LIMIT 40
 ),
 fused AS (
@@ -55,7 +56,7 @@ fused AS (
     GROUP BY id
 )
 SELECT c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind,
-       d.metadata, d.updated_at, f.score
+       d.metadata, d.updated_at, d.doc_date, f.score
 FROM fused f
 JOIN chunks c ON c.id = f.id
 JOIN documents d ON d.id = c.document_id
@@ -71,15 +72,36 @@ _STOP = {
 }
 
 
+def _words(text: str) -> list[str]:
+    return [w for w in re.findall(r"\w+", (text or "").lower()) if len(w) > 1 and w not in _STOP]
+
+
 def _keyword_query(text: str) -> str:
-    words = [w for w in re.findall(r"\w+", text.lower()) if len(w) > 1 and w not in _STOP]
-    # OR the words together; ranking rewards chunks that contain more of them.
-    return " | ".join(dict.fromkeys(words))[:2000]
+    # OR the words together; ranking rewards chunks that contain more of them. Longer words also match
+    # as a prefix, so "proposal" finds "proposals".
+    words = [w + ":*" if len(w) >= 4 else w for w in dict.fromkeys(_words(text))]
+    return " | ".join(words)[:3000]
+
+
+def _names_query(names: list[str]) -> str:
+    """People, companies, addresses: each name must match as a whole ("cut inside" = cut AND inside),
+    and the joined spelling counts too ("cutinside")."""
+    alts = []
+    for name in names:
+        ws = [w for w in re.findall(r"\w+", name.lower()) if len(w) > 1]
+        if not ws:
+            continue
+        alts.append("(" + " & ".join(w + ":*" for w in ws) + ")")
+        if len(ws) > 1:
+            alts.append("".join(ws) + ":*")
+    return " | ".join(dict.fromkeys(alts))[:2000]
 
 
 def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: int | None = None,
            include_company: bool = True, k: int | None = None, kinds: list[str] | None = None,
-           learner: bool = False) -> list[dict]:
+           learner: bool = False, plan: dict | None = None, mine: list[str] | None = None) -> list[dict]:
+    """Find the passages that answer the question. With a search plan (from the AI: who, when, which way,
+    newest first...) several targeted searches run and their results are combined."""
     params = {
         "learner": learner,
         "qvec": embeddings.embed_query(question),
@@ -90,9 +112,10 @@ def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: i
         "include_company": include_company,
         "kinds": kinds or None,
         "k": k or settings.top_k,
+        "_question": question,
     }
     with conn() as c:
-        hits = c.execute(_SQL, params).fetchall()
+        hits = _run(c, params, plan, mine)
         if _SOCIAL.search(question) and (not kinds or "social" in kinds):
             # Questions about posts, likes or followers: always include the account summaries,
             # which hold the latest post and week-by-week numbers.
@@ -136,8 +159,113 @@ def format_sources(hits: list[dict]) -> str:
         kind = {"interview": " (employee interview)", "email": " (email)", "whatsapp": " (WhatsApp chat)",
                 "calendar": " (calendar)", "web": " (website)", "slack": " (Slack)",
                 "social": " (social media)"}.get(h["kind"], "")
-        date = h["updated_at"].date().isoformat() if h.get("updated_at") else ""
+        when = h.get("doc_date") or h.get("updated_at")
+        date = when.date().isoformat() if when else ""
+        meta = h.get("metadata") or {}
+        people = "".join(f' {k}="{escape(str(meta[k])[:200])}"' for k in ("from", "to", "cc") if meta.get(k))
         blocks.append(
-            f'<source id="{i}" title="{h["title"]}{where}{kind}" updated="{date}">\n{h["content"]}\n</source>'
+            f'<source id="{i}" title="{escape(h["title"])}{escape(where)}{kind}" date="{date}"{people}>\n{h["content"]}\n</source>'
         )
     return "\n".join(blocks)
+
+
+_SQL_PARTS = _SQL
+
+
+def _filters(plan: dict | None, mine: list[str] | None, with_people: bool = True) -> tuple[str, dict]:
+    parts, params = [], {}
+    if not plan:
+        return "TRUE", params
+    names = _names_query(plan.get("people") or [])
+    direction = plan.get("direction")
+    if with_people and names:
+        params["names"] = names
+        if direction in ("sent", "received"):
+            # A clear direction: the name must be the actual sender (received) or a recipient (sent),
+            # not just mentioned somewhere in the text.
+            field = "coalesce(d.metadata->>'from', '')" if direction == "received" else \
+                "coalesce(d.metadata->>'to', '') || ' ' || coalesce(d.metadata->>'cc', '')"
+            parts.append(f"to_tsvector('simple', regexp_replace({field}, '[@._/:+=<>(),;|*#&~-]+', ' ', 'g')) @@ to_tsquery('simple', %(names)s)")
+        else:
+            parts.append("(d.meta_tsv @@ to_tsquery('simple', %(names)s) OR EXISTS (SELECT 1 FROM chunks cn "
+                         "WHERE cn.document_id = d.id AND cn.tsv @@ to_tsquery('simple', %(names)s)))")
+    if direction in ("sent", "received") and mine:
+        params["mine"] = [f"%{m}%" for m in mine]
+        parts.append("coalesce(d.metadata->>'from', '') ILIKE ANY(%(mine)s)" if direction == "sent"
+                     else "(d.kind = 'email' AND NOT coalesce(d.metadata->>'from', '') ILIKE ANY(%(mine)s))")
+    for key, op in (("after", ">="), ("before", "<")):
+        if plan.get(key):
+            parts.append(f"coalesce(d.doc_date, d.updated_at) {op} %({key})s::date")
+            params[key] = plan[key]
+    return (" AND ".join(parts) or "TRUE"), params
+
+
+_NEWEST = """
+WITH docs AS (
+    SELECT d.id, coalesce(d.doc_date, d.updated_at) AS at,
+           (%(topic)s <> '' AND (d.meta_tsv @@ to_tsquery('simple', %(topic)s) OR EXISTS (SELECT 1 FROM chunks ct
+             WHERE ct.document_id = d.id AND ct.tsv @@ to_tsquery('simple', %(topic)s)))) AS on_topic
+    FROM documents d
+    WHERE {access} AND {extra}
+    ORDER BY on_topic DESC, at DESC NULLS LAST
+    LIMIT 8
+)
+SELECT DISTINCT ON (c.document_id) c.id, c.content, c.location, c.document_id, d.title, d.filename, d.kind,
+       d.metadata, d.updated_at, d.doc_date, 1.0 AS score, docs.on_topic, docs.at
+FROM chunks c JOIN documents d ON d.id = c.document_id JOIN docs ON docs.id = d.id
+ORDER BY c.document_id,
+         (CASE WHEN %(topic)s <> '' THEN ts_rank_cd(c.tsv, to_tsquery('simple', %(topic)s)) ELSE 0 END) DESC, c.position
+"""
+
+
+def _run(c, params: dict, plan: dict | None, mine: list[str] | None) -> list[dict]:
+    base = c.execute(_SQL_PARTS.format(extra="TRUE"), params).fetchall()
+    if not plan:
+        return base
+    text = " ".join([plan.get("query") or ""] + list(plan.get("keywords") or []))
+    words = " ".join([params["_question"], text] + list(plan.get("people") or []))
+    p2 = {**params, "qvec": embeddings.embed_query(text or params["_question"]), "tsq": _keyword_query(words)}
+    if plan.get("kinds"):
+        p2["kinds"] = plan["kinds"]
+    lists = [(1.0, base)]
+    extra, fp = _filters(plan, mine)
+    if extra != "TRUE":
+        lists.append((1.4, c.execute(_SQL_PARTS.format(extra=extra), {**p2, **fp}).fetchall()))
+    loose, lp = _filters(plan, mine, with_people=False)
+    lists.append((1.0, c.execute(_SQL_PARTS.format(extra=loose), {**p2, **lp}).fetchall()))
+    front = []
+    if plan.get("newest_first") or extra != "TRUE":
+        topic = _keyword_query(" ".join(plan.get("keywords") or []))
+        newest = c.execute(_NEWEST.format(access=_ACCESS, extra=extra), {**p2, **fp, "topic": topic}).fetchall()
+        newest.sort(key=lambda h: (bool(h["on_topic"]), h["at"]), reverse=True)
+        lists.insert(0, (1.8, newest))
+        if plan.get("newest_first") and newest:
+            # "the last / latest ...": the matching items lead, newest first, ahead of everything else
+            on_topic = [h for h in newest if h["on_topic"]]
+            front = (on_topic or newest)[:4]
+    fused = fuse_many(lists, params["k"] + 4)
+    if not front:
+        return fused
+    lead = {h["document_id"] for h in front}
+    return front + [h for h in fused if h["document_id"] not in lead][: params["k"] + 4 - len(front)]
+
+
+def fuse_many(lists: list[tuple[float, list[dict]]], k: int, per_document: int = 3) -> list[dict]:
+    """Combine ranked lists (earlier ranks and heavier lists count more); at most a few passages per item,
+    so one long document can't push everything else out."""
+    score: dict[int, float] = {}
+    by_id: dict[int, dict] = {}
+    for weight, hits in lists:
+        for rank, h in enumerate(hits):
+            score[h["id"]] = score.get(h["id"], 0) + weight / (8 + rank)
+            by_id.setdefault(h["id"], h)
+    out, per_doc = [], {}
+    for cid in sorted(score, key=score.get, reverse=True):
+        h = by_id[cid]
+        if per_doc.get(h["document_id"], 0) >= per_document:
+            continue
+        per_doc[h["document_id"]] = per_doc.get(h["document_id"], 0) + 1
+        out.append(h)
+        if len(out) >= k:
+            break
+    return out

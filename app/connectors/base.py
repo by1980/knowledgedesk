@@ -40,6 +40,25 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def doc_date(meta: dict):
+    """The moment an item belongs to: an email's Date header, a post's publish time, a chat day..."""
+    from email.utils import parsedate_to_datetime
+
+    for key in ("date", "posted", "day", "interview_date"):
+        value = (meta or {}).get(key)
+        if not value:
+            continue
+        try:
+            if key == "date" and not str(value)[:4].isdigit():
+                d = parsedate_to_datetime(str(value))
+            else:
+                d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError, IndexError):
+            continue
+    return None
+
+
 class Sync:
     """Tracks the documents a connector produces during one sync run."""
 
@@ -108,18 +127,19 @@ class Sync:
         path = storage_dir(self.connector["id"]) / f"{sha(external_id.encode())[:16]}_{safe}"
         path.write_bytes(data)
         meta = json.dumps(metadata or {})
+        when = doc_date(metadata or {})
         if row:
             self.c.execute(
                 "UPDATE documents SET title=%s, filename=%s, path=%s, sha256=%s, metadata=%s, status='pending', "
-                "updated_at=now() WHERE id=%s",
-                (title[:300], filename, str(path), digest, meta, row["id"]),
+                "updated_at=now(), doc_date=%s WHERE id=%s",
+                (title[:300], filename, str(path), digest, meta, when, row["id"]),
             )
         else:
             self.c.execute(
                 "INSERT INTO documents(title, filename, path, kind, source, sha256, company_wide, metadata, "
-                "connector_id, external_id) VALUES (%s, %s, %s, %s, 'connector', %s, %s, %s, %s, %s)",
+                "connector_id, external_id, doc_date) VALUES (%s, %s, %s, %s, 'connector', %s, %s, %s, %s, %s, %s)",
                 (title[:300], filename, str(path), kind, digest, self.connector["company_wide"], meta,
-                 self.connector["id"], external_id),
+                 self.connector["id"], external_id, when),
             )
             # Visible to the connector's departments right away
             self.c.execute(

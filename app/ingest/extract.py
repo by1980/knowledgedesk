@@ -151,7 +151,10 @@ def extract(path: Path) -> list[Section]:
             from bs4 import BeautifulSoup
 
             content = BeautifulSoup(content, "html.parser").get_text("\n")
-        head = f"From: {msg['from']}\nTo: {msg['to']}\nDate: {msg['date']}\nSubject: {msg['subject']}\n\n"
+        files = [p.get_filename() for p in msg.iter_attachments() if p.get_filename()]
+        head = (f"From: {msg['from']}\nTo: {msg['to']}\n" + (f"Cc: {msg['cc']}\n" if msg["cc"] else "")
+                + f"Date: {msg['date']}\nSubject: {msg['subject']}\n"
+                + (f"Attachments: {', '.join(files)}\n" if files else "") + "\n")
         return [(head + strip_quoted_reply(content), "")]
 
     if ext in AUDIO_VIDEO_EXT:

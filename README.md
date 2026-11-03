@@ -323,6 +323,7 @@ uvicorn app.main:app --reload
 | `ANTHROPIC_API_KEY` | | Claude API key (required for answers) |
 | `LLM_MODEL` | `claude-opus-5-5` | Claude model for answers |
 | `LLM_EFFORT` | `low` | `low` = answers in seconds; `medium`/`high` = more careful but slower |
+| `PLANNER_MODEL` | `claude-haiku-5-5` | Fast model that turns each question into a search plan (who, when, sent or received, newest first). Falls back to `LLM_MODEL` if unavailable |
 | `EMBED_MODEL` | `paraphrase-multilingual-mpnet-base-v2` | Local search model. Changing it re-indexes everything automatically |
 | `WHISPER_MODEL` | `small` | Speech-to-text size: `tiny`…`large-v3` |
 | `SUMMARIZE_INTERVIEWS` | `true` | Create knowledge notes from interviews |

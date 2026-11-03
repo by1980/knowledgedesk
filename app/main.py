@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.8"
+APP_VERSION = "0.9.9"
 
 
 def _ensure_secret_key() -> None:
@@ -179,11 +179,14 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
     scope = {"is_admin": is_admin, "user_depts": dept_ids, "only_dept": body.department_id,
              "learner": user["role"] == "learner",
              "kinds": [k for k in body.kinds if k in KINDS] or None}
-    hits = retrieval.search(question, **scope)
+    # The AI first works out what is being asked (who, which way, when, newest first...), then several
+    # targeted searches run. Without a plan (AI not set up), the plain search still works.
+    plan = llm.plan_search(question, history)
+    hits = retrieval.search(question, **scope, plan=plan, mine=_my_addresses(user))
     # A follow-up ("and for VIP customers?") may need the previous question too. The new question
     # always leads; results for "previous + new" only fill in behind it.
     last_user_q = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-    if last_user_q:
+    if last_user_q and not plan:
         hits = retrieval.fuse(hits, retrieval.search(f"{last_user_q}\n{question}", **scope))
     sources = [
         {"n": i, "document_id": h["document_id"], "title": h["title"], "location": h["location"] or "",
@@ -194,6 +197,8 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
 
     def events():
         yield json.dumps({"type": "conversation", "id": conversation_id}) + "\n"
+        if plan:
+            yield json.dumps({"type": "plan", "summary": _plan_summary(plan)}) + "\n"
         yield json.dumps({"type": "sources", "sources": sources}) + "\n"
         answer = []
         try:
@@ -221,6 +226,29 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
         yield json.dumps({"type": "done", "question_id": qid}) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+def _plan_summary(plan: dict) -> str:
+    """What Cortex understood, shown while it searches: "proposal · sent to cutinside · newest first"."""
+    bits = [", ".join((plan.get("keywords") or [])[:2])]
+    people = (plan.get("people") or [])[:1]
+    if people:
+        bits.append({"sent": "sent to ", "received": "from "}.get(plan.get("direction"), "about ") + people[0])
+    elif plan.get("direction") in ("sent", "received"):
+        bits.append("sent by you" if plan["direction"] == "sent" else "received")
+    if plan.get("after") or plan.get("before"):
+        bits.append(" to ".join(x for x in (plan.get("after"), plan.get("before")) if x))
+    if plan.get("newest_first"):
+        bits.append("newest first")
+    return " · ".join(b for b in bits if b)
+
+
+def _my_addresses(user: dict) -> list[str]:
+    """The company's own email addresses (connected mailboxes and the person asking): "sent" means from one of these."""
+    with conn() as c:
+        rows = c.execute("SELECT email FROM oauth_accounts WHERE email LIKE '%%@%%' "
+                         "UNION SELECT config->>'username' FROM connectors WHERE type='imap'").fetchall()
+    return sorted({r["email"].lower() for r in rows if r["email"]} | {user["email"].lower()})
 
 
 def _title(question: str) -> str:

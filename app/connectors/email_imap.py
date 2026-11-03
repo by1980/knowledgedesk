@@ -114,7 +114,9 @@ def store_message(sync: Sync, base_id: str, raw: bytes, folder: str = "") -> Non
     msg = email.message_from_bytes(raw, policy=policy.default)
     subject = _decode(msg["subject"]) or "(no subject)"
     sender = _decode(msg["from"])
-    meta = {"from": sender, "to": _decode(msg["to"]), "date": str(msg["date"] or ""), "folder": folder}
+    names = [_decode(part.get_filename()) for part in msg.iter_attachments() if part.get_filename()]
+    meta = {"from": sender, "to": _decode(msg["to"]), "cc": _decode(msg["cc"]), "date": str(msg["date"] or ""),
+            "folder": folder, "attachments": ", ".join(n for n in names if n)}
     sync.upsert(base_id, f"Email: {subject}", "message.eml", raw, "email", meta)
 
     for part in msg.iter_attachments():
@@ -128,4 +130,5 @@ def store_message(sync: Sync, base_id: str, raw: bytes, folder: str = "") -> Non
         if not payload or len(payload) > MAX_ATTACHMENT_BYTES:
             continue
         sync.upsert(f"{base_id}:att:{name}", f"{p.stem} (attachment to: {subject})", name, payload, "file",
-                    {"from": sender, "email_subject": subject, "date": meta["date"]})
+                    {"from": sender, "to": meta["to"], "cc": meta["cc"], "email_subject": subject, "date": meta["date"],
+                     "folder": folder})
