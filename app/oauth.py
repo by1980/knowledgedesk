@@ -85,18 +85,91 @@ def _vendor_file() -> dict:
         return {}
 
 
+_apps_cache: dict = {}
+
+
+def saved_apps() -> dict:
+    """Sign-in apps an admin set up on the Sources page (stored encrypted)."""
+    if "apps" not in _apps_cache:
+        try:
+            with conn() as c:
+                row = c.execute("SELECT value FROM meta WHERE key='oauth_apps'").fetchone()
+            _apps_cache["apps"] = json.loads(decrypt(row["value"])) if row else {}
+        except Exception:  # noqa: BLE001 - unreadable (SECRET_KEY changed) or no table yet
+            _apps_cache["apps"] = {}
+    return _apps_cache["apps"]
+
+
+def save_app(provider: str, app: dict | None) -> None:
+    apps = dict(saved_apps())
+    if app:
+        apps[provider] = app
+    else:
+        apps.pop(provider, None)
+    with conn() as c:
+        c.execute("INSERT INTO meta(key, value) VALUES ('oauth_apps', %s) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                  (encrypt(json.dumps(apps)),))
+    _apps_cache["apps"] = apps
+
+
+def app_source(provider: str) -> str:
+    if saved_apps().get(provider, {}).get("client_id"):
+        return "app"
+    if getattr(settings, f"{provider}_client_id", ""):
+        return "env"
+    return "vendor" if _vendor_file().get(provider, {}).get("client_id") else ""
+
+
 def credentials(provider: str) -> tuple[str, str]:
-    """Client id and secret: from .env if set, otherwise from app/vendor_oauth.json."""
+    """Client id and secret: set up in the app, else from .env, else from app/vendor_oauth.json."""
+    a = saved_apps().get(provider, {})
+    if a.get("client_id"):
+        return a["client_id"], a.get("client_secret", "")
     v = _vendor_file().get(provider, {})
     return (getattr(settings, f"{provider}_client_id", "") or v.get("client_id", ""),
             getattr(settings, f"{provider}_client_secret", "") or v.get("client_secret", ""))
+
+
+def check_app(provider: str, client_id: str, client_secret: str, origin: str) -> None:
+    """Ask the provider whether this client id + secret are real, before saving them.
+    A made-up sign-in code is sent: a good client gets "bad code", a wrong one gets "unknown client"."""
+    cfg = PROVIDERS[provider]
+    with http() as h:
+        if provider == "meta":
+            r = h.get(cfg["token_url"], params={"client_id": client_id, "client_secret": client_secret,
+                                               "grant_type": "client_credentials"})
+            if r.status_code != 200:
+                raise ValueError("Facebook doesn't recognise this App ID and App secret together. Copy both again from "
+                                 "App settings → Basic (click Show next to the secret).")
+            return
+        data = {"grant_type": "authorization_code", "code": "kd-check", "redirect_uri": redirect_url(origin),
+                "client_id": client_id}
+        if client_secret:
+            data["client_secret"] = client_secret
+        if provider == "microsoft":
+            data["scope"] = "offline_access User.Read"
+        r = h.post(cfg["token_url"], data=data)
+    try:
+        body = r.json()
+    except ValueError:
+        body = {}
+    err = str(body.get("error", "")) + " " + str(body.get("error_description", ""))
+    bad = {
+        "google": ("invalid_client", "unauthorized_client"),
+        "microsoft": ("invalid_client", "AADSTS700016", "AADSTS7000215", "AADSTS7000218", "unauthorized_client"),
+        "slack": ("invalid_client_id", "bad_client_secret", "invalid_client"),
+    }[provider]
+    if any(b in err for b in bad):
+        name = cfg["name"]
+        raise ValueError(f"{name} doesn't recognise this Client ID and secret together. Copy both again – "
+                         f"the secret is easy to miss a character of.")
 
 
 def redirect_url(origin: str) -> str:
     return settings.oauth_redirect_url or _vendor_file().get("redirect_url") or f"{origin}/oauth/callback"
 
 
-def configured() -> dict:
+def configured() -> dict:  # noqa: D401
     return {p: bool(credentials(p)[0]) for p in PROVIDERS}
 
 
@@ -158,11 +231,14 @@ def start(provider: str, services: list[str], department_ids: list[int], company
         "scope": cfg.get("scope_separator", " ").join(cfg["base_scopes"] + [cfg["scopes"][s] for s in services]),
         "state": state,
     }
+    if provider == "meta" and saved_apps().get("meta", {}).get("config_id"):
+        params["config_id"] = saved_apps()["meta"]["config_id"]
+        params.pop("scope")
     if cfg.get("pkce", True):
         params.update(code_challenge=_b64(hashlib.sha256(verifier.encode()).digest()), code_challenge_method="S256")
     if provider == "google":
         # include_granted_scopes: adding YouTube later keeps Gmail/Calendar/Drive access on the same sign-in
-        params.update(access_type="offline", prompt="consent", include_granted_scopes="true")
+        params.update(access_type="offline", prompt="consent select_account", include_granted_scopes="true")
     elif provider == "microsoft":
         params["prompt"] = "select_account"
     auth_url = cfg["auth_url"]

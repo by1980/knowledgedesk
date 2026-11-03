@@ -78,6 +78,8 @@ def authorize(request: Request, redirect_uri: str, state: str):
 @app.post("/login.microsoftonline.com/common/oauth2/v2.0/token")
 async def token(request: Request):
     form = await request.form()
+    if form.get("client_secret") == "wrong":
+        return JSONResponse({"error": "invalid_client", "error_description": "Unauthorized"}, 401)
     if form.get("grant_type") == "authorization_code" and form.get("code") != "sim-code":
         return JSONResponse({"error": "invalid_grant"}, 400)
     return {"access_token": "sim-access", "refresh_token": "sim-refresh", "expires_in": 3600}
@@ -243,6 +245,10 @@ def _fb_ok(request: Request, token: str = "fb-long") -> bool:
 @app.get("/graph.facebook.com/v23.0/oauth/access_token")
 def fb_token(request: Request):
     q = request.query_params
+    if q.get("grant_type") == "client_credentials":  # KnowledgeDesk checking a pasted App ID + secret
+        if not q.get("client_id", "").isdigit() or q.get("client_secret") == "wrong":
+            return JSONResponse({"error": {"message": "Error validating client secret.", "code": 1}}, 400)
+        return {"access_token": "app-token", "token_type": "bearer"}
     if q.get("grant_type") == "fb_exchange_token":
         return {"access_token": "fb-long", "token_type": "bearer", "expires_in": 5184000}
     if q.get("code") != "sim-code" or not q.get("client_secret"):

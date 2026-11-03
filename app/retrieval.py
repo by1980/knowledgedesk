@@ -11,12 +11,16 @@ from .db import conn
 
 _ACCESS = """
     d.status = 'ready' AND (
-        %(is_admin)s
-        OR d.company_wide
-        OR EXISTS (
-            SELECT 1 FROM document_departments dd
-            WHERE dd.document_id = d.id AND dd.department_id = ANY(%(user_depts)s)
-        )
+        CASE WHEN %(learner)s THEN d.id IN (SELECT document_id FROM learning_items)
+        ELSE (
+            %(is_admin)s
+            OR d.company_wide
+            OR EXISTS (
+                SELECT 1 FROM document_departments dd
+                WHERE dd.document_id = d.id AND dd.department_id = ANY(%(user_depts)s)
+            )
+            OR d.id IN (SELECT document_id FROM learning_items)
+        ) END
     )
     AND (%(kinds)s::text[] IS NULL OR d.kind = ANY(%(kinds)s))
     AND (
@@ -74,8 +78,10 @@ def _keyword_query(text: str) -> str:
 
 
 def search(question: str, *, is_admin: bool, user_depts: list[int], only_dept: int | None = None,
-           include_company: bool = True, k: int | None = None, kinds: list[str] | None = None) -> list[dict]:
+           include_company: bool = True, k: int | None = None, kinds: list[str] | None = None,
+           learner: bool = False) -> list[dict]:
     params = {
+        "learner": learner,
         "qvec": embeddings.embed_query(question),
         "tsq": _keyword_query(question),
         "is_admin": is_admin,

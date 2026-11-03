@@ -42,7 +42,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
   check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
   await page.click("#dialog[open] [data-close]");
-  check("Admin menu has all six pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Activity,Health,Settings");
+  check("Admin menu has all its pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Learning Center,Activity,Health,Settings");
 
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
@@ -91,12 +91,18 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await until(async () => /Connected/.test(await text("[data-tile=gmail]")), 15000, 500);
   check("Connection hub: named 'Connection hub'", /Connection hub/.test(await text("#overview-card h2")));
   check("Connection hub: unconnected Outlook tile has a Connect button", await page.isVisible("[data-tile=ms_mail] [data-connect-tile]"));
+  const scrollBefore = await page.evaluate(() => window.scrollY);
   await page.click("[data-tile=ms_mail] [data-connect-tile]");
-  check("…which opens the Microsoft connect panel with only Outlook mail ticked", await until(async () =>
-    await page.isVisible(".provider-card[data-provider=microsoft] .panel") &&
-    await page.isChecked(".provider-card[data-provider=microsoft] .panel input[value=mail]") &&
-    !(await page.isChecked(".provider-card[data-provider=microsoft] .panel input[value=calendar]")), 5000, 200));
-  await page.click(".provider-card[data-provider=microsoft] .panel [data-cancel]");
+  check("…which connects right there (a window opens, the page doesn't jump) with only Outlook mail ticked", await until(async () =>
+    await page.isVisible("#dialog[open] .panel") && /Connect Microsoft 365/.test(await text("#dialog[open] h2")) &&
+    await page.isChecked("#dialog[open] input[value=mail]") && !(await page.isChecked("#dialog[open] input[value=calendar]")), 5000, 200)
+    && Math.abs((await page.evaluate(() => window.scrollY)) - scrollBefore) < 5);
+  await shot("connect-from-tile", false);
+  await page.click("#dialog[open] [data-cancel]");
+  check("…and Cancel closes it", await until(async () => !(await page.isVisible("#dialog[open]")), 3000, 200));
+  await page.click("[data-tile=youtube]");
+  check("Clicking a not-connected tile itself also opens its connect window", await until(async () => /Connect YouTube/.test(await text("#dialog[open] h2")), 3000, 200));
+  await page.click("#dialog[open] [data-cancel]");
   check("Overview: Gmail tile says Connected with the count", /Connected[\s\S]*30 emails/.test(await text("[data-tile=gmail]")), await text("[data-tile=gmail]"));
   check("Overview: Outlook tile says Not connected", /Not connected/.test(await text("[data-tile=ms_mail]")));
   check("Overview: Slack tile says Not connected", /Not connected/.test(await text("[data-tile=slack]")));
@@ -152,9 +158,20 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Social media: Facebook and Instagram card with a clear button", (await text(`${fb} [data-open-connect]`)).trim() === "Connect Facebook account");
   check("Connection hub: Facebook & Instagram, YouTube and LinkedIn tiles", await page.isVisible("[data-tile=meta_social] [data-connect-tile]")
     && await page.isVisible("[data-tile=youtube] [data-connect-tile]") && /Import/.test(await text("[data-tile=linkedin]")));
-  await page.click(`${fb} [data-open-connect]`);
-  check("Facebook: tells to pick the Page and its Instagram account", /Instagram account when asked/.test(await text(`${fb} .panel`)));
-  await page.check(`${fb} .panel .vis-everyone`); await page.click(`${fb} [data-go]`);
+  await page.click("[data-tile=meta_social] [data-connect-tile]");
+  check("Facebook not set up yet: a step-by-step setup window opens", await until(async () =>
+    /Set up Facebook sign-in/.test(await text("#dialog[open] h2")) && /Configuration ID/.test(await text("#dialog[open]")), 5000, 200));
+  await shot("facebook-setup", false);
+  check("…with the exact return address to copy", /oauth\/callback/.test(await text("#dialog[open] .copy-row")));
+  await page.fill("#dialog[open] input[name=client_id]", "1234567"); await page.fill("#dialog[open] input[name=client_secret]", "wrong");
+  await page.click("#dialog[open] [data-save]");
+  check("…a wrong App secret is caught, in plain words", await until(async () => /doesn't recognise this App ID and App secret/.test(await text("#dialog[open] .error")), 8000, 200));
+  await page.fill("#dialog[open] input[name=client_secret]", "real-secret"); await page.fill("#dialog[open] input[name=config_id]", "777");
+  await page.click("#dialog[open] [data-save]");
+  check("…the right ones are accepted and it goes straight on to connecting", await until(async () =>
+    /Connect Facebook and Instagram/.test(await text("#dialog[open] h2")), 8000, 200));
+  check("Facebook: tells to pick the Page and its Instagram account", /Instagram account when asked/.test(await text("#dialog[open] .panel")));
+  await page.check("#dialog[open] .vis-everyone"); await page.click("#dialog[open] [data-go]");
   await page.waitForURL(/facebook\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
   const fbReady = await until(async () => /@acme\.plumbing/.test(await text(`${fb} .pc-accounts`)) && /7 posts searchable/.test(await text(`${fb} .pc-accounts`)), 90000, 2000);
   check("Facebook: Page and Instagram connected, posts searchable", fbReady, await text(`${fb} .pc-accounts`));
@@ -172,8 +189,12 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.locator(fb).scrollIntoViewIfNeeded(); await sleep(300);
   await shot("social-media", false);
   await page.click("#li-upload");
-  check("LinkedIn: import selects 'LinkedIn export' in the upload form", await until(async () => await page.isChecked("input[name=kind][value=linkedin]"), 3000, 200));
-  await page.click("label:has(input[name=kind][value=file])");
+  check("LinkedIn: import opens a small window with the steps", await until(async () => /Import from LinkedIn/.test(await text("#dialog[open] h2")), 3000, 200));
+  await page.setInputFiles("#dialog[open] input[type=file]", { name: "acme_content.csv", mimeType: "text/csv",
+    buffer: Buffer.from("Post title,Created date,Impressions,Likes,Comments\nProud to sponsor the Haifa marathon,10/28/2026,4120,87,9\n") });
+  await page.check("#dialog[open] .vis-everyone"); await page.click("#dialog[open] [data-save]");
+  check("LinkedIn: file imported", await toastSeen(/Uploaded 1 file/));
+  check("Connection hub: LinkedIn tile says Imported", await until(async () => /Imported/.test(await text("[data-tile=linkedin]")), 10000, 500));
 
   await page.locator(".provider-card[data-provider=slack]").scrollIntoViewIfNeeded(); await sleep(300);
   await shot("slack-and-whatsapp", false);
@@ -249,13 +270,13 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await toastSeen(/Uploaded 1 file/);
   const filesReady = await until(async () => {
     await page.fill("#files-search", ""); const t = await text("#files-list");
-    return (t.match(/Searchable/g) || []).length === 3;
+    return (t.match(/Searchable/g) || []).length === 4;
   }, 90000, 2000);
-  check("Uploads: all 3 files become searchable", filesReady, await text("#files-list"));
+  check("Uploads: all 4 files (3 here + the LinkedIn file) become searchable", filesReady, await text("#files-list"));
   check("WhatsApp card: shows the imported chat", await until(async () => /1 chat imported/.test(await text("#wa-status")), 15000, 500));
 
   // WhatsApp Business: official connection
-  await page.click("[data-tile=whatsapp]");
+  await page.locator("#whatsapp-card").scrollIntoViewIfNeeded();
   await page.click("#wa-connect");
   check("WhatsApp: connect panel with the steps", /Phone number ID/.test(await text("#wa-panel")));
   check("WhatsApp: warns clearly that Meta needs a public https address", /public[\s\S]*https/.test(await text("#wa-panel")));
@@ -307,11 +328,35 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.selectOption("#scope-filter", "");
   await shot("ask-answers");
 
+  // ------------------------------------------------------------------ 10b. Learning Center (admin builds the path)
+  await page.click("#nav a[data-page=learning]");
+  check("Learning Center: explains what it is and is empty at first", await until(async () => /New employee role see only these items/.test(await text("#learn-intro"))
+    && /Nothing in the learning path yet/.test(await text("#learn-list")), 5000, 200));
+  await page.click("#learn-add");
+  await page.fill("#dialog[open] [data-q]", "Moshe");
+  await until(async () => (await page.$$("#dialog[open] [data-add]")).length > 0, 8000, 300);
+  await page.click("#dialog[open] [data-add] >> nth=0");
+  check("Learning Center: an item is added from the knowledge base", await toastSeen(/Added to the learning path/)
+    && await until(async () => /In the path/.test(await text("#dialog[open] [data-list]")), 5000, 300));
+  await page.click("#dialog[open] [data-close]");
+  check("…and listed as step 1", await until(async () => /Interview - Moshe/.test(await text("#learn-list")), 5000, 300));
+  await page.click("#learn-list [data-note]");
+  await page.fill("#dialog[open] textarea[name=note]", "How we handle a new customer order – read this first.");
+  await page.click("#dialog[open] [data-save]");
+  check("Learning Center: a note for new employees is shown", await until(async () => /read this first/.test(await text("#learn-list")), 5000, 300));
+  const adminToken = await page.evaluate(() => localStorage.getItem("kd_token"));
+  const created = await page.request.post(`${APP}/api/users`, { headers: { Authorization: `Bearer ${adminToken}` },
+    data: { name: "Noa New", email: "noa@acme.test", password: "noa-pass-123", role: "learner", active: true, department_ids: [] } });
+  check("A new employee can be added", created.ok());
+  await page.click("#nav a[data-page=people]"); await page.click("#nav a[data-page=learning]");
+  check("Learning Center: shows the new employee's progress", await until(async () => /Noa New[\s\S]*0 of 1/.test(await text("#learn-people")), 5000, 300));
+  await shot("learning-admin");
+
   // ------------------------------------------------------------------ 11. A team member only sees what they're allowed to
-  await page.click("#logout");
+  await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("Team member menu: only Ask and Library", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Ask,Library");
+  check("Team member menu: Ask, Library and Learning Center", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Ask,Library,Learning Center");
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
@@ -320,8 +365,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Team member can't open admin pages", !(await page.isVisible("#page-settings")));
   await page.click("#nav a[data-page=ask]");
   await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
-  await page.waitForSelector(".msg.bot .feedback", { timeout: 30000 });
-  check("Team member never gets HR-only information", !/14,000/.test(await text("#messages")));
+  const danaAnswered = await until(async () => (await page.$$(".msg.bot .feedback")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
+  check("Team member never gets HR-only information", danaAnswered && !/14,000/.test(await text("#messages")), await text("#messages"));
   await page.click("#nav a[data-page=library]");
   await until(async () => (await page.$$("#lib-list .list-row")).length > 0, 10000, 300);
   await page.fill("#lib-search", "Salaries"); await sleep(800);
@@ -330,8 +375,27 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Library: Sales can see the Google emails", /Levi Gardens/.test(await text("#lib-list")));
   await shot("member-library");
 
+  // ------------------------------------------------------------------ 11b. A new employee sees only the learning path
+  await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
+  await page.fill("input[name=email]", "noa@acme.test"); await page.fill("input[name=password]", "noa-pass-123");
+  await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
+  check("New employee menu: only Learning Center and Ask", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center,Ask");
+  check("New employee lands on the Learning Center with the path and note", await until(async () => !(await page.isHidden("#page-learning"))
+    && /Interview - Moshe/.test(await text("#learn-list")) && /read this first/.test(await text("#learn-list")) && /0 of 1/.test(await text("#learn-progress")), 8000, 300));
+  check("New employee doesn't see admin buttons", !(await page.isVisible("#learn-add")) && !(await page.isVisible("#learn-people-card")));
+  await page.click("#learn-list [data-done]");
+  check("Mark as done updates the progress", await until(async () => /1 of 1/.test(await text("#learn-progress")) && /All done/.test(await text("#learn-progress")), 5000, 300));
+  await shot("learning-new-employee");
+  await page.click("#nav a[data-page=ask]");
+  await page.fill("#question", "What is the senior technician salary?"); await page.press("#question", "Enter");
+  await until(async () => (await page.$$(".msg.bot .feedback")).length > 0 || /couldn't find/.test(await text("#messages")), 30000, 300);
+  check("Logging out leaves nothing of the previous person's questions", !/Levi Gardens|Supplier visit/.test(await text("#messages")), await text("#messages"));
+  check("New employee's answers come only from the learning path", !/14,000/.test(await text("#messages")) && !/Salaries|Levi Gardens|Email:/.test(await text("#messages .sources")), await text("#messages"));
+  await page.goto(APP + "/#library"); await sleep(500);
+  check("New employee can't open the Library", !(await page.isVisible("#page-library")));
+
   // ------------------------------------------------------------------ 12. Activity and health (admin)
-  await page.click("#logout");
+  await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "admin@acme.test"); await page.fill("input[name=password]", "admin-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
   await until(async () => /Items in the knowledge base/.test(await text("#home-kpis")), 10000, 300);
@@ -380,7 +444,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 14. Phone layout
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ["home", "ask", "sources", "people", "activity", "health", "settings"]) {
+  for (const p of ["home", "ask", "sources", "people", "learning", "activity", "health", "settings"]) {
     await page.click(`#nav a[data-page=${p}]`); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
     const emojis = await emojisOnPage();

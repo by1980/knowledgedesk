@@ -109,6 +109,7 @@ const KIND_ICON = { file: "file", documents: "file", interview: "mic", whatsapp:
 const KIND_NAMES = { email: ["email", "emails"], documents: ["document", "documents"], calendar: ["calendar event", "calendar events"],
   slack: ["Slack message", "Slack messages"], web: ["web page", "web pages"], whatsapp: ["WhatsApp chat", "WhatsApp chats"], interview: ["interview", "interviews"],
   social: ["social media post", "social media posts"] };
+const kindName = (k) => (KIND_NAMES[k === "file" ? "documents" : k] || ["item"])[0];
 function knowledgeChips(ready) {
   return Object.entries(KIND_NAMES).filter(([k]) => ready[k]).map(([k, [one, many]]) =>
     `<span class="stat-chip">${ic(KIND_ICON[k])}<span><b>${num(ready[k])}</b> ${ready[k] === 1 ? one : many}</span></span>`).join("");
@@ -121,12 +122,17 @@ function docBadge(d) {
 
 // ================================================================== start, login, navigation
 const ADMIN_PAGES = [["home", "Home", "home"], ["ask", "Ask", "ask"], ["sources", "Sources", "sources"], ["people", "People", "people"],
-  ["activity", "Activity", "activity"], ["health", "Health", "check"], ["settings", "Settings", "settings"]];
-const MEMBER_PAGES = [["ask", "Ask", "ask"], ["library", "Library", "library"]];
+  ["learning", "Learning Center", "learn"], ["activity", "Activity", "activity"], ["health", "Health", "check"], ["settings", "Settings", "settings"]];
+const MEMBER_PAGES = [["ask", "Ask", "ask"], ["library", "Library", "library"], ["learning", "Learning Center", "learn"]];
+// New employees: only their learning path, and questions answered from it
+const LEARNER_PAGES = [["learning", "Learning Center", "learn"], ["ask", "Ask", "ask"]];
+const pagesFor = (u) => u.role === "admin" ? ADMIN_PAGES : u.role === "learner" ? LEARNER_PAGES : MEMBER_PAGES;
+const ROLE_LABEL = { admin: "Admin", learner: "New employee" };
 const LOADERS = {};
 
 function showView(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
-function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; showView("#login-view"); }
+// Logging out reloads the page, so nothing of the previous person (their conversation, lists) stays on screen.
+function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; location.replace("/"); }
 // The person's first name: their name, or – if none was set – a guess from their email (yaniv.b@… → Yaniv).
 function firstName(user) {
   const name = (user.name || "").trim();
@@ -146,7 +152,7 @@ async function boot() {
   try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
   await refreshDepartments();
   drawMe();
-  const pages = me.role === "admin" ? ADMIN_PAGES : MEMBER_PAGES;
+  const pages = pagesFor(me);
   $("#nav").innerHTML = pages.map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("");
   updateBanner();
   showView("#app-view");
@@ -160,7 +166,7 @@ async function boot() {
 function drawMe() {
   const shown = hasRealName(me) ? me.name : (firstName(me) || me.email);
   $("#user-name").innerHTML = `<span class="avatar">${esc(initials(shown))}</span>
-    <span class="who"><b>${esc(shown)}</b><span>${me.role === "admin" ? "Admin" : esc(me.email)}</span></span>`;
+    <span class="who"><b>${esc(shown)}</b><span>${ROLE_LABEL[me.role] || esc(me.email)}</span></span>`;
 }
 function drawBrand() {
   $("#company-name").textContent = appStatus.company || "";
@@ -182,7 +188,7 @@ function updateBanner() {
 function route() {
   if (!me) return;
   clearTimeout(pagePoll);
-  const pages = me.role === "admin" ? ADMIN_PAGES : MEMBER_PAGES;
+  const pages = pagesFor(me);
   let name = location.hash.slice(1);
   if (!pages.some(([id]) => id === name)) name = pages[0][0];
   $$(".page").forEach((p) => p.classList.toggle("hidden", p.id !== `page-${name}`));
@@ -398,12 +404,13 @@ LOADERS.ask = async function loadAsk() {
     (mine.length ? `<optgroup label="Department">${mine.map((d) => `<option value="dept:${d.id}">${esc(d.name)}</option>`).join("")}</optgroup>` : "");
   if ([...sel.options].some((x) => x.value === current)) sel.value = current;
   $("#scope-label").classList.toggle("hidden", sel.options.length < 2);
-  if (!chat.history.length) await drawWelcome();
+  if (!chat.history.length && !chat.busy && !$(".msg", $("#messages"))) await drawWelcome();
   $("#question").focus();
 };
 async function drawWelcome() {
   let o = { ready: {}, total: 0 };
   try { o = await getJSON("/api/overview"); } catch {}
+  if (chat.busy || $(".msg", $("#messages"))) return; // a question was asked meanwhile
   const examples = Object.keys(EXAMPLES).filter((k) => o.ready[k]).map((k) => EXAMPLES[k]).slice(0, 4);
   $("#messages").innerHTML = `<div class="welcome">
     <h2>What would you like to know?</h2>
@@ -451,7 +458,7 @@ function addMessage(cls, html) {
 const qBox = $("#question");
 qBox.addEventListener("input", () => { qBox.style.height = "auto"; qBox.style.height = qBox.scrollHeight + "px"; });
 qBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ask-form").requestSubmit(); } });
-$("#new-chat").addEventListener("click", () => { chat.history = []; drawWelcome(); qBox.focus(); });
+$("#new-chat").addEventListener("click", () => { chat.history = []; $("#messages").innerHTML = ""; drawWelcome(); qBox.focus(); });
 
 $("#ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -596,6 +603,9 @@ function progressBar(done, total) {
   const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
   return `<div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>`;
 }
+function linkify(text) {
+  return esc(text).replace(/https:\/\/[^\s<]+[^\s<.,)]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u.length > 60 ? u.slice(0, 57) + "…" : u}</a>`);
+}
 // Clear, honest status for one source: connected? importing? ready for search? any problem?
 function sourceStatus(k) {
   const [, , one, many] = SERVICE_INFO[k.type] || ["", "", "item", "items"];
@@ -606,7 +616,7 @@ function sourceStatus(k) {
     ? ` ${plural(k.private_not_added, "private channel isn't", "private channels aren't")} included – in Slack, open the channel → its name → Integrations → Add apps → KnowledgeDesk.` : ""}</div>`;
   const searchable = ready ? `${plural(ready, one, many)} searchable` : "";
   if (k.last_error && !k.syncing)
-    return `<div class="status-line">${badge("bad", "Needs attention")} ${checked}</div><div class="status-detail bad">${esc(k.last_error)}</div>
+    return `<div class="status-line">${badge("bad", "Needs attention")} ${checked}</div><div class="status-detail bad">${linkify(k.last_error)}</div>
       ${ready ? `<div class="status-detail">${searchable} already.</div>` : ""}${note}`;
   const p = k.progress;
   if (k.syncing || !k.last_sync || k.more) {
@@ -669,7 +679,7 @@ function drawTiles(uploads) {
       ${state ? "" : `<button type="button" class="btn small primary tile-connect" data-connect-tile="${type}">${action}</button>`}</span></div>`;
   }).join("");
   $$("#overview-tiles .tile").forEach((t) => t.onclick = (e) => {
-    if (e.target.closest("[data-connect-tile]")) return connectFromTile(t.dataset.tile);
+    if (e.target.closest("[data-connect-tile]") || t.classList.contains("off")) return connectFromTile(t.dataset.tile);
     const el = document.getElementById(t.dataset.target) || $(`.provider-card[data-provider=${t.dataset.target}]`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
@@ -677,19 +687,69 @@ function drawTiles(uploads) {
 const TILE_SERVICE = { gmail: ["google", "mail"], gcal: ["google", "calendar"], gdrive: ["google", "files"],
   ms_mail: ["microsoft", "mail"], ms_cal: ["microsoft", "calendar"], ms_drive: ["microsoft", "files"], slack: ["slack", "messages"],
   meta_social: ["meta", "social"], youtube: ["youtube", "youtube"] };
+const TILE_TITLE = { google: "Google", microsoft: "Microsoft 365", slack: "Slack", meta: "Facebook and Instagram", youtube: "YouTube" };
 function connectFromTile(type) {
   if (TILE_SERVICE[type]) {
     const [provider, service] = TILE_SERVICE[type];
-    const card = $(`.provider-card[data-provider=${provider}]`);
-    card.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (!oauthState.configured[oauthOf(provider)]) return setupNeededDialog(provider);
-    openConnectPanel(provider, [service]);
-    return;
+    return openConnectPanel(provider, [service], true);
   }
-  if (type === "website") { $("#web-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#web-form input").focus(), 400); return; }
-  if (type === "linkedin") return $("#li-upload").click();
-  if (type === "whatsapp") { $("#whatsapp-card").scrollIntoView({ behavior: "smooth", block: "start" }); openWhatsAppPanel(); return; }
-  if (type === "uploads") { $("#files-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#dropzone input").click(), 400); }
+  if (type === "website") return websiteDialog();
+  if (type === "whatsapp") return openWhatsAppPanel(true);
+  if (type === "uploads") return uploadDialog("file");
+  if (type === "linkedin") return uploadDialog("linkedin");
+}
+function websiteDialog() {
+  const f = openDialog(`<h2>Add your website</h2>
+    <p class="muted small">KnowledgeDesk reads every page of the site and checks for changes by itself.</p>
+    <label>Website address <input name="url" placeholder="www.yourcompany.com" dir="ltr" autocomplete="off"></label>
+    <div data-vis>${visibilityPicker([], true, "Who can find its pages?")}</div>
+    <p class="error" role="alert"></p>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Add website</button></div>`);
+  setTimeout(() => f.url.focus(), 50);
+  $("[data-close]", f).onclick = closeDialog;
+  $("[data-save]", f).onclick = (e) => {
+    const url = f.url.value.trim(); const v = readVisibility($("[data-vis]", f));
+    const err = !url ? "Type the website address first, for example www.yourcompany.com." : visibilityError(v);
+    if (err) { $(".error", f).textContent = err; return; }
+    busy(e.target, "Checking the website…", async () => {
+      try {
+        await api("/api/connectors", { method: "POST", json: { type: "website", name: url, config: { url }, ...v } });
+        closeDialog(); toast("Website added. Reading all its pages now."); refreshSources();
+      } catch (err2) { $(".error", f).textContent = err2.message; }
+    });
+  };
+}
+const UPLOAD_KIND = {
+  file: ["Upload files", "PDF, Word, Excel, PowerPoint, CSV, text, web pages and saved emails (.eml)."],
+  linkedin: ["Import from LinkedIn", "On your LinkedIn company page: <b>Analytics → Content</b>, choose the dates, click <b>Export</b>. Then choose that Excel file here."],
+};
+function uploadDialog(kind) {
+  const [title, help] = UPLOAD_KIND[kind];
+  const f = openDialog(`<h2>${title}</h2><p class="muted small">${help}</p>
+    <label class="btn" style="display:inline-flex">${ic("upload")}Choose file${kind === "file" ? "s" : ""}
+      <input type="file" name="files" ${kind === "file" ? "multiple" : 'accept=".xls,.xlsx,.csv"'} hidden></label>
+    <span class="muted small" data-names></span>
+    <div data-vis>${visibilityPicker([], false)}</div>
+    <p class="error" role="alert"></p>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Upload</button></div>`);
+  f.files.onchange = () => { $("[data-names]", f).textContent = [...f.files.files].map((x) => x.name).join(", "); };
+  $("[data-close]", f).onclick = closeDialog;
+  $("[data-save]", f).onclick = (e) => {
+    const files = [...f.files.files]; const v = readVisibility($("[data-vis]", f));
+    const err = !files.length ? "Choose a file first." : visibilityError(v);
+    if (err) { $(".error", f).textContent = err; return; }
+    const body = new FormData();
+    files.forEach((x) => body.append("files", x));
+    body.append("department_ids", v.department_ids.join(",")); body.append("company_wide", v.company_wide ? "true" : "false");
+    body.append("kind", kind);
+    busy(e.target, "Uploading…", async () => {
+      try {
+        await api("/api/documents", { method: "POST", body });
+        closeDialog(); toast(`Uploaded ${plural(files.length, "file", "files")}. They'll be searchable in a moment.`);
+        await loadFiles(true); refreshSources();
+      } catch (err2) { $(".error", f).textContent = err2.message; }
+    });
+  };
 }
 $("#find-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -740,7 +800,7 @@ function drawProvider(provider) {
 
   const noun = PROVIDER_ACCOUNT[provider];
   $(".pc-connect", card).innerHTML = `<button class="btn ${has ? "" : "primary"}" data-open-connect>${has ? ic("plus") : ""}${has ? `Connect another ${PROVIDER_NAME[provider]} ${noun}` : `Connect ${PROVIDER_NAME[provider]} ${noun}`}</button>`;
-  $("[data-open-connect]", card).onclick = () => oauthState.configured[oauthOf(provider)] ? openConnectPanel(provider) : setupNeededDialog(provider);
+  $("[data-open-connect]", card).onclick = () => openConnectPanel(provider);
 
   $(".pc-accounts", card).innerHTML = Object.entries(accounts).map(([accountId, list]) => {
     const first = list[0];
@@ -801,19 +861,78 @@ function drawProvider(provider) {
   });
 }
 
-function setupNeededDialog(card) {
+// One-time setup of a sign-in app, done right here: step-by-step, then the keys are checked with the provider.
+const SETUP_STEPS = {
+  meta: (r) => `<ol class="setup-steps">
+      <li>Open <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> (log in with your Facebook account) and click <b>Create app</b>.</li>
+      <li>Name it <b>KnowledgeDesk</b>. For the use case choose <b>Other</b>, then app type <b>Business</b>, and click <b>Create app</b>.</li>
+      <li>On the app's dashboard, find <b>Facebook Login for Business</b> and click <b>Set up</b>.</li>
+      <li>In the left menu open <b>Facebook Login for Business → Settings</b>. In <b>Valid OAuth Redirect URIs</b> paste this address, then <b>Save changes</b>:
+        ${copyRow("Return address", r)}</li>
+      <li>Open <b>Facebook Login for Business → Configurations → Create configuration</b>. Name: KnowledgeDesk. Login variation: <b>General</b>.
+        Access token: <b>User access token</b>. Assets: tick <b>Pages</b> and <b>Instagram accounts</b>. Permissions: tick
+        <i>pages_show_list, pages_read_engagement, pages_read_user_content, instagram_basic, instagram_manage_insights, business_management</i>.
+        Click <b>Create</b>, then copy the <b>Configuration ID</b>.</li>
+      <li>Open <b>App settings → Basic</b>. Copy the <b>App ID</b>, and the <b>App secret</b> (click <b>Show</b>).</li>
+    </ol>
+    <p class="muted small">While the app is in Development mode, only you (and people you add under <b>App roles</b>) can connect – enough for your own business.
+      Selling to customers needs Meta's free App Review.</p>`,
+  google: (r) => `<ol class="setup-steps">
+      <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">console.cloud.google.com → Credentials</a> in your Google project.</li>
+      <li>Click <b>Create credentials → OAuth client ID</b>, type <b>Web application</b>, and under <b>Authorized redirect URIs</b> add: ${copyRow("Return address", r)}</li>
+      <li>Click <b>Create</b> and copy the <b>Client ID</b> and <b>Client secret</b>.</li>
+      <li>In <b>APIs &amp; Services → Library</b>, enable <b>Gmail API</b>, <b>Google Calendar API</b>, <b>Google Drive API</b> and <b>YouTube Data API v3</b>.</li>
+    </ol>`,
+  microsoft: (r) => `<ol class="setup-steps">
+      <li>Open <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">entra.microsoft.com → App registrations</a> → <b>New registration</b>.</li>
+      <li>Name: KnowledgeDesk. Account types: <b>any organizational directory and personal Microsoft accounts</b>. Redirect URI: platform <b>Web</b>: ${copyRow("Return address", r)}</li>
+      <li>Copy the <b>Application (client) ID</b>. Then <b>Certificates &amp; secrets → New client secret</b> and copy its <b>Value</b>.</li>
+      <li><b>API permissions → Add → Microsoft Graph → Delegated</b>: Mail.Read, Calendars.Read, Files.Read.All, User.Read, offline_access.</li>
+    </ol>`,
+  slack: (r) => `<ol class="setup-steps">
+      <li>Open <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App → From scratch</b>, name KnowledgeDesk.</li>
+      <li><b>OAuth &amp; Permissions</b>: add the redirect URL ${copyRow("Return address", r)} and the bot scopes channels:read, channels:history, channels:join, groups:read, groups:history, users:read.</li>
+      <li><b>Basic Information</b>: copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
+    </ol>
+    ${/^https:/.test(r) ? "" : `<div class="warn-box">${ic("alert")} Slack only accepts <b>https</b> return addresses, so Slack can be connected once KnowledgeDesk runs online.</div>`}`,
+};
+async function setupNeededDialog(card, then = null) {
   const provider = oauthOf(card);
-  const f = openDialog(`<h2>${PROVIDER_NAME[provider]} sign-in isn't set up yet</h2>
-    <p class="muted">To connect ${PROVIDER_NAME[provider]} ${PROVIDER_ACCOUNT[provider]}s with one click, ${PROVIDER_NAME[provider]} needs to know about this installation.
-      It's a one-time setup (about 30 minutes, free) done by whoever installed KnowledgeDesk – see "Setting up one-click sign-in" in the README.</p>
-    <p class="small">Return address to register:<br><code>${esc(oauthState.redirect_url)}</code></p>
-    <div class="dialog-actions"><button class="btn primary" type="button" data-close>OK</button></div>`);
+  const name = PROVIDER_NAME[provider];
+  let info = { redirect_url: oauthState.redirect_url, apps: {} };
+  try { info = await getJSON("/api/oauth/apps"); } catch {}
+  const f = openDialog(`<h2>Set up ${name} sign-in (one time)</h2>
+    <p class="muted">${name} needs to know about KnowledgeDesk before anyone can connect. It's free and takes about 10 minutes. Follow the steps, then paste what you copied below.</p>
+    ${SETUP_STEPS[provider](info.redirect_url)}
+    <div class="grid2">
+      <label>${provider === "meta" ? "App ID" : provider === "microsoft" ? "Application (client) ID" : "Client ID"}
+        <input name="client_id" autocomplete="off" data-1p-ignore data-lpignore="true"></label>
+      <label>${provider === "meta" ? "App secret" : "Client secret"}${provider === "microsoft" ? " (Value)" : ""}
+        <input name="client_secret" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"></label>
+      ${provider === "meta" ? `<label>Configuration ID <input name="config_id" autocomplete="off" inputmode="numeric"></label>` : ""}
+    </div>
+    <p class="error" role="alert"></p>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button>
+      <button class="btn primary" type="button" data-save>Save and check</button></div>`);
   $("[data-close]", f).onclick = closeDialog;
+  $("[data-save]", f).onclick = (e) => busy(e.target, `Checking with ${name}…`, async () => {
+    $(".error", f).textContent = "";
+    const body = { client_id: f.client_id.value, client_secret: f.client_secret.value, config_id: f.config_id?.value || "" };
+    try {
+      await api(`/api/oauth/apps/${provider}`, { method: "PUT", json: body });
+      oauthState = await getJSON("/api/oauth/status");
+      toast(`${name} sign-in is set up.`);
+      closeDialog();
+      openConnectPanel(card, then, true);
+    } catch (err) { $(".error", f).textContent = err.message; }
+  });
 }
 
-function openConnectPanel(provider, only = null) {
-  editing = true;
-  const slot = $(`.provider-card[data-provider=${provider}] .pc-panel`);
+function openConnectPanel(provider, only = null, inDialog = false) {
+  if (!oauthState.configured[oauthOf(provider)]) return setupNeededDialog(provider, only);
+  editing = !inDialog;
+  const slot = inDialog ? openDialog(`<h2>Connect ${esc(TILE_TITLE[provider] || PROVIDER_NAME[provider])}</h2><div data-slot></div>`).querySelector("[data-slot]")
+    : $(`.provider-card[data-provider=${provider}] .pc-panel`);
   slot.innerHTML = `<div class="panel">
     <span class="label">What should KnowledgeDesk read?</span>
     ${PROVIDER_SERVICES[provider].map(([value, label, hint]) => `<label class="check"><input type="checkbox" name="svc" value="${value}" ${!only || only.includes(value) ? "checked" : ""}> ${label}
@@ -825,7 +944,7 @@ function openConnectPanel(provider, only = null) {
       ${provider === "youtube" ? "Sign in with the Google account that owns the channel. If you already connected Gmail with that account, it stays connected." : ""}</p>
     <div class="row"><button class="btn primary" data-go>Continue to ${PROVIDER_NAME[oauthOf(provider)]}</button><button class="btn" data-cancel>Cancel</button></div>
     <p class="error" role="alert"></p></div>`;
-  $("[data-cancel]", slot).onclick = () => { editing = false; slot.innerHTML = ""; refreshSources(); };
+  $("[data-cancel]", slot).onclick = () => { if (inDialog) return closeDialog(); editing = false; slot.innerHTML = ""; refreshSources(); };
   $("[data-go]", slot).onclick = (e) => {
     const services = $$("input[name=svc]:checked", slot).map((x) => x.value);
     const v = readVisibility(slot);
@@ -941,9 +1060,10 @@ function drawWhatsApp() {
     await api(`/api/connectors/${b.dataset.waDel}`, { method: "DELETE" }); toast("Disconnected."); refreshSources();
   });
 }
-function openWhatsAppPanel() {
-  editing = true;
-  $("#wa-panel").innerHTML = `<div class="panel"><form id="wa-form">
+function openWhatsAppPanel(inDialog = false) {
+  editing = !inDialog;
+  const host = inDialog ? openDialog(`<h2>Connect WhatsApp Business</h2><div data-slot></div>`).querySelector("[data-slot]") : $("#wa-panel");
+  host.innerHTML = `<div class="panel"><form id="wa-form">
     <span class="label">Connect a WhatsApp Business number</span>
     <ol class="wa-steps small">
       <li>Go to <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create app</b> → type <b>Business</b> → add the <b>WhatsApp</b> product, and add your business number.</li>
@@ -963,7 +1083,7 @@ function openWhatsAppPanel() {
     <div class="row"><button class="btn primary" type="submit">Check and connect</button><button class="btn" type="button" data-cancel>Cancel</button></div>
     <p class="error" role="alert"></p></form></div>`;
   const f = $("#wa-form");
-  $("[data-cancel]", f).onclick = () => { editing = false; $("#wa-panel").innerHTML = ""; refreshSources(); };
+  $("[data-cancel]", f).onclick = () => { if (inDialog) return closeDialog(); editing = false; host.innerHTML = ""; refreshSources(); };
   f.onsubmit = (e) => {
     e.preventDefault();
     const v = readVisibility(f);
@@ -973,7 +1093,7 @@ function openWhatsAppPanel() {
       try {
         await api("/api/connectors", { method: "POST", json: { type: "whatsapp_business", name: "WhatsApp Business", ...v,
           config: { phone_number_id: f.phone_number_id.value.trim(), access_token: f.access_token.value.trim(), app_secret: f.app_secret.value.trim() } } });
-        editing = false; $("#wa-panel").innerHTML = "";
+        editing = false; if (inDialog) closeDialog(); else host.innerHTML = "";
         toast("WhatsApp Business connected. Now add the webhook details in Meta (shown below).");
         await refreshSources();
         $("#wa-list details")?.setAttribute("open", "");
@@ -981,15 +1101,10 @@ function openWhatsAppPanel() {
     });
   };
 }
-$("#wa-connect").addEventListener("click", openWhatsAppPanel);
+$("#wa-connect").addEventListener("click", () => openWhatsAppPanel());
 
 const uploadForm = $("#upload-form");
-$("#li-upload").addEventListener("click", () => {
-  const radio = $("input[name=kind][value=linkedin]", uploadForm);
-  radio.checked = true; radio.dispatchEvent(new Event("change"));
-  $("#files-card").scrollIntoView({ behavior: "smooth", block: "start" });
-  setTimeout(() => $("#dropzone input").click(), 400);
-});
+$("#li-upload").addEventListener("click", () => uploadDialog("linkedin"));
 $("#wa-upload").addEventListener("click", () => {
   const radio = $("input[name=kind][value=whatsapp]", uploadForm);
   radio.checked = true; radio.dispatchEvent(new Event("change"));
@@ -1128,8 +1243,8 @@ LOADERS.people = async function loadPeople() {
   const users = await getJSON("/api/users");
   $("#user-list").innerHTML = users.map((u) => `<div class="list-row"><div class="row tight">
       <span class="avatar">${esc(initials(u.name || u.email))}</span><div>
-      <div class="title">${esc(u.name || u.email)} ${u.role === "admin" ? badge("info", "Admin") : ""} ${u.active ? "" : badge("", "Disabled")}</div>
-      <div class="meta">${esc(u.email)} · ${u.role === "admin" ? "Sees everything" : (u.departments.map((d) => `<span class="pill">${esc(d.name)}</span>`).join("") || "Only information shared with everyone")}</div></div></div>
+      <div class="title">${esc(u.name || u.email)} ${u.role === "admin" ? badge("info", "Admin") : u.role === "learner" ? badge("busy", "New employee") : ""} ${u.active ? "" : badge("", "Disabled")}</div>
+      <div class="meta">${esc(u.email)} · ${u.role === "admin" ? "Sees everything" : u.role === "learner" ? "Sees only the Learning Center" : (u.departments.map((d) => `<span class="pill">${esc(d.name)}</span>`).join("") || "Only information shared with everyone")}</div></div></div>
       <div class="actions"><button class="btn link" data-edit-user="${u.id}">Edit</button></div></div>`).join("");
   $$("[data-edit-user]").forEach((b) => b.onclick = () => userDialog(users.find((u) => u.id === Number(b.dataset.editUser))));
 };
@@ -1151,6 +1266,7 @@ function userDialog(u) {
     <label>${u ? "New password (leave empty to keep the current one)" : "Password (at least 8 characters)"}
       <input name="password" type="text" autocomplete="off" ${u ? "" : "required minlength=8"}></label>
     <label>Role <select name="role"><option value="member">Team member – finds information for their departments</option>
+      <option value="learner">New employee – sees only the Learning Center</option>
       <option value="admin">Admin – sees everything and manages KnowledgeDesk</option></select></label>
     <span class="label">Departments</span>
     <div>${departments.map((d) => `<label class="check"><input type="checkbox" name="dept" value="${d.id}" ${u?.departments.some((x) => x.id === d.id) ? "checked" : ""}> ${esc(d.name)}</label>`).join("") || '<span class="muted small">No departments yet.</span>'}</div>
@@ -1286,3 +1402,91 @@ $("#health-download").addEventListener("click", () => {
 });
 
 boot();
+
+
+// ================================================================== Learning Center
+LOADERS.learning = async function loadLearning() {
+  const admin = me.role === "admin";
+  const path = await getJSON("/api/learning");
+  $("#learn-intro").textContent = admin
+    ? "Choose what new employees should read first, in order. People with the New employee role see only these items – and their questions are answered only from them."
+    : me.role === "learner" ? "Welcome! Go through these items in order. Mark each one as done when you've read it – and ask anything about them on the Ask page."
+    : "The company's onboarding path. A good place to start, or to refresh what matters most.";
+  $("#learn-add").classList.toggle("hidden", !admin);
+  $("#learn-people-card").classList.toggle("hidden", !admin);
+  const pct = path.total ? Math.round((path.done / path.total) * 100) : 0;
+  $("#learn-progress").innerHTML = path.total && !admin ? `<div class="learn-progress"><div><b>${path.done} of ${path.total}</b> done</div>${progressBar(path.done, path.total)}
+      ${path.done === path.total ? `<div class="status-detail ok">${ic("check")} All done – well done!</div>` : ""}</div>` : "";
+  $("#learn-list").innerHTML = path.items.length ? path.items.map((it, i) => `<div class="learn-item ${it.done ? "done" : ""}" data-id="${it.id}">
+      <span class="step">${it.done && !admin ? ic("tick") : i + 1}</span>
+      <div class="grow"><div class="title">${it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : `<a href="#" data-doc="${it.document_id}">${esc(it.title)}</a>`}
+        <span class="muted small">· ${esc(kindName(it.kind))}</span></div>
+        ${it.note ? `<div class="learn-note" dir="auto">${esc(it.note)}</div>` : ""}</div>
+      <div class="acc-actions">${admin ? `
+        <button class="btn small icon-only" type="button" data-move="-1" title="Move up" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${ic("up-arrow")}</button>
+        <button class="btn small icon-only" type="button" data-move="1" title="Move down" aria-label="Move down" ${i === path.items.length - 1 ? "disabled" : ""}>${ic("down-arrow")}</button>
+        <button class="btn link small" type="button" data-note>${it.note ? "Edit note" : "Add note"}</button>
+        <button class="btn link small danger" type="button" data-remove>Remove</button>`
+        : `<button class="btn small ${it.done ? "" : "primary"}" type="button" data-done="${it.done ? 0 : 1}">${it.done ? "Mark as not done" : "Mark as done"}</button>`}</div></div>`).join("")
+    : `<div class="empty">${admin ? "Nothing in the learning path yet. Click <b>Add to the path</b> and pick the documents, pages or recordings a new employee should start with." : "Nothing here yet – your admin is preparing it."}</div>`;
+  const ids = path.items.map((x) => x.id);
+  $$("#learn-list .learn-item").forEach((row) => {
+    const id = Number(row.dataset.id); const it = path.items.find((x) => x.id === id);
+    $("[data-done]", row)?.addEventListener("click", async (e) => {
+      await busy(e.target, "Saving…", () => api(`/api/learning/${id}/done`, { method: "POST", json: { done: e.target.dataset.done === "1" } }));
+      LOADERS.learning();
+    });
+    $$("[data-move]", row).forEach((b) => b.onclick = async () => {
+      const i = ids.indexOf(id), j = i + Number(b.dataset.move);
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      await api("/api/learning/order", { method: "PUT", json: { ids } }); LOADERS.learning();
+    });
+    $("[data-remove]", row)?.addEventListener("click", async () => {
+      if (!await confirmBox({ title: "Remove from the learning path?", text: `"${it.title}" stays in the knowledge base; it's only taken out of the path.`, confirm: "Remove" })) return;
+      await api(`/api/learning/${id}`, { method: "DELETE" }); toast("Removed from the path."); LOADERS.learning();
+    });
+    $("[data-note]", row)?.addEventListener("click", () => {
+      const f = openDialog(`<h2>Note for new employees</h2><p class="muted small">${esc(it.title)}</p>
+        <label>What should they look for here? <textarea name="note" rows="4" dir="auto" placeholder="For example: Read the returns policy carefully – customers ask about it every day.">${esc(it.note)}</textarea></label>
+        <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Save</button></div>`);
+      $("[data-close]", f).onclick = closeDialog;
+      $("[data-save]", f).onclick = async () => { await api(`/api/learning/${id}`, { method: "PUT", json: { note: f.note.value } }); closeDialog(); toast("Saved."); LOADERS.learning(); };
+    });
+  });
+  if (admin) await drawLearningPeople();
+};
+
+async function drawLearningPeople() {
+  const p = await getJSON("/api/learning/progress");
+  $("#learn-people").innerHTML = p.people.length ? p.people.map((u) => `<div class="list-row"><div class="grow">
+      <div class="title">${esc(u.name || u.email)} ${u.role === "learner" ? badge("busy", "New employee") : ""}</div>
+      <div class="meta">${u.last_done ? `Last progress ${ago(u.last_done)}` : "Hasn't started yet"}</div></div>
+      <div style="min-width:180px"><div class="small"><b>${u.done} of ${p.total}</b> done</div>${progressBar(u.done, p.total)}</div></div>`).join("")
+    : `<div class="empty">No new employees yet. On the <a href="#people">People</a> page, add a person with the role <b>New employee</b> – they'll see only this path.</div>`;
+}
+
+$("#learn-add").addEventListener("click", () => {
+  const f = openDialog(`<h2>Add to the learning path</h2>
+    <p class="muted small">Search everything in the knowledge base and add what a new employee should read.</p>
+    <div class="search-box" style="width:100%">${ic("search")}<input type="search" data-q dir="auto" placeholder="For example: onboarding, prices, safety"></div>
+    <div data-list style="margin-top:8px"></div>
+    <div class="dialog-actions"><button class="btn primary" type="button" data-close>Done</button></div>`);
+  const list = $("[data-list]", f);
+  let inPath = new Set();
+  const load = async () => {
+    inPath = new Set((await getJSON("/api/learning")).items.map((x) => x.document_id));
+    const q = new URLSearchParams({ q: $("[data-q]", f).value, status: "ready", limit: 15 });
+    const rows = await getJSON(`/api/documents?${q}`);
+    list.innerHTML = rows.length ? rows.map((d) => `<div class="list-row"><span class="icon-tile sm">${ic(KIND_ICON[d.kind] || "file")}</span>
+        <div class="grow"><div class="title" dir="auto">${esc(d.title)}</div><div class="meta">${esc(kindName(d.kind))}</div></div>
+        ${inPath.has(d.id) ? badge("ok", "In the path") : `<button class="btn small" type="button" data-add="${d.id}">${ic("plus")}Add</button>`}</div>`).join("")
+      : '<div class="empty">Nothing found.</div>';
+    $$("[data-add]", list).forEach((b) => b.onclick = async () => {
+      await busy(b, "Adding…", () => api("/api/learning", { method: "POST", json: { document_id: Number(b.dataset.add) } }));
+      toast("Added to the learning path."); load();
+    });
+  };
+  $("[data-q]", f).addEventListener("input", debounce(load));
+  $("[data-close]", f).onclick = () => { closeDialog(); LOADERS.learning(); };
+  load();
+});

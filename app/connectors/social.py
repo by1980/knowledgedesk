@@ -27,6 +27,11 @@ class SocialError(RuntimeError):
     pass
 
 
+def _api_off(text: str) -> bool:
+    low = text.lower()
+    return "has not been used in project" in low or "is disabled" in low or "service_disabled" in low or "accessnotconfigured" in low
+
+
 def _due(sync: Sync) -> bool:
     """Scheduled checks run at most hourly; "Check for new items" always runs."""
     last = sync.connector["state"].get("checked_at", 0)
@@ -182,12 +187,15 @@ def sync_youtube(sync: Sync) -> None:
         try:
             channels = api.json(f"{YOUTUBE}/channels", {"part": "snippet,statistics,contentDetails", "mine": "true"}).get("items", [])
         except ApiError as e:
+            if _api_off(str(e)):
+                raise  # explained with a link by friendly_error
             if e.status in (401, 403):
                 raise SocialError("Google didn't give permission to read YouTube. Click Connect with Google again and "
                                   "tick YouTube.")
             raise
         if not channels:
-            raise SocialError("This Google account has no YouTube channel. Connect the Google account that owns the channel.")
+            raise SocialError("This Google account has no YouTube channel. Click Connect YouTube channel again and, on "
+                              "Google's page, choose the account or brand account that owns the channel.")
         for ch in channels:
             uploads = ch.get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
             ids: list[str] = []

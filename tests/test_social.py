@@ -47,6 +47,13 @@ def setup(monkeypatch):
         yield "ok [1]"
 
     monkeypatch.setattr(llm, "stream_answer", fake_stream)
+    yield
+    # Let background imports finish, so they can't write into the next test's fresh database
+    from app.connectors import runner
+    for _ in range(200):
+        if not any(lock.locked() for lock in list(runner._locks.values())):
+            break
+        time.sleep(0.05)
 
 
 def sign_in(client, admin, provider, services):
@@ -158,3 +165,50 @@ def test_linkedin_export_upload(client):
     process_pending()
     ask(client, admin, "How many likes did the LinkedIn marathon post get?")
     assert "Likes: 87" in captured["sources"] and "Post title: Proud to sponsor" in captured["sources"]
+
+
+def test_sign_in_setup_in_the_app(client, monkeypatch):
+    monkeypatch.setattr(settings, "meta_client_id", "")
+    monkeypatch.setattr(settings, "meta_client_secret", "")
+    oauth._apps_cache.clear()
+    admin = login(client)
+    assert client.get("/api/oauth/status", headers=admin).json()["configured"]["meta"] is False
+    bad = client.put("/api/oauth/apps/meta", headers=admin, json={"client_id": "1234", "client_secret": "wrong"})
+    assert bad.status_code == 400 and "doesn't recognise" in bad.json()["detail"]
+    masked = client.put("/api/oauth/apps/meta", headers=admin, json={"client_id": "1234", "client_secret": "ab••••"})
+    assert masked.status_code == 400 and "hidden" in masked.json()["detail"]
+    r = client.put("/api/oauth/apps/meta", headers=admin, json={"client_id": " 1234 ", "client_secret": "s3cret", "config_id": "777"})
+    assert r.status_code == 200, r.text
+    apps = client.get("/api/oauth/apps", headers=admin).json()["apps"]
+    assert apps["meta"]["source"] == "app" and apps["meta"]["client_id"] == "1234" and apps["meta"]["has_secret"]
+    assert client.get("/api/oauth/status", headers=admin).json()["configured"]["meta"] is True
+    url = client.post("/api/oauth/start", headers={**admin, "Origin": "http://localhost:8000"},
+                      json={"provider": "meta", "services": ["social"], "company_wide": True}).json()["url"]
+    q = parse_qs(urlparse(url).query)
+    assert q["client_id"] == ["1234"] and q["config_id"] == ["777"] and "scope" not in q
+    # the whole connection works with the app set up in the app
+    r = client.get("/oauth/callback", params={"state": q["state"][0], "code": "sim-code"}, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    assert wait_synced(client, admin, {"meta_social"})[0]["last_error"] is None
+    # Google: a wrong secret is caught before saving
+    r = client.put("/api/oauth/apps/google", headers=admin, json={"client_id": "x.apps.googleusercontent.com", "client_secret": "wrong"})
+    assert r.status_code == 400 and "doesn't recognise" in r.json()["detail"]
+    r = client.put("/api/oauth/apps/google", headers=admin, json={"client_id": "my-project", "client_secret": "s"})
+    assert r.status_code == 400 and "apps.googleusercontent.com" in r.json()["detail"]
+    oauth.save_app("meta", None)
+
+
+def test_youtube_api_switched_off_explains_with_link(client, monkeypatch):
+    from app.connectors import runner
+
+    def off(*a, **k):
+        raise oauth.ApiError(403, "YouTube Data API v3 has not been used in project 513606 before or it is disabled. "
+                                  "Enable it by visiting https://console.developers.google.com/apis/api/youtube.googleapis.com/overview?project=513606 then retry.")
+    monkeypatch.setattr(oauth.Api, "json", off)
+    admin = login(client)
+    for k in client.get("/api/connectors", headers=admin).json():  # start without the channel from earlier tests
+        if k["type"] == "youtube":
+            client.delete(f"/api/connectors/{k['id']}", headers=admin)
+    sign_in(client, admin, "google", ["youtube"])
+    k = wait_synced(client, admin, {"youtube"})[0]
+    assert "isn't switched on" in k["last_error"] and "youtube.googleapis.com/overview?project=513606" in k["last_error"]

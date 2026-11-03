@@ -15,7 +15,7 @@ env DATABASE_URL="postgresql://kd:kd@localhost:5432/$DB" DATA_DIR="$WORK/data" S
     UPLOADS_DIR="$WORK/data/uploads" LICENSE_FILE="$WORK/data/license.key" MODEL_CACHE="${MODEL_CACHE:-$HOME/.cache/kd-models}" \
     COMPANY_NAME="Acme Plumbing" ADMIN_EMAIL="admin@acme.test" ADMIN_PASSWORD="admin-pass-123" SECRET_KEY="qa-secret-0123456789abcdef0123456789abcdef" \
     KD_FAKE_LLM=true KD_PROVIDER_OVERRIDE="http://127.0.0.1:9999" GOOGLE_CLIENT_ID="qa-google" GOOGLE_CLIENT_SECRET="qa" \
-    MICROSOFT_CLIENT_ID="qa-ms" SLACK_CLIENT_ID="qa-slack" SLACK_CLIENT_SECRET="qa" META_APP_ID="qa-meta" META_APP_SECRET="qa" SUMMARIZE_INTERVIEWS=false SCAN_INTERVAL_SECONDS=5 \
+    MICROSOFT_CLIENT_ID="qa-ms" SLACK_CLIENT_ID="qa-slack" SLACK_CLIENT_SECRET="qa" SUMMARIZE_INTERVIEWS=false SCAN_INTERVAL_SECONDS=5 \
     python3 -m uvicorn app.main:app --port 8100 --log-level warning > "$WORK/app.log" 2>&1 &
 APP_PID=$!
 trap 'kill $APP_PID $SIM_PID 2>/dev/null || true' EXIT

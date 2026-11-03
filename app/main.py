@@ -1,5 +1,7 @@
 """KnowledgeDesk web server: API + web interface."""
 import json
+
+import httpx
 import logging
 import os
 import secrets
@@ -54,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.2"
+APP_VERSION = "0.9.3"
 
 
 def _ensure_secret_key() -> None:
@@ -164,6 +166,7 @@ def ask(body: AskIn, user: dict = Depends(auth.current_user)):
 
     history = _clean_history(body.history)
     scope = {"is_admin": is_admin, "user_depts": dept_ids, "only_dept": body.department_id,
+             "learner": user["role"] == "learner",
              "kinds": [k for k in body.kinds if k in KINDS] or None}
     hits = retrieval.search(question, **scope)
     # A follow-up ("and for VIP customers?") may need the previous question too. The new question
@@ -232,10 +235,8 @@ def overview(user: dict = Depends(auth.current_user)):
         rows = c.execute(
             "SELECT d.kind, d.source, d.status, count(*) AS n, "
             " sum(coalesce((d.metadata->>'events')::int, (d.metadata->>'messages')::int, 1)) AS events FROM documents d "
-            "WHERE %s OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
-            "  WHERE dd.document_id=d.id AND dd.department_id = ANY(%s)) "
-            "GROUP BY d.kind, d.source, d.status",
-            (is_admin, dept_ids),
+            f"WHERE {VISIBLE} GROUP BY d.kind, d.source, d.status",
+            _visible_params(user),
         ).fetchall()
     ready: dict[str, int] = {}
     importing = 0
@@ -321,7 +322,7 @@ def _set_user_departments(c, user_id: int, dept_ids: list[int]) -> None:
 def create_user(body: UserIn, _: dict = Depends(auth.admin_user)):
     if not body.password or len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
-    if body.role not in ("admin", "member"):
+    if body.role not in ("admin", "member", "learner"):
         raise HTTPException(400, "Role must be admin or member")
     lic = license.status()
     with conn() as c:
@@ -341,7 +342,7 @@ def create_user(body: UserIn, _: dict = Depends(auth.admin_user)):
 
 @app.put("/api/users/{uid}")
 def update_user(uid: int, body: UserIn, admin: dict = Depends(auth.admin_user)):
-    if body.role not in ("admin", "member"):
+    if body.role not in ("admin", "member", "learner"):
         raise HTTPException(400, "Role must be admin or member")
     if uid == admin["id"] and (body.role != "admin" or not body.active):
         raise HTTPException(400, "You cannot remove your own admin access")
@@ -387,16 +388,117 @@ def change_password(body: PasswordIn, user: dict = Depends(auth.current_user)):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- Learning Center
+
+class LearningIn(BaseModel):
+    document_id: int
+    note: str = ""
+
+
+class LearningNote(BaseModel):
+    note: str = ""
+
+
+class LearningOrder(BaseModel):
+    ids: list[int]
+
+
+class DoneIn(BaseModel):
+    done: bool = True
+
+
+@app.get("/api/learning")
+def learning_path(user: dict = Depends(auth.current_user)):
+    with conn() as c:
+        items = c.execute(
+            "SELECT li.id, li.document_id, li.note, li.position, d.title, d.kind, d.status, "
+            " coalesce(d.metadata->>'url', d.metadata->>'link', '') AS url, "
+            " EXISTS (SELECT 1 FROM learning_progress lp WHERE lp.user_id=%s AND lp.document_id=li.document_id) AS done "
+            "FROM learning_items li JOIN documents d ON d.id=li.document_id ORDER BY li.position, li.id", (user["id"],)
+        ).fetchall()
+    return {"items": items, "done": sum(1 for i in items if i["done"]), "total": len(items)}
+
+
+@app.post("/api/learning")
+def learning_add(body: LearningIn, _: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        if not c.execute("SELECT 1 FROM documents WHERE id=%s", (body.document_id,)).fetchone():
+            raise HTTPException(404, "That item no longer exists")
+        c.execute("INSERT INTO learning_items(document_id, note, position) "
+                  "VALUES (%s, %s, (SELECT coalesce(max(position), 0) + 1 FROM learning_items)) "
+                  "ON CONFLICT (document_id) DO NOTHING", (body.document_id, body.note.strip()))
+    return {"ok": True}
+
+
+@app.put("/api/learning/order")
+def learning_order(body: LearningOrder, _: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        for pos, item_id in enumerate(body.ids, 1):
+            c.execute("UPDATE learning_items SET position=%s WHERE id=%s", (pos, item_id))
+    return {"ok": True}
+
+
+@app.put("/api/learning/{item_id}")
+def learning_note(item_id: int, body: LearningNote, _: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        c.execute("UPDATE learning_items SET note=%s WHERE id=%s", (body.note.strip()[:2000], item_id))
+    return {"ok": True}
+
+
+@app.delete("/api/learning/{item_id}")
+def learning_remove(item_id: int, _: dict = Depends(auth.admin_user)):
+    with conn() as c:
+        c.execute("DELETE FROM learning_items WHERE id=%s", (item_id,))
+    return {"ok": True}
+
+
+@app.post("/api/learning/{item_id}/done")
+def learning_done(item_id: int, body: DoneIn, user: dict = Depends(auth.current_user)):
+    with conn() as c:
+        row = c.execute("SELECT document_id FROM learning_items WHERE id=%s", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Not in the learning path")
+        if body.done:
+            c.execute("INSERT INTO learning_progress(user_id, document_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                      (user["id"], row["document_id"]))
+        else:
+            c.execute("DELETE FROM learning_progress WHERE user_id=%s AND document_id=%s", (user["id"], row["document_id"]))
+    return {"ok": True}
+
+
+@app.get("/api/learning/progress")
+def learning_progress(_: dict = Depends(auth.admin_user)):
+    """Everyone in the Learning Center: new employees, plus team members who started the path."""
+    with conn() as c:
+        total = c.execute("SELECT count(*) AS n FROM learning_items").fetchone()["n"]
+        rows = c.execute(
+            "SELECT u.id, u.name, u.email, u.role, u.created_at, "
+            " (SELECT count(*) FROM learning_progress lp JOIN learning_items li ON li.document_id=lp.document_id "
+            "   WHERE lp.user_id=u.id) AS done, "
+            " (SELECT max(done_at) FROM learning_progress lp WHERE lp.user_id=u.id) AS last_done "
+            "FROM users u WHERE u.active AND (u.role='learner' OR EXISTS (SELECT 1 FROM learning_progress lp WHERE lp.user_id=u.id)) "
+            "ORDER BY u.role='learner' DESC, u.created_at DESC"
+        ).fetchall()
+    return {"total": total, "people": rows}
+
+
 # ---------------------------------------------------------------- documents
 
+# Who can see a document: admins everything; new employees (learners) only the learning path;
+# team members what's shared with everyone or their departments, plus the learning path.
+VISIBLE = ("(CASE WHEN %(v_role)s = 'learner' THEN d.id IN (SELECT document_id FROM learning_items) "
+           "ELSE (%(v_role)s = 'admin' OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
+           "WHERE dd.document_id=d.id AND dd.department_id = ANY(%(v_depts)s)) "
+           "OR d.id IN (SELECT document_id FROM learning_items)) END)")
+
+
+def _visible_params(user: dict) -> dict:
+    return {"v_role": user["role"], "v_depts": [d["id"] for d in user["departments"]]}
+
+
 def _can_see(c, user: dict, doc_id: int) -> bool:
-    if user["role"] == "admin":
-        return True
-    row = c.execute(
-        "SELECT 1 FROM documents d WHERE d.id=%s AND (d.company_wide OR EXISTS ("
-        " SELECT 1 FROM document_departments dd WHERE dd.document_id=d.id AND dd.department_id = ANY(%s)))",
-        (doc_id, [d["id"] for d in user["departments"]]),
-    ).fetchone()
+    row = c.execute(f"SELECT 1 FROM documents d WHERE d.id=%(id)s AND {VISIBLE}",
+                    {"id": doc_id, **_visible_params(user)}).fetchone()
     return row is not None
 
 
@@ -405,11 +507,8 @@ def list_documents(response: Response, user: dict = Depends(auth.current_user), 
                    source: str = "", connector_id: int | None = None, status: str = "", kind: str = "",
                    limit: int = 1000, offset: int = 0):
     """source: "uploads" = files added by hand or from synced folders. Total count is in X-Total-Count."""
-    is_admin = user["role"] == "admin"
-    where = ["(%(admin)s OR d.company_wide OR EXISTS (SELECT 1 FROM document_departments dd "
-             "WHERE dd.document_id=d.id AND dd.department_id = ANY(%(depts)s)))"]
-    params = {"admin": is_admin, "depts": [d["id"] for d in user["departments"]],
-              "limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
+    where = [VISIBLE]
+    params = {**_visible_params(user), "limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
     if q.strip():
         where.append("(d.title ILIKE %(q)s OR d.filename ILIKE %(q)s OR EXISTS (SELECT 1 FROM chunks ch "
                      "WHERE ch.document_id = d.id AND ch.tsv @@ plainto_tsquery('simple', %(qt)s)))")
@@ -772,6 +871,61 @@ def _origin(request: Request) -> str:
 @app.get("/api/oauth/status")
 def oauth_status(request: Request, _: dict = Depends(auth.admin_user)):
     return {"configured": oauth.configured(), "redirect_url": oauth.redirect_url(_origin(request))}
+
+
+class OAuthAppIn(BaseModel):
+    client_id: str
+    client_secret: str = ""
+    config_id: str = ""
+
+
+@app.get("/api/oauth/apps")
+def oauth_apps(request: Request, _: dict = Depends(auth.admin_user)):
+    out = {}
+    for p in oauth.PROVIDERS:
+        cid, secret = oauth.credentials(p)
+        out[p] = {"source": oauth.app_source(p), "client_id": cid, "has_secret": bool(secret),
+                  "config_id": oauth.saved_apps().get(p, {}).get("config_id", "")}
+    return {"apps": out, "redirect_url": oauth.redirect_url(_origin(request)), "origin": _origin(request)}
+
+
+@app.put("/api/oauth/apps/{provider}")
+def oauth_app_save(provider: str, body: OAuthAppIn, request: Request, _: dict = Depends(auth.admin_user)):
+    if provider not in oauth.PROVIDERS:
+        raise HTTPException(404, "Unknown service")
+    clean = {k: "".join(v.split()) for k, v in body.model_dump().items()}  # spaces picked up while copying
+    name = oauth.PROVIDERS[provider]["name"]
+    if any("•" in v or "…" in v for v in clean.values()):
+        raise HTTPException(400, "That looks like a hidden (dotted) value. Copy the real value from the "
+                                 f"{name} page, not from a screenshot or chat.")
+    if not clean["client_id"]:
+        raise HTTPException(400, f"Paste the {'App ID' if provider == 'meta' else 'Client ID'}.")
+    if provider == "google" and not clean["client_id"].endswith(".apps.googleusercontent.com"):
+        raise HTTPException(400, "A Google Client ID ends with .apps.googleusercontent.com – check you copied the Client ID, not the project name.")
+    if provider == "meta" and not clean["client_id"].isdigit():
+        raise HTTPException(400, "A Facebook App ID is only digits – find it at the top of App settings → Basic.")
+    if provider == "meta" and clean["config_id"] and not clean["config_id"].isdigit():
+        raise HTTPException(400, "A Configuration ID is only digits – find it under Facebook Login for Business → Configurations.")
+    if provider in ("google", "meta", "slack") and not clean["client_secret"]:
+        old = oauth.saved_apps().get(provider, {})
+        if old.get("client_id") == clean["client_id"] and old.get("client_secret"):
+            clean["client_secret"] = old["client_secret"]  # unchanged secret left empty on purpose
+        else:
+            raise HTTPException(400, f"Paste the {'App secret' if provider == 'meta' else 'Client secret'} too.")
+    try:
+        oauth.check_app(provider, clean["client_id"], clean["client_secret"], _origin(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except httpx.HTTPError:
+        raise HTTPException(400, f"Couldn't reach {name} to check. Check the internet connection and try again.")
+    oauth.save_app(provider, {k: v for k, v in clean.items() if v})
+    return {"ok": True}
+
+
+@app.delete("/api/oauth/apps/{provider}")
+def oauth_app_delete(provider: str, _: dict = Depends(auth.admin_user)):
+    oauth.save_app(provider, None)
+    return {"ok": True}
 
 
 @app.post("/api/oauth/start")

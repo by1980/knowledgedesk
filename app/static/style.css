@@ -399,3 +399,26 @@ button:disabled { cursor: not-allowed; }
 .social-week { text-align: right; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
 .social-week b { font-size: 18px; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .social-acc { flex-wrap: wrap; } .social-week { align-items: flex-start; text-align: left; } }
+
+/* Guided sign-in setup */
+.setup-steps { padding-left: 20px; margin: 8px 0 12px; display: grid; gap: 8px; font-size: 14px; line-height: 1.5; }
+.setup-steps .copy-row { margin-top: 4px; }
+dialog:has(.setup-steps) { width: min(680px, calc(100vw - 32px)); }
+#dialog-form .grid2 { gap: 0 12px; margin-bottom: 0; }
+/* Long windows scroll, but their buttons always stay in view */
+#dialog-form .dialog-actions { position: sticky; bottom: -22px; margin-bottom: -22px; padding: 12px 0 22px; background: var(--surface); border-top: 1px solid var(--line); z-index: 1; }
+
+/* Learning Center */
+.learn-progress { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px; display: grid; gap: 8px; }
+.learn-item { display: flex; align-items: flex-start; gap: 14px; padding: 14px 4px; border-top: 1px solid var(--line); }
+.learn-item:first-child { border-top: 0; }
+.learn-item .step { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 13px;
+  background: var(--accent-soft); color: var(--accent); }
+.learn-item.done .step { background: var(--ok-soft); color: var(--ok); }
+.learn-item .step .ic { width: 16px; height: 16px; }
+.learn-item .title { font-weight: 600; }
+.learn-item .title a { color: inherit; }
+.learn-item .title a:hover { color: var(--accent); }
+.learn-note { margin-top: 4px; font-size: 14px; color: var(--muted); white-space: pre-wrap; }
+.btn.icon-only { padding: 4px 6px; }
+@media (max-width: 640px) { .learn-item { flex-wrap: wrap; } .learn-item .acc-actions { width: 100%; justify-content: flex-start; } }

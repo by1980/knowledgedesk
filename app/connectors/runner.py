@@ -1,6 +1,7 @@
 """Runs connector syncs (on a schedule from the worker, or on demand from the admin screen)."""
 import json
 import logging
+import re
 import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -84,6 +85,14 @@ def apply_visibility(c, connector_id: int, company_wide: bool) -> None:
 def friendly_error(e: Exception) -> str:
     text = str(e) or e.__class__.__name__
     low = text.lower()
+    if "has not been used in project" in low or ("api" in low and "is disabled" in low):
+        # Google: the API isn't switched on in the Google Cloud project. Its message has the exact link.
+        m = re.search(r"https://console\.(?:developers|cloud)\.google\.com/\S+?(?=[\s\"']|\.?$|\. )", text)
+        api = re.search(r"(Gmail|Google Calendar|Google Drive|YouTube Data|Drive|Calendar)[^.]*? API( v\d)?", text)
+        what = api.group(0) if api else "This Google service"
+        return (f"{what} isn't switched on in your Google Cloud project yet. Open "
+                f"{m.group(0) if m else 'console.cloud.google.com → APIs & Services → Library'}, click Enable, wait a "
+                "minute, then click Check for new items.")
     if "quota" in low or "rate limit" in low or "ratelimit" in low or "too many requests" in low or text.startswith("429"):
         return ("The provider is limiting how fast we can read. Everything imported so far is kept, "
                 "and the rest continues automatically at the next sync.")

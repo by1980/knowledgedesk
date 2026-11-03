@@ -102,3 +102,22 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
     tokens     TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- v0.9.3: Learning Center. "learner" = new employee who sees only the learning path.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'member', 'learner'));
+
+CREATE TABLE IF NOT EXISTS learning_items (
+    id          SERIAL PRIMARY KEY,
+    document_id INT UNIQUE NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    position    INT NOT NULL DEFAULT 0,
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS learning_progress (
+    user_id     INT REFERENCES users(id) ON DELETE CASCADE,
+    document_id INT REFERENCES documents(id) ON DELETE CASCADE,
+    done_at     TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (user_id, document_id)
+);
