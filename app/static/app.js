@@ -126,6 +126,14 @@ const LOADERS = {};
 
 function showView(id) { $$("body > section").forEach((s) => s.classList.add("hidden")); $(id).classList.remove("hidden"); }
 function logout() { token = null; try { localStorage.removeItem("kd_token"); } catch {} me = null; showView("#login-view"); }
+// The person's first name: their name, or – if none was set – a guess from their email (yaniv.b@… → Yaniv).
+function firstName(user) {
+  const name = (user.name || "").trim();
+  if (name && name.toLowerCase() !== "administrator") return name.split(/\s+/)[0];
+  const local = (user.email || "").split("@")[0].split(/[._\-+0-9]/).find((p) => p.length > 1) || "";
+  return local ? local[0].toUpperCase() + local.slice(1).toLowerCase() : "";
+}
+const hasRealName = (user) => (user.name || "").trim() && user.name.trim().toLowerCase() !== "administrator";
 function initials(name) { return (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join(""); }
 
 async function boot() {
@@ -136,8 +144,7 @@ async function boot() {
   if (!token) return showView("#login-view");
   try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
   await refreshDepartments();
-  $("#user-name").innerHTML = `<span class="avatar">${esc(initials(me.name || me.email))}</span>
-    <span class="who"><b>${esc(me.name || me.email)}</b><span>${me.role === "admin" ? "Admin" : esc(me.email)}</span></span>`;
+  drawMe();
   const pages = me.role === "admin" ? ADMIN_PAGES : MEMBER_PAGES;
   $("#nav").innerHTML = pages.map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("");
   updateBanner();
@@ -148,6 +155,11 @@ async function boot() {
     toast("Account connected. Importing now – you can follow the progress on this page.");
   }
   route();
+}
+function drawMe() {
+  const shown = hasRealName(me) ? me.name : (firstName(me) || me.email);
+  $("#user-name").innerHTML = `<span class="avatar">${esc(initials(shown))}</span>
+    <span class="who"><b>${esc(shown)}</b><span>${me.role === "admin" ? "Admin" : esc(me.email)}</span></span>`;
 }
 function drawBrand() {
   $("#company-name").textContent = appStatus.company || "";
@@ -194,14 +206,25 @@ $("#login-form").addEventListener("submit", async (e) => {
 });
 $("#logout").addEventListener("click", logout);
 $("#user-name").addEventListener("click", () => {
-  const f = openDialog(`<h2>My account</h2><p class="muted">${esc(me.name || "")} · ${esc(me.email)}</p>
-    <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
-    <label>New password (at least 8 characters) <input name="next" type="password" autocomplete="new-password" required minlength="8"></label>
+  const f = openDialog(`<h2>My account</h2><p class="muted">${esc(me.email)}</p>
+    <label>Your name <input name="name" dir="auto" value="${esc(hasRealName(me) ? me.name : firstName(me))}" required></label>
+    <div class="row tight" style="margin-bottom:16px"><button class="btn" type="button" data-save-name>Save name</button></div>
+    <span class="label">Change password</span>
+    <label>Current password <input name="current" type="password" autocomplete="current-password"></label>
+    <label>New password (at least 8 characters) <input name="next" type="password" autocomplete="new-password" minlength="8"></label>
     <p class="error" role="alert"></p>
-    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Change password</button></div>`);
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="submit">Change password</button></div>`);
   $("[data-close]", f).onclick = closeDialog;
+  $("[data-save-name]", f).onclick = (e) => busy(e.target, "Saving…", async () => {
+    try {
+      await api("/api/me", { method: "PUT", json: { name: f.name.value } });
+      me.name = f.name.value.trim(); drawMe(); toast("Name saved.");
+      if (location.hash === "#home" || !location.hash) LOADERS.home?.();
+    } catch (err) { $(".error", f).textContent = err.message; }
+  });
   f.onsubmit = (e) => {
     e.preventDefault();
+    if (!f.current.value || !f.next.value) { $(".error", f).textContent = "Fill in both password fields."; return; }
     busy($("button[type=submit]", f), "Saving…", async () => {
       try { await api("/api/me/password", { method: "POST", json: { current_password: f.current.value, new_password: f.next.value } }); closeDialog(); toast("Password changed."); }
       catch (err) { $(".error", f).textContent = err.message; }
@@ -278,8 +301,10 @@ function hbarChart(rows, empty) {
 
 // ================================================================== Home (admins)
 LOADERS.home = async function loadHome() {
-  const first = (me.name || "").split(" ")[0];
-  $("#home-title").textContent = first ? `Hi ${first}` : "Home";
+  const first = firstName(me);
+  $("#home-title").innerHTML = (first ? `Hi ${esc(first)}` : "Home") +
+    (hasRealName(me) ? "" : ` <button class="btn link small" type="button" id="set-name">Not your name?</button>`);
+  $("#set-name")?.addEventListener("click", () => $("#user-name").click());
   const days = Number($("#home-days").value);
   const [setup, health, a] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health"), getJSON(`/api/admin/analytics?days=${days}`)]);
 
@@ -306,14 +331,14 @@ LOADERS.home = async function loadHome() {
   const t = a.totals;
   const rate = t.asked_period ? Math.round((t.answered_period / t.asked_period) * 100) : null;
   $("#home-kpis").innerHTML = [
-    ["Searchable items", num(t.searchable), `${num(t.added_week)} added this week`],
-    ["New today", num(t.added_today), "emails, files, messages and pages"],
-    ["Questions this week", num(t.asked_week), `${num(t.asked_period)} in the last ${days} days`],
-    ["Answered well", rate == null ? "–" : `${rate}%`, rate == null ? "no questions yet" : "found an answer and no thumbs-down"],
+    ["Items in the knowledge base", num(t.searchable), "Emails, files, events, messages and pages it can answer from"],
+    ["Added in the last 24 hours", num(t.added_today), `New items brought in automatically (${num(t.added_week)} this week)`],
+    ["Questions this week", num(t.asked_week), `Asked by your team (${num(t.asked_period)} in the last ${days} days)`],
+    ["Questions answered", rate == null ? "–" : `${rate}%`, rate == null ? "Shows once people start asking" : "Got an answer from your information, and nobody marked it unhelpful"],
   ].map(([label, value, sub]) => `<div class="kpi"><div class="label">${label}</div><div class="big-number">${value}</div><div class="sub">${sub}</div></div>`).join("");
 
   const qRows = a.per_day.map((r) => ({ day: r.day, answered: r.asked - r.unanswered, unanswered: r.unanswered }));
-  $("#q-chart-sub").textContent = `${num(t.asked_period)} questions in the last ${days} days`;
+  $("#q-chart-sub").textContent = `How many questions your team asked each day. Orange means no answer was found or someone marked it unhelpful – usually information that's missing.`;
   $("#home-q-chart").innerHTML = t.asked_period ? columnChart(qRows, [
     { key: "answered", label: "Answered", color: "--series-1" }, { key: "unanswered", label: "No answer or not helpful", color: "--series-2" }],
     { title: "Questions per day" }) : '<div class="empty">No questions yet. Once people start asking, you\'ll see the trend here.</div>';
@@ -341,13 +366,13 @@ function drawLearning(a) {
   if (a.uploads.last_new) rows.push(`<div class="learn-row"><span class="icon-tile sm">${ic("upload")}</span>
       <div><div class="who">Uploaded files ${badge("ok", "Added")}</div><div class="meta">Documents, interviews and chats added by hand</div></div>
       <div class="right">Last added ${ago(a.uploads.last_new)}${a.uploads.added_today ? ` · <b>${num(a.uploads.added_today)}</b> today` : ""}</div></div>`);
-  $("#home-learning").innerHTML = `<div class="learn-head"><div><h2>Always learning</h2>
-      <p class="muted small" style="margin:0">Every connected source is checked every ${a.check_every_minutes} minutes, and anything new – emails, events, files,
-      messages, pages – is added automatically. Questions without a good answer show you what's still missing.</p></div>
+  $("#home-learning").innerHTML = `<div class="learn-head"><div><h2>Keeping up to date</h2>
+      <p class="muted small" style="margin:0">KnowledgeDesk checks your connected sources every ${a.check_every_minutes} minutes and adds anything new by itself –
+      you don't need to do anything. Each row shows when that source last brought in something new.</p></div>
       <div class="learn-stats"><div><div class="big-number">${num(t.added_today)}</div><div class="muted small">new today</div></div>
       <div><div class="big-number">${num(t.added_week)}</div><div class="muted small">new this week</div></div></div></div>
     <div style="margin-top:12px">${rows.join("") || '<div class="empty">Nothing connected yet. <a href="#sources">Connect your first source</a></div>'}</div>
-    ${t.added_week || a.growth.some((g) => g.added) ? `<h3 style="margin:18px 0 8px">New items per day</h3>${columnChart(a.growth, [{ key: "added", label: "New items", color: "--series-1" }], { height: 140, title: "New items per day" })}` : ""}`;
+    ${t.added_week || a.growth.some((g) => g.added) ? `<h3 style="margin:18px 0 2px">New items per day</h3><p class="muted small" style="margin:0 0 8px">How much new information was added each day.</p>${columnChart(a.growth, [{ key: "added", label: "New items", color: "--series-1" }], { height: 140, title: "New items per day" })}` : ""}`;
 }
 
 // ================================================================== Ask
@@ -681,7 +706,7 @@ async function refreshSources(withFiles = false) {
   const imported = await api("/api/documents?source=uploads&kind=whatsapp&limit=1").then((r) => Number(r.headers.get("X-Total-Count") || 0)).catch(() => 0);
   $("#wa-status").innerHTML = imported ? `<span class="muted small">${plural(imported, "chat", "chats")} imported from the phone – listed under Files and recordings.</span>` : "";
   const importing = o.importing || conns.some((k) => k.syncing || !k.last_sync || k.more);
-  $("#kb-summary").innerHTML = `<div class="toolbar"><h3>Searchable now</h3>${o.total ? '<a class="btn primary small" href="#ask">Ask a question</a>' : ""}</div>
+  $("#kb-summary").innerHTML = `<div class="toolbar"><h3>In the knowledge base now</h3></div>
     ${o.total ? `<div class="chips">${knowledgeChips(o.ready)}</div>` : '<p class="muted">Nothing yet. Connect an account, add your website, or upload files below.</p>'}
     ${importing ? `<p class="status-detail">${badge("busy", "Working")} ${o.importing ? `${plural(o.importing, "item is", "items are")} being prepared for search${o.eta ? ` (about ${esc(o.eta)} left)` : ""}.` : "Importing from your sources."} New items become searchable automatically – you can already ask questions.</p>` : ""}`;
   if (!editing) { drawProvider("google"); drawProvider("microsoft"); drawProvider("slack"); drawWebsites(); drawManual(); drawWhatsApp(); }

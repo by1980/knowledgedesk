@@ -29,6 +29,7 @@ fi
 if [ ! -f .env ]; then
   echo "First-time setup. Answer a few questions:"
   read -rp "Company name: " company
+  read -rp "Your name: " admin_name
   read -rp "Admin email: " admin_email
   while true; do
     read -rsp "Admin password (min. 8 characters): " admin_pw; echo
@@ -38,6 +39,7 @@ if [ ! -f .env ]; then
   read -rsp "Claude API key (starts with sk-ant-): " api_key; echo
   {
     echo "COMPANY_NAME=${company}"
+    echo "ADMIN_NAME=${admin_name}"
     echo "ADMIN_EMAIL=${admin_email}"
     echo "ADMIN_PASSWORD=${admin_pw}"
     echo "ANTHROPIC_API_KEY=${api_key}"

@@ -54,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9"
+APP_VERSION = "0.9.1"
 
 
 def _ensure_secret_key() -> None:
@@ -359,6 +359,20 @@ def update_user(uid: int, body: UserIn, admin: dict = Depends(auth.admin_user)):
 class PasswordIn(BaseModel):
     current_password: str
     new_password: str
+
+
+class NameIn(BaseModel):
+    name: str
+
+
+@app.put("/api/me")
+def update_me(body: NameIn, user: dict = Depends(auth.current_user)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Type your name.")
+    with conn() as c:
+        c.execute("UPDATE users SET name=%s WHERE id=%s", (name[:100], user["id"]))
+    return {"ok": True}
 
 
 @app.post("/api/me/password")

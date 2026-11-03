@@ -375,3 +375,6 @@ img.tone-light { filter: brightness(0); opacity: .85; }
   .learn-row .right { grid-column: 2; text-align: left; }
   .company-block { display: none; }
 }
+
+.kpi .sub { line-height: 1.4; }
+#home-title .btn.link { font-size: 13px; font-weight: 500; margin-left: 8px; vertical-align: middle; }

@@ -38,12 +38,16 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.fill("input[name=password]", "admin-pass-123"); await page.click("#login-form button");
   await page.waitForSelector("#app-view:not(.hidden)");
   check("Admin lands on Home", /#home|\/$/.test(page.url()) && await page.isVisible("#page-home"));
+  check("Home greets by first name, guessed from the email when no name is set", await until(async () => /^Hi Admin/.test((await text("#home-title")).trim()), 5000, 200));
+  await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
+  check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
+  await page.click("#dialog[open] [data-close]");
   check("Admin menu has all six pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Ask,Sources,People,Activity,Health,Settings");
 
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
   check("Home shows the setup checklist (0 of 3)", (await text("#home-setup")).includes("0 of 3 done"));
-  check("Home: key numbers shown", /Searchable items[\s\S]*New today[\s\S]*Questions this week[\s\S]*Answered well/.test(await text("#home-kpis")));
+  check("Home: key numbers shown", /Items in the knowledge base[\s\S]*Added in the last 24 hours[\s\S]*Questions this week[\s\S]*Questions answered/.test(await text("#home-kpis")));
   check("Home: empty chart explains itself", /No questions yet/.test(await text("#home-q-chart")));
   check("Home says what needs attention", /Connected sources|Nothing connected/.test(await text("#home-health")));
   await shot("home-first-use");
@@ -82,6 +86,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Drive: protected file is skipped and explained, not an error", /Skipped 1 item: Locked contract: can't be downloaded/.test(gtext) && !/Needs attention/.test(gtext), gtext);
   check("Calendar: counted in events (3), not months", /3 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
+  check("Sources: no 'Ask a question' button on this page", !/Ask a question/.test(await text("#page-sources")));
   await until(async () => /Connected/.test(await text("[data-tile=gmail]")), 15000, 500);
   check("Connection hub: named 'Connection hub'", /Connection hub/.test(await text("#overview-card h2")));
   check("Connection hub: unconnected Outlook tile has a Connect button", await page.isVisible("[data-tile=ms_mail] [data-connect-tile]"));
@@ -300,8 +305,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await until(async () => /Everything is working|need your attention|Almost ready/.test(await text("#home-health")), 10000, 300);
   check("Home: setup checklist complete (hidden)", (await text("#home-setup")).trim() === "");
   check("Home: questions-per-day chart drawn", await until(async () => (await page.$$("#home-q-chart svg path, #home-q-chart svg rect:not(.hit)")).length > 0, 5000, 300));
-  check("Home: questions by person shows who asked", /Administrator/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
-  check("Home: 'Always learning' lists live sources with their last new item", /Always learning/.test(await text("#home-learning")) &&
+  check("Home: questions by person shows who asked", /Yaniv Barak/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
+  check("Home: 'Keeping up to date' lists live sources with their last new item", /Keeping up to date/.test(await text("#home-learning")) &&
     /Gmail[\s\S]*Live/.test(await text("#home-learning")) && /Last new item/.test(await text("#home-learning")));
   await page.hover("#home-q-chart .hit >> nth=-1");
   check("Home: hovering a day shows its numbers", await until(async () => /Answered/.test(await page.textContent("#viz-tip")), 3000, 200));

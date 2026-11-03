@@ -18,6 +18,7 @@ class Settings:
     # First admin (created automatically on first start if no users exist)
     admin_email = _env("ADMIN_EMAIL", "admin@company.local")
     admin_password = _env("ADMIN_PASSWORD", "admin1234")
+    admin_name = _env("ADMIN_NAME", "")
 
     # Company / branding
     company_name = _env("COMPANY_NAME", "Our Company")

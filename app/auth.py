@@ -75,6 +75,6 @@ def ensure_first_admin() -> None:
         if c.execute("SELECT 1 FROM users LIMIT 1").fetchone():
             return
         c.execute(
-            "INSERT INTO users(email, name, password_hash, role) VALUES (%s, 'Administrator', %s, 'admin')",
-            (settings.admin_email.lower(), hash_password(settings.admin_password)),
+            "INSERT INTO users(email, name, password_hash, role) VALUES (%s, %s, %s, 'admin')",
+            (settings.admin_email.lower(), settings.admin_name, hash_password(settings.admin_password)),
         )
