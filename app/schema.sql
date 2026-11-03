@@ -91,3 +91,12 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS connector_id INT REFERENCES conne
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS external_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS documents_connector_ext ON documents(connector_id, external_id)
     WHERE connector_id IS NOT NULL;
+
+-- Accounts connected with "Sign in with Google / Microsoft". Tokens are encrypted. Added in v0.3.
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+    id         SERIAL PRIMARY KEY,
+    provider   TEXT NOT NULL,
+    email      TEXT NOT NULL DEFAULT '',
+    tokens     TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);

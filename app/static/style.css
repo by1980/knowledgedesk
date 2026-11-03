@@ -86,3 +86,7 @@ button:disabled { opacity: .6; cursor: default; }
 .help summary { cursor: pointer; color: var(--accent); }
 .help a { color: var(--accent); }
 .ok-msg { color: var(--ok); margin: 6px 0 0; }
+button.provider { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); padding: 10px 16px; font-weight: 500; }
+button.provider:hover:not(:disabled) { border-color: var(--accent); }
+code { font-size: 12px; background: var(--bg); padding: 1px 4px; border-radius: 4px; word-break: break-all; }

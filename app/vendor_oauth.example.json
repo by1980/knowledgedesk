@@ -1,0 +1,5 @@
+{
+  "redirect_url": "https://connect.yourcompany.com/oauth.html",
+  "google": {"client_id": "xxxxxxxx.apps.googleusercontent.com", "client_secret": "GOCSPX-xxxxxxxx"},
+  "microsoft": {"client_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "client_secret": "xxxxxxxx"}
+}

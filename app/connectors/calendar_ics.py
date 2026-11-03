@@ -27,40 +27,61 @@ def _fmt(value) -> str:
     return str(value)
 
 
+def window(today: date | None = None) -> tuple[date, date]:
+    today = today or date.today()
+    return today - timedelta(days=PAST_DAYS), today + timedelta(days=FUTURE_DAYS)
+
+
+def group_by_month(events: list[dict]) -> dict[str, list[str]]:
+    """events: dicts with start, end (date/datetime), title, location, organizer, attendees, description."""
+    months: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for ev in events:
+        begin, finish = ev["start"], ev.get("end")
+        lines = [f"Event: {ev.get('title') or '(no title)'}",
+                 f"When: {_fmt(begin)}" + (f" to {_fmt(finish)}" if finish else "")]
+        if ev.get("location"):
+            lines.append(f"Where: {ev['location']}")
+        if ev.get("organizer"):
+            lines.append(f"Organizer: {ev['organizer']}")
+        if ev.get("attendees"):
+            lines.append("Attendees: " + ", ".join(ev["attendees"]))
+        if ev.get("description"):
+            lines.append(f"Details: {str(ev['description']).strip()[:2000]}")
+        months[begin.strftime("%Y-%m")].append((_fmt(begin), "\n".join(lines)))
+    return {m: [text for _, text in sorted(items)] for m, items in months.items()}
+
+
 def events_by_month(ics: bytes, today: date | None = None) -> dict[str, list[str]]:
     import icalendar
     import recurring_ical_events
 
-    today = today or date.today()
     cal = icalendar.Calendar.from_ical(ics)
-    start, end = today - timedelta(days=PAST_DAYS), today + timedelta(days=FUTURE_DAYS)
-    months: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    for ev in recurring_ical_events.of(cal).between(start, end):
-        begin = ev.get("DTSTART").dt
-        finish = ev.get("DTEND").dt if ev.get("DTEND") else None
-        lines = [f"Event: {ev.get('SUMMARY', '(no title)')}", f"When: {_fmt(begin)}" + (f" to {_fmt(finish)}" if finish else "")]
-        if ev.get("LOCATION"):
-            lines.append(f"Where: {ev.get('LOCATION')}")
-        if ev.get("ORGANIZER"):
-            lines.append(f"Organizer: {str(ev.get('ORGANIZER')).replace('mailto:', '')}")
+    events = []
+    for ev in recurring_ical_events.of(cal).between(*window(today)):
         attendees = ev.get("ATTENDEE")
-        if attendees:
-            attendees = attendees if isinstance(attendees, list) else [attendees]
-            names = [a.params.get("CN") or str(a).replace("mailto:", "") for a in attendees]
-            lines.append("Attendees: " + ", ".join(names))
-        if ev.get("DESCRIPTION"):
-            lines.append(f"Details: {str(ev.get('DESCRIPTION')).strip()[:2000]}")
-        key = begin.strftime("%Y-%m")
-        months[key].append((_fmt(begin), "\n".join(lines)))
-    return {m: [text for _, text in sorted(items)] for m, items in months.items()}
+        attendees = attendees if isinstance(attendees, list) else ([attendees] if attendees else [])
+        events.append({
+            "start": ev.get("DTSTART").dt,
+            "end": ev.get("DTEND").dt if ev.get("DTEND") else None,
+            "title": ev.get("SUMMARY"),
+            "location": ev.get("LOCATION"),
+            "organizer": str(ev.get("ORGANIZER")).replace("mailto:", "") if ev.get("ORGANIZER") else "",
+            "attendees": [a.params.get("CN") or str(a).replace("mailto:", "") for a in attendees],
+            "description": ev.get("DESCRIPTION"),
+        })
+    return group_by_month(events)
 
 
-def sync(sync: Sync) -> None:
-    cfg = sync.connector["config"]
+def save_months(sync: Sync, months: dict[str, list[str]]) -> None:
     name = sync.connector["name"]
-    months = events_by_month(fetch(decrypt(cfg["url"])))
     for month, events in sorted(months.items()):
         text = f"Calendar: {name}\nMonth: {month}\n\n" + "\n\n".join(events)
         sync.upsert(f"month:{month}", f"Calendar {name} - {month}", f"calendar-{month}.txt",
                     text.encode(), "calendar", {"month": month})
     sync.remove_unseen()
+
+
+def sync(sync: Sync) -> None:
+    cfg = sync.connector["config"]
+    save_months(sync, events_by_month(fetch(decrypt(cfg["url"]))))
+

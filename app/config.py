@@ -47,6 +47,13 @@ class Settings:
     chunk_overlap = int(_env("CHUNK_OVERLAP", "200"))
     top_k = int(_env("TOP_K", "8"))
 
+    # One-click sign-in (see README "Setting up one-click sign-in"). Can also live in app/vendor_oauth.json.
+    google_client_id = _env("GOOGLE_CLIENT_ID")
+    google_client_secret = _env("GOOGLE_CLIENT_SECRET")
+    microsoft_client_id = _env("MICROSOFT_CLIENT_ID")
+    microsoft_client_secret = _env("MICROSOFT_CLIENT_SECRET")
+    oauth_redirect_url = _env("OAUTH_REDIRECT_URL")  # e.g. https://connect.yourcompany.com/oauth.html
+
     # License (monthly subscription)
     license_file = Path(_env("LICENSE_FILE", "/data/license.key"))
     # Your (the vendor's) public key. tools/license_tool.py writes it to app/vendor_public_key.txt,

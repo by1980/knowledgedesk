@@ -100,7 +100,66 @@ customer's account (`rclone config`), and sync on a schedule (crontab):
 */15 * * * * rclone sync "onedrive:HR Policies" /opt/knowledgedesk/data/sources/HR
 ```
 
-### Connecting email, calendar, website and WhatsApp
+### One-click: Connect Google / Microsoft account
+
+In **Admin → Connections → Connect an account in one click**, choose Email, Calendar and/or Files,
+choose who can see them, and click **Connect Google account** or **Connect Microsoft account**.
+After approving on Google's or Microsoft's page, the account's mail, calendars and Drive/OneDrive
+files are imported and kept in sync. Access is read-only. Tokens are stored encrypted, and removing
+the connections forgets the account.
+
+This needs a one-time setup by you, the vendor (below).
+
+## Setting up one-click sign-in (vendor, once, free)
+
+You register "KnowledgeDesk" once with Google and once with Microsoft. Every customer then uses
+that same registration.
+
+**The return address.** After someone approves, Google and Microsoft send the browser to a fixed
+address that you register.
+- **Testing on your own computer:** use `http://localhost:8000/oauth/callback`. Nothing else is
+  needed.
+- **Customer servers:** put the single file `relay/oauth.html` on your own website, for example
+  `https://connect.yourcompany.com/oauth.html`, and register that address. It forwards the browser
+  back to whichever customer server started the sign-in. It holds no secrets.
+
+Register **both** addresses with Google and with Microsoft.
+
+### Google (console.cloud.google.com)
+1. Create a project named `KnowledgeDesk`.
+2. **APIs & Services → Library:** enable **Gmail API**, **Google Calendar API** and **Google Drive API**.
+3. **Google Auth Platform → Branding:** app name `KnowledgeDesk`, your support email, your domain
+   and privacy policy link. **Audience:** *External*, then **Publish app** (status *In production*).
+   In *Testing* status, connections stop working after 7 days.
+4. **Clients → Create client → Web application.** Under *Authorized redirect URIs*, add both return
+   addresses. Copy the **Client ID** and **Client secret**.
+5. Until Google verifies the app, users see "Google hasn't verified this app" and click **Advanced →
+   Go to KnowledgeDesk**. Up to 100 accounts can connect this way. Calendar-only verification is
+   free. Gmail and Drive access beyond 100 accounts requires Google's paid security assessment. A
+   Google Workspace customer can instead mark the app as trusted (Admin console → Security → API
+   controls → App access control).
+
+### Microsoft (entra.microsoft.com)
+1. **App registrations → New registration:** name `KnowledgeDesk`. Supported account types:
+   *Accounts in any organizational directory and personal Microsoft accounts*. Redirect URI:
+   platform **Web**, `http://localhost:8000/oauth/callback`. Then add the other return address
+   under **Authentication**.
+2. **Certificates & secrets → New client secret** (24 months). Copy the **Value** and put a reminder
+   in your calendar to renew it.
+3. **API permissions → Add → Microsoft Graph → Delegated:** `Mail.Read`, `Calendars.Read`,
+   `Files.Read.All`, `User.Read`, `offline_access`.
+4. Copy the **Application (client) ID** from Overview.
+5. A customer whose IT blocks new apps has an admin click "Grant admin consent" once. This is free.
+
+### Putting the keys in
+- **One computer:** add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID` and
+  `MICROSOFT_CLIENT_SECRET` (plus `OAUTH_REDIRECT_URL` for the relay address) to `.env`, then run
+  `docker compose up -d`.
+- **Every installation:** copy `app/vendor_oauth.example.json` to `app/vendor_oauth.json` and fill it
+  in. It is then built into every installation. Keep the GitHub repository private, because this
+  file contains your app secrets.
+
+### Connecting email, calendar, website and WhatsApp (other ways)
 
 Go to **Admin → Connections**. Each source gets a name and the departments allowed to see what
 comes from it. For example, the Sales inbox can be visible to Sales only.
@@ -117,8 +176,8 @@ comes from it. For example, the Sales inbox can be visible to Sales only.
 - **WhatsApp:** WhatsApp doesn't let other apps read chats. On the phone, use *Export chat* (with
   media, to include voice notes) and upload the file in Documents. Upload a new export of the same
   chat later to update it.
-- **Not yet supported:** Microsoft 365 / Outlook.com mailboxes, which need Microsoft sign-in
-  (OAuth), and live WhatsApp Business connection.
+- **Microsoft 365 / Outlook.com mailboxes:** use **Connect Microsoft account**, since Microsoft
+  doesn't allow app passwords. Live WhatsApp Business connection is not supported yet.
 
 ### Interviews with employees
 
@@ -196,8 +255,8 @@ uvicorn app.main:app --reload
 
 ## Roadmap ideas
 
-- Microsoft 365 / Outlook mail and calendar with Microsoft sign-in
-- Direct Google Drive / SharePoint connectors with per-file permissions
+- SharePoint team sites and Teams channels
+- Respecting each Drive/OneDrive file's own sharing permissions
 - WhatsApp Business number for asking questions and capturing new messages live
 - Slack or Teams bot for asking questions
 - Department managers who can upload for their own department

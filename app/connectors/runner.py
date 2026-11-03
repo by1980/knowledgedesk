@@ -7,14 +7,19 @@ from datetime import datetime, timedelta, timezone
 
 from ..config import settings
 from ..db import conn
-from . import calendar_ics, email_imap, website
+from . import calendar_ics, email_imap, google, microsoft, website
 from .base import Sync
 
 log = logging.getLogger("connectors")
 
-TYPES = {"imap": email_imap, "ics": calendar_ics, "website": website}
+# Sources the admin sets up by typing details in.
+MANUAL_TYPES = {"imap": email_imap.sync, "ics": calendar_ics.sync, "website": website.sync}
+# Sources connected with "Sign in with Google / Microsoft".
+OAUTH_TYPES = {"gmail": google.sync_gmail, "gcal": google.sync_gcal, "gdrive": google.sync_gdrive,
+               "ms_mail": microsoft.sync_mail, "ms_cal": microsoft.sync_calendar, "ms_drive": microsoft.sync_drive}
+TYPES = {**MANUAL_TYPES, **OAUTH_TYPES}
 # Config fields stored encrypted, per connector type.
-SECRETS = {"imap": {"password"}, "ics": {"url"}, "website": set()}
+SECRETS = {"imap": {"password"}, "ics": {"url"}}
 
 # One lock per connector: a connector never syncs twice at once, and removing it waits for a running sync.
 _locks: dict[int, threading.Lock] = defaultdict(threading.Lock)
@@ -41,13 +46,13 @@ def _sync(connector_id: int) -> dict:
         connector = c.execute("SELECT * FROM connectors WHERE id=%s", (connector_id,)).fetchone()
     if not connector:
         return {"error": "not found"}
-    module = TYPES[connector["type"]]
+    run = TYPES[connector["type"]]
     error = None
     queued = 0
     try:
         with conn() as c:
             s = Sync(c, connector)
-            module.sync(s)
+            run(s)
             queued = s.queued
             # Keep every document's visibility in line with the connector's departments.
             c.execute("UPDATE documents SET company_wide=%s WHERE connector_id=%s",

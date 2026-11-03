@@ -49,6 +49,24 @@ class Sync:
         self.seen: set[str] = set()
         self.queued = 0
 
+    def exists(self, external_id: str) -> bool:
+        """True if this item was already imported (marks it as still present)."""
+        row = self.c.execute("SELECT 1 FROM documents WHERE connector_id=%s AND external_id=%s",
+                             (self.connector["id"], external_id)).fetchone()
+        if row:
+            self.seen.add(external_id)
+        return row is not None
+
+    def is_current(self, external_id: str, version: str) -> bool:
+        """True if this item was imported with the same version (e.g. modified time); marks it as present."""
+        row = self.c.execute(
+            "SELECT metadata->>'version' AS v FROM documents WHERE connector_id=%s AND external_id=%s",
+            (self.connector["id"], external_id)).fetchone()
+        if row and row["v"] == version:
+            self.seen.add(external_id)
+            return True
+        return False
+
     def upsert(self, external_id: str, title: str, filename: str, data: bytes, kind: str,
                metadata: dict | None = None) -> None:
         """Save the content as a file and create/refresh its document if it is new or changed."""

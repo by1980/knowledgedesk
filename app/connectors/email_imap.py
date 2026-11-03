@@ -99,7 +99,7 @@ def sync(sync: Sync) -> None:
                 _, msg_data = conn.uid("FETCH", str(uid), "(RFC822)")
                 raw = next((part[1] for part in msg_data if isinstance(part, tuple)), None)
                 if raw:
-                    _store_message(sync, folder, uid, raw)
+                    store_message(sync, f"{folder}:{uid}", raw, folder)
                 fstate["last_uid"] = max(fstate["last_uid"], uid)
             state[folder] = fstate
     finally:
@@ -109,13 +109,13 @@ def sync(sync: Sync) -> None:
             pass
 
 
-def _store_message(sync: Sync, folder: str, uid: int, raw: bytes) -> None:
+def store_message(sync: Sync, base_id: str, raw: bytes, folder: str = "") -> None:
+    """Save one email (and its supported attachments) as documents."""
     msg = email.message_from_bytes(raw, policy=policy.default)
     subject = _decode(msg["subject"]) or "(no subject)"
     sender = _decode(msg["from"])
     meta = {"from": sender, "to": _decode(msg["to"]), "date": str(msg["date"] or ""), "folder": folder}
-    base_id = f"{folder}:{uid}"
-    sync.upsert(base_id, f"Email: {subject}", f"{uid}.eml", raw, "email", meta)
+    sync.upsert(base_id, f"Email: {subject}", "message.eml", raw, "email", meta)
 
     for part in msg.iter_attachments():
         name = _decode(part.get_filename())

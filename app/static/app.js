@@ -43,6 +43,13 @@ async function boot() {
   $("#dept-filter").innerHTML = `<option value="">All my departments</option>` +
     departments.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join("");
   show("#app-view");
+  const connected = new URLSearchParams(location.search).get("connected");
+  if (connected !== null && me.role === "admin") {
+    history.replaceState(null, "", "/");
+    $("button[data-view=admin]").click(); openSub("conns");
+    $("#oauth-done").textContent = `✓ Account connected (${connected} source${connected === "1" ? "" : "s"}). Importing now – a big mailbox or drive can take a while; you can keep working.`;
+    $("#oauth-done").classList.remove("hidden");
+  }
 }
 
 $("#login-form").addEventListener("submit", async (e) => {
@@ -216,7 +223,31 @@ $("#upload-form").addEventListener("submit", async (e) => {
 
 // ------------------------------------------------------------------ admin: connections
 const connForm = $("#conn-form");
-const TYPE_LABEL = { imap: "📧 Email", ics: "📅 Calendar", website: "🌐 Website" };
+const TYPE_LABEL = { imap: "📧 Email", ics: "📅 Calendar", website: "🌐 Website", gmail: "📧 Gmail", gcal: "📅 Google Calendar",
+  gdrive: "📁 Google Drive", ms_mail: "📧 Outlook mail", ms_cal: "📅 Outlook calendar", ms_drive: "📁 OneDrive" };
+const OAUTH_TYPES = ["gmail", "gcal", "gdrive", "ms_mail", "ms_cal", "ms_drive"];
+
+async function loadQuickConnect() {
+  deptChecks("#oauth-depts", "odept");
+  try {
+    const st = await getJSON("/api/oauth/status");
+    $$("button.provider").forEach((b) => (b.disabled = !st.configured[b.dataset.provider]));
+    const missing = Object.entries(st.configured).filter(([, ok]) => !ok).map(([p]) => p === "google" ? "Google" : "Microsoft");
+    $("#oauth-setup-note").innerHTML = missing.length ? `${missing.join(" and ")} sign-in isn't set up on this installation yet
+      (README → "Setting up one-click sign-in"). Address to register: <code>${esc(st.redirect_url)}</code>` : "";
+  } catch (err) { $("#oauth-setup-note").textContent = err.message; }
+}
+$$("button.provider").forEach((b) => b.addEventListener("click", async () => {
+  $("#oauth-error").textContent = "";
+  try {
+    const r = await (await api("/api/oauth/start", { method: "POST", json: {
+      provider: b.dataset.provider,
+      services: $$("input[name=svc]:checked").map((x) => x.value),
+      department_ids: $$("input[name=odept]:checked").map((x) => Number(x.value)),
+      company_wide: $("#oauth-everyone").checked } })).json();
+    window.location.href = r.url;
+  } catch (err) { $("#oauth-error").textContent = err.message; }
+}));
 let conns = [];
 function connType() { return $("input[name=type]:checked", connForm).value; }
 function showConnFields() {
@@ -241,20 +272,26 @@ function setSecretHints(editing) {
 }
 
 function connBody() {
+  if (connForm.dataset.oauthType) {
+    return { type: connForm.dataset.oauthType, name: connForm.name.value, config: {}, company_wide: connForm.company_wide.checked,
+      enabled: connForm.enabled.checked, department_ids: $$("input[name=cdept]:checked", connForm).map((x) => Number(x.value)) };
+  }
   const t = connType(); const config = {};
   $$(`.conn-fields[data-for=${t}] input`, connForm).forEach((i) => (config[i.name] = i.value));
   return { type: t, name: connForm.name.value, config, company_wide: connForm.company_wide.checked, enabled: connForm.enabled.checked,
     department_ids: $$("input[name=cdept]:checked", connForm).map((x) => Number(x.value)) };
 }
 function resetConnForm() {
-  connForm.reset(); connForm.id.value = "";
+  connForm.reset(); connForm.id.value = ""; connForm.removeAttribute("data-oauth-type");
+  $("#conn-types").classList.remove("hidden"); $("#conn-test").classList.remove("hidden");
   $$("input[name=type]", connForm).forEach((r) => (r.disabled = false));
-  $("#conn-form-title").textContent = "Connect a source"; $("#conn-cancel").classList.add("hidden");
+  $("#conn-form-title").textContent = "Other ways to connect"; $("#conn-cancel").classList.add("hidden");
   $("#conn-error").textContent = ""; $("#conn-ok").textContent = ""; $("#imap-folders").textContent = "";
   deptChecks("#conn-depts", "cdept"); setSecretHints(false); showConnFields();
 }
 async function loadConns() {
   await refreshDepartments();
+  loadQuickConnect();
   if (!connForm.id.value) resetConnForm();
   conns = await getJSON("/api/connectors");
   $("#conn-rows").innerHTML = conns.map((k) => `
@@ -276,6 +313,20 @@ async function loadConns() {
 }
 function editConn(k) {
   resetConnForm();
+  const isOauth = OAUTH_TYPES.includes(k.type);
+  $("#conn-types").classList.toggle("hidden", isOauth);
+  if (isOauth) {
+    connForm.id.value = k.id; connForm.dataset.oauthType = k.type;
+    $$(".conn-fields", connForm).forEach((el) => el.classList.add("hidden"));
+    $(".conn-visibility", connForm).classList.remove("hidden"); $(".conn-actions", connForm).classList.remove("hidden");
+    $("#conn-test").classList.add("hidden");
+    $("input[name=name]", connForm).closest("label").classList.remove("hidden");
+    connForm.name.value = k.name; connForm.company_wide.checked = k.company_wide; connForm.enabled.checked = k.enabled;
+    deptChecks("#conn-depts", "cdept", k.departments.map((d) => d.id));
+    $("#conn-form-title").textContent = `Edit ${k.name}`; $("#conn-cancel").classList.remove("hidden");
+    connForm.scrollIntoView({ behavior: "smooth" });
+    return;
+  }
   connForm.id.value = k.id; setSecretHints(true);
   $(`input[name=type][value=${k.type}]`, connForm).checked = true;
   $$("input[name=type]", connForm).forEach((r) => (r.disabled = true));

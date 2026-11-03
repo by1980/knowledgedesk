@@ -9,12 +9,12 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, embeddings, license, llm, retrieval, worker
+from . import auth, embeddings, license, llm, oauth, retrieval, worker
 from .config import settings
 from .connectors import base as connector_base
 from .connectors import calendar_ics, email_imap
@@ -446,7 +446,11 @@ def _check_connector(body: ConnectorIn, old_config: dict | None = None) -> dict:
         raise HTTPException(400, "Please give the connection a name")
     if not body.department_ids and not body.company_wide:
         raise HTTPException(400, "Choose at least one department, or make it visible to everyone")
-    secrets_ = connector_runner.SECRETS[body.type]
+    if body.type in connector_runner.OAUTH_TYPES:
+        if old_config is None:
+            raise HTTPException(400, "Use the Connect Google / Microsoft buttons for this type")
+        return {**old_config, **{k: v for k, v in body.config.items() if k in ("days", "max_messages", "max_files")}}
+    secrets_ = connector_runner.SECRETS.get(body.type, set())
     cfg = {k: (str(v).strip() if isinstance(v, str) else v) for k, v in body.config.items()}
     for key in secrets_:
         if not cfg.get(key) and old_config and old_config.get(key):
@@ -477,6 +481,20 @@ def _public_config(type_: str, cfg: dict) -> dict:
     return {k: ("" if k in connector_runner.SECRETS.get(type_, set()) else v) for k, v in cfg.items()}
 
 
+def _with_account_emails(rows: list[dict]) -> list[dict]:
+    ids = [r["config"].get("account_id") for r in rows if r["config"].get("account_id")]
+    if ids:
+        with conn() as c:
+            emails = {a["id"]: a for a in c.execute(
+                "SELECT id, provider, email FROM oauth_accounts WHERE id = ANY(%s)", (ids,)).fetchall()}
+        for r in rows:
+            a = emails.get(r["config"].get("account_id"))
+            if a:
+                r["config"]["username"] = a["email"]
+                r["provider"] = a["provider"]
+    return rows
+
+
 @app.get("/api/connectors")
 def list_connectors(_: dict = Depends(auth.admin_user)):
     with conn() as c:
@@ -490,7 +508,7 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
         ).fetchall()
     for r in rows:
         r["config"] = _public_config(r["type"], r["config"])
-    return rows
+    return _with_account_emails(rows)
 
 
 @app.post("/api/connectors/test")
@@ -556,11 +574,69 @@ def delete_connector(cid: int, _: dict = Depends(auth.admin_user)):
         raise HTTPException(409, "This source is still importing. Try again in a few minutes.")
     try:
         with conn() as c:
-            c.execute("DELETE FROM connectors WHERE id=%s", (cid,))  # its documents are deleted too
+            row = c.execute("DELETE FROM connectors WHERE id=%s RETURNING config", (cid,)).fetchone()
+            account = (row or {}).get("config", {}).get("account_id")
+            if account and not c.execute("SELECT 1 FROM connectors WHERE config->>'account_id' = %s",
+                                         (str(account),)).fetchone():
+                c.execute("DELETE FROM oauth_accounts WHERE id=%s", (account,))  # forget the tokens
     finally:
         lock.release()
     shutil.rmtree(settings.data_dir / "connectors" / str(cid), ignore_errors=True)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- one-click sign-in (Google / Microsoft)
+
+class OAuthStartIn(BaseModel):
+    provider: str
+    services: list[str]
+    department_ids: list[int] = []
+    company_wide: bool = False
+
+
+def _origin(request: Request) -> str:
+    origin = request.headers.get("origin")
+    if origin and origin != "null":
+        return origin.rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+@app.get("/api/oauth/status")
+def oauth_status(request: Request, _: dict = Depends(auth.admin_user)):
+    return {"configured": oauth.configured(), "redirect_url": oauth.redirect_url(_origin(request))}
+
+
+@app.post("/api/oauth/start")
+def oauth_start(body: OAuthStartIn, request: Request, _: dict = Depends(auth.admin_user)):
+    if not body.department_ids and not body.company_wide:
+        raise HTTPException(400, "Choose at least one department, or make it visible to everyone")
+    try:
+        return {"url": oauth.start(body.provider, body.services, body.department_ids, body.company_wide,
+                                   _origin(request))}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _message_page(title: str, text: str) -> HTMLResponse:
+    from html import escape
+
+    return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>KnowledgeDesk</title><body style="font-family:system-ui;max-width:520px;margin:15vh auto;padding:16px">
+<h2>{escape(title)}</h2><p>{escape(text)}</p><p><a href="/">Back to KnowledgeDesk</a></p></body>""")
+
+
+@app.get("/oauth/callback")
+def oauth_callback(state: str = "", code: str = "", error: str = "", error_description: str = ""):
+    if error:
+        reason = "You cancelled the sign-in." if error == "access_denied" else (error_description or error)
+        return _message_page("Not connected", reason)
+    try:
+        created = oauth.finish(state, code)
+    except (ValueError, RuntimeError) as e:
+        return _message_page("Not connected", str(e))
+    for cid in created:
+        _sync_in_background(cid)
+    return RedirectResponse(f"/?connected={len(created)}#connections", status_code=303)
 
 
 # ---------------------------------------------------------------- admin
