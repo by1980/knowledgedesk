@@ -93,6 +93,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS documents_connector_ext ON documents(connector
     WHERE connector_id IS NOT NULL;
 
 -- Accounts connected with "Sign in with Google / Microsoft". Tokens are encrypted. Added in v0.3.
+ALTER TABLE connectors ADD COLUMN IF NOT EXISTS last_note TEXT;
+
 CREATE TABLE IF NOT EXISTS oauth_accounts (
     id         SERIAL PRIMARY KEY,
     provider   TEXT NOT NULL,

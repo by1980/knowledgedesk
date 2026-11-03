@@ -48,6 +48,17 @@ class Sync:
         self.connector = connector
         self.seen: set[str] = set()
         self.queued = 0
+        self.skipped: list[str] = []
+
+    def skip(self, name: str, reason: str) -> None:
+        """Remember an item that could not be imported, and carry on with the rest."""
+        self.skipped.append(f"{name}: {reason}")
+
+    def note(self) -> str | None:
+        if not self.skipped:
+            return None
+        head = f"{len(self.skipped)} item(s) skipped"
+        return head + " – " + "; ".join(self.skipped[:3]) + (" …" if len(self.skipped) > 3 else "")
 
     def exists(self, external_id: str) -> bool:
         """True if this item was already imported (marks it as still present)."""
@@ -95,7 +106,15 @@ class Sync:
                 (title[:300], filename, str(path), kind, digest, self.connector["company_wide"], meta,
                  self.connector["id"], external_id),
             )
+            # Visible to the connector's departments right away
+            self.c.execute(
+                "INSERT INTO document_departments(document_id, department_id) "
+                "SELECT d.id, cd.department_id FROM documents d JOIN connector_departments cd "
+                "ON cd.connector_id = d.connector_id WHERE d.connector_id=%s AND d.external_id=%s "
+                "ON CONFLICT DO NOTHING", (self.connector["id"], external_id))
         self.queued += 1
+        if self.queued % 20 == 0:
+            self.c.commit()  # save progress so far: indexing starts and nothing is lost if the sync stops
 
     def remove_unseen(self) -> None:
         """Delete documents the source no longer has (used by calendar and website)."""

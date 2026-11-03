@@ -3,7 +3,7 @@ import base64
 from datetime import date, datetime, time, timezone
 
 from ..ingest.extract import is_audio_video, is_supported
-from ..oauth import Api
+from ..oauth import Api, ApiError
 from . import calendar_ics
 from .base import Sync
 from .email_imap import store_message
@@ -53,7 +53,13 @@ def sync_gmail(sync: Sync) -> None:
         for mid in ids[:max_per_run]:
             if sync.exists(f"gmail:{mid}"):
                 continue
-            raw = api.json(f"{GMAIL}/messages/{mid}", {"format": "raw"})["raw"]
+            try:
+                raw = api.json(f"{GMAIL}/messages/{mid}", {"format": "raw"})["raw"]
+            except ApiError as e:
+                if e.status in (400, 403, 404):
+                    sync.skip(f"email {mid}", str(e))
+                    continue
+                raise
             store_message(sync, f"gmail:{mid}", base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
     if len(ids) < max_per_run:  # everything fetched; next time only newer mail
         state["after"] = started
@@ -118,8 +124,15 @@ def sync_gdrive(sync: Sync) -> None:
                 if count >= max_files:
                     complete = False
                     break
-                if _drive_file(sync, api, f):
-                    count += 1
+                try:
+                    if _drive_file(sync, api, f):
+                        count += 1
+                except ApiError as e:
+                    if e.status in (400, 403, 404):  # e.g. owner blocked downloading, or too big to export
+                        sync.seen.add(f"gdrive:{f['id']}")
+                        sync.skip(f["name"], "can't be downloaded" if e.status == 403 else str(e))
+                        continue
+                    raise
             page = data.get("nextPageToken")
             if not page or not complete:
                 break

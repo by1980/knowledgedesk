@@ -46,6 +46,9 @@ def startup() -> None:
     (settings.sources_dir / "_company").mkdir(parents=True, exist_ok=True)
     init_schema(embeddings.dimension())
     auth.ensure_first_admin()
+    merged = oauth.merge_duplicate_accounts()
+    if merged:
+        log.info("Merged %d duplicate connected account(s)", merged)
     if settings.run_worker:
         worker.start()
     log.info("KnowledgeDesk started for %s", settings.company_name)
@@ -502,12 +505,15 @@ def list_connectors(_: dict = Depends(auth.admin_user)):
             "SELECT k.id, k.type, k.name, k.config, k.company_wide, k.enabled, k.last_sync, k.last_error, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id) AS documents, "
             " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status IN ('pending','processing')) AS indexing, "
+            " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'ready') AS ready, "
+            " (SELECT count(*) FROM documents d WHERE d.connector_id=k.id AND d.status = 'error') AS failed, k.last_note, "
             " coalesce((SELECT json_agg(json_build_object('id', dp.id, 'name', dp.name)) FROM connector_departments cd "
             "   JOIN departments dp ON dp.id=cd.department_id WHERE cd.connector_id=k.id), '[]') AS departments "
             "FROM connectors k ORDER BY k.name"
         ).fetchall()
     for r in rows:
         r["config"] = _public_config(r["type"], r["config"])
+        r["syncing"] = connector_runner.lock_for(r["id"]).locked()
     return _with_account_emails(rows)
 
 

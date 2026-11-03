@@ -45,10 +45,14 @@ async function boot() {
   show("#app-view");
   const connected = new URLSearchParams(location.search).get("connected");
   if (connected !== null && me.role === "admin") {
-    history.replaceState(null, "", "/");
+    window.history.replaceState(null, "", "/");
     $("button[data-view=admin]").click(); openSub("conns");
-    $("#oauth-done").textContent = `✓ Account connected (${connected} source${connected === "1" ? "" : "s"}). Importing now – a big mailbox or drive can take a while; you can keep working.`;
+    $("#oauth-done").innerHTML = `<b>✓ Account connected.</b> Importing now – you can follow the progress in
+      <b>Connected sources</b> below. When a source shows <b>✓ Ready</b>, its content can be searched.
+      <br>Next: <button class="link" id="go-ask">go to Ask</button> and try a question such as
+      “What meetings do I have next week?” or “What did we agree with &lt;customer&gt;?”`;
     $("#oauth-done").classList.remove("hidden");
+    $("#go-ask").onclick = () => $("button[data-view=chat]").click();
   }
 }
 
@@ -290,26 +294,52 @@ function resetConnForm() {
   deptChecks("#conn-depts", "cdept"); setSecretHints(false); showConnFields();
 }
 async function loadConns() {
+  // Opening the tab: fill the forms once. Later refreshes only update the table, so nothing you type is reset.
   await refreshDepartments();
   loadQuickConnect();
   if (!connForm.id.value) resetConnForm();
+  await refreshConnTable();
+}
+
+function connStatus(k) {
+  const when = k.last_sync ? `<div class="muted small">Last checked ${new Date(k.last_sync).toLocaleString()}</div>` : "";
+  const note = k.last_note ? `<div class="muted small">${esc(k.last_note)}</div>` : "";
+  if (k.syncing || !k.last_sync)
+    return `<span class="status-pending">⏳ Importing… ${k.documents} item${k.documents === 1 ? "" : "s"} so far</span>${note}`;
+  if (k.indexing)
+    return `<span class="status-pending">⏳ Preparing for search: ${k.ready} of ${k.documents} ready</span>${when}${note}`;
+  if (k.last_error)
+    return `<span class="status-error">⚠ ${esc(k.last_error)}</span>` +
+      (k.ready ? `<div class="small">${k.ready} item${k.ready === 1 ? " is" : "s are"} already searchable.</div>` : "") + when + note;
+  if (!k.documents) return `<span class="status-ready">✓ Connected – nothing to import yet</span>${when}${note}`;
+  return `<span class="status-ready">✓ Ready – ${k.ready} item${k.ready === 1 ? "" : "s"} searchable</span>${when}${note}`;
+}
+
+let connPoll = null;
+async function refreshConnTable() {
+  clearTimeout(connPoll);
   conns = await getJSON("/api/connectors");
   $("#conn-rows").innerHTML = conns.map((k) => `
-    <tr><td dir="auto"><b>${esc(k.name)}</b><div class="muted small">${TYPE_LABEL[k.type]}${k.config.username ? " · " + esc(k.config.username) : ""}${k.config.url && k.type === "website" ? " · " + esc(k.config.url) : ""}${k.enabled ? "" : " · paused"}</div></td>
+    <tr><td dir="auto"><b>${TYPE_LABEL[k.type]}</b><div class="muted small">${esc(k.config.username || k.config.url || k.name)}${k.enabled ? "" : " · paused"}</div></td>
     <td>${deptPills(k)}</td>
-    <td>${k.documents}${k.indexing ? ` <span class="status-pending small">(${k.indexing} indexing)</span>` : ""}</td>
-    <td class="small">${k.last_sync ? new Date(k.last_sync).toLocaleString() : '<span class="status-pending">syncing…</span>'}
-      ${k.last_error ? `<div class="status-error">${esc(k.last_error)}</div>` : ""}</td>
-    <td><button class="link" data-csync="${k.id}">Sync now</button> <button class="link" data-cedit="${k.id}">Edit</button>
+    <td class="small">${connStatus(k)}</td>
+    <td class="actions"><button class="link" data-csync="${k.id}" ${k.syncing ? "disabled" : ""}>Sync now</button>
+      <button class="link" data-cedit="${k.id}">Edit</button>
       <button class="danger" data-cdel="${k.id}">Remove</button></td></tr>`).join("") ||
-    `<tr><td colspan="5" class="muted">Nothing connected yet.</td></tr>`;
-  $$("[data-csync]").forEach((b) => b.onclick = async () => { await api(`/api/connectors/${b.dataset.csync}/sync`, { method: "POST" }); b.textContent = "Syncing…"; setTimeout(loadConns, 5000); });
+    `<tr><td colspan="4" class="muted">Nothing connected yet.</td></tr>`;
+  $$("[data-csync]").forEach((b) => b.onclick = async () => {
+    await api(`/api/connectors/${b.dataset.csync}/sync`, { method: "POST" });
+    setTimeout(refreshConnTable, 800);
+  });
   $$("[data-cedit]").forEach((b) => b.onclick = () => editConn(conns.find((k) => k.id === Number(b.dataset.cedit))));
   $$("[data-cdel]").forEach((b) => b.onclick = async () => {
     if (!confirm("Disconnect this source? Everything imported from it will be removed from the knowledge base.")) return;
-    await api(`/api/connectors/${b.dataset.cdel}`, { method: "DELETE" }); loadConns();
+    b.textContent = "Removing…"; b.disabled = true;
+    try { await api(`/api/connectors/${b.dataset.cdel}`, { method: "DELETE" }); } catch (err) { alert(err.message); }
+    refreshConnTable();
   });
-  if (conns.some((k) => !k.last_sync || k.indexing)) setTimeout(() => { if (!$("#sub-conns").classList.contains("hidden")) loadConns(); }, 5000);
+  if (conns.some((k) => k.syncing || !k.last_sync || k.indexing))
+    connPoll = setTimeout(() => { if (!$("#sub-conns").classList.contains("hidden")) refreshConnTable(); }, 4000);
 }
 function editConn(k) {
   resetConnForm();
@@ -342,7 +372,7 @@ function editConn(k) {
   connForm.scrollIntoView({ behavior: "smooth" });
 }
 $("#conn-cancel").addEventListener("click", resetConnForm);
-$("#refresh-conns").addEventListener("click", loadConns);
+$("#refresh-conns").addEventListener("click", refreshConnTable);
 $("#conn-test").addEventListener("click", async () => {
   $("#conn-error").textContent = ""; $("#conn-ok").textContent = "Testing…";
   try {
@@ -360,8 +390,8 @@ connForm.addEventListener("submit", async (e) => {
   try {
     const id = connForm.id.value;
     await api(id ? `/api/connectors/${id}` : "/api/connectors", { method: id ? "PUT" : "POST", json: connBody() });
-    resetConnForm(); $("#conn-ok").textContent = "✓ Saved. Importing now – this can take a few minutes for a big mailbox.";
-    loadConns();
+    resetConnForm(); $("#conn-ok").textContent = "✓ Saved. Importing now – watch the progress in Connected sources below.";
+    refreshConnTable();
   } catch (err) { $("#conn-ok").textContent = ""; $("#conn-error").textContent = err.message; }
   btn.disabled = false;
 });

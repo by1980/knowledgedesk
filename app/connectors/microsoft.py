@@ -4,7 +4,7 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 from ..ingest.extract import is_audio_video, is_supported
-from ..oauth import Api
+from ..oauth import Api, ApiError
 from . import calendar_ics
 from .base import Sync
 from .email_imap import store_message
@@ -50,7 +50,13 @@ def sync_mail(sync: Sync) -> None:
             for mid in ids[:max_per_run]:
                 if sync.exists(f"outlook:{mid}"):
                     continue
-                raw = api.bytes(f"{GRAPH}/me/messages/{mid}/$value")
+                try:
+                    raw = api.bytes(f"{GRAPH}/me/messages/{mid}/$value")
+                except ApiError as e:
+                    if e.status in (400, 403, 404):
+                        sync.skip(f"email {mid[:12]}", str(e))
+                        continue
+                    raise
                 store_message(sync, f"outlook:{mid}", raw, folder)
     if fetched_all:
         state["since"] = started
@@ -117,7 +123,14 @@ def sync_drive(sync: Sync) -> None:
             drive = item.get("_drive")
             url = (f"{GRAPH}/drives/{drive}/items/{item['id']}/content" if drive
                    else f"{GRAPH}/me/drive/items/{item['id']}/content")
-            data = api.bytes(url)
+            try:
+                data = api.bytes(url)
+            except ApiError as e:
+                if e.status in (400, 403, 404):
+                    sync.seen.add(ext_id)
+                    sync.skip(p.name, "can't be downloaded" if e.status == 403 else str(e))
+                    continue
+                raise
             sync.upsert(ext_id, p.stem, p.name, data, "file",
                         {"version": version, "link": item.get("webUrl", ""), "drive": "OneDrive"})
     if complete:

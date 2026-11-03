@@ -174,12 +174,24 @@ def finish(state: str, code: str) -> list[int]:
                   "expires_at": time.time() + int(tokens.get("expires_in", 3600)) - 60}
     created = []
     with conn() as c:
-        account_id = c.execute(
-            "INSERT INTO oauth_accounts(provider, email, tokens) VALUES (%s, %s, %s) RETURNING id",
-            (provider, email, encrypt(json.dumps(token_blob))),
-        ).fetchone()["id"]
+        existing = c.execute("SELECT id FROM oauth_accounts WHERE provider=%s AND lower(email)=lower(%s) ORDER BY id",
+                             (provider, email)).fetchone() if email else None
+        if existing:  # same account connected again: refresh its access instead of duplicating it
+            account_id = existing["id"]
+            c.execute("UPDATE oauth_accounts SET tokens=%s WHERE id=%s", (encrypt(json.dumps(token_blob)), account_id))
+        else:
+            account_id = c.execute(
+                "INSERT INTO oauth_accounts(provider, email, tokens) VALUES (%s, %s, %s) RETURNING id",
+                (provider, email, encrypt(json.dumps(token_blob))),
+            ).fetchone()["id"]
         for service in pending["services"]:
             ctype = PROVIDERS[provider]["connector_types"][service]
+            same = c.execute("SELECT id FROM connectors WHERE type=%s AND config->>'account_id' = %s",
+                             (ctype, str(account_id))).fetchone()
+            if same:
+                c.execute("UPDATE connectors SET last_error=NULL WHERE id=%s", (same["id"],))
+                created.append(same["id"])
+                continue
             cid = c.execute(
                 "INSERT INTO connectors(type, name, config, company_wide) VALUES (%s, %s, %s, %s) RETURNING id",
                 (ctype, f"{SERVICE_LABEL[service]} – {email}", json.dumps({"account_id": account_id}),
@@ -219,8 +231,25 @@ def access_token(account_id: int) -> str:
         return tokens["access_token"]
 
 
+class ApiError(RuntimeError):
+    def __init__(self, status: int, message: str):
+        super().__init__(f"{status}: {message}")
+        self.status = status
+
+
+def _is_rate_limit(r: httpx.Response) -> bool:
+    if r.status_code in (429, 503):
+        return True
+    if r.status_code == 403:
+        body = r.text.lower()
+        return "ratelimit" in body or "quota exceeded" in body or "rate limit" in body
+    return False
+
+
 class Api:
     """Small authenticated JSON/bytes client for Google and Microsoft Graph APIs."""
+
+    rate_wait_scale = 1.0  # tests set this to 0
 
     def __init__(self, account_id: int):
         self.account_id = account_id
@@ -233,11 +262,13 @@ class Api:
         self.client.close()
 
     def _request(self, url: str, params: dict | None = None, headers: dict | None = None) -> httpx.Response:
-        for attempt in range(4):
+        for attempt in range(5):
             h = {"Authorization": f"Bearer {access_token(self.account_id)}", **(headers or {})}
             r = self.client.get(url, params=params, headers=h)
-            if r.status_code in (429, 503) and attempt < 3:
-                time.sleep(min(int(r.headers.get("retry-after", "2") or 2), 30))
+            if _is_rate_limit(r) and attempt < 4:
+                # Per-minute limits: wait it out (longer each time) and try again
+                wait = r.headers.get("retry-after", "")
+                time.sleep(min(int(wait) if wait.isdigit() else 15 * (attempt + 1), 65) * self.rate_wait_scale)
                 continue
             if r.status_code == 401 and attempt == 0:
                 with conn() as c:  # force a token refresh once
@@ -252,7 +283,7 @@ class Api:
                     msg = msg.get("message") if isinstance(msg, dict) else msg
                 except ValueError:
                     msg = r.text[:200]
-                raise RuntimeError(f"{r.status_code}: {msg}")
+                raise ApiError(r.status_code, str(msg))
             return r
         raise RuntimeError("The service is busy, will retry at the next sync")
 
@@ -261,3 +292,29 @@ class Api:
 
     def bytes(self, url: str, params: dict | None = None) -> bytes:
         return self._request(url, params).content
+
+
+def merge_duplicate_accounts() -> int:
+    """Older versions created a second copy when an account was connected twice. Merge such copies:
+    keep the newest sign-in, move or drop its duplicate connections. Returns how many copies were merged."""
+    merged = 0
+    with conn() as c:
+        groups = c.execute(
+            "SELECT provider, lower(email) AS email, array_agg(id ORDER BY id DESC) AS ids FROM oauth_accounts "
+            "WHERE email <> '' GROUP BY provider, lower(email) HAVING count(*) > 1"
+        ).fetchall()
+        for g in groups:
+            keep, *old_ids = g["ids"]
+            for old in old_ids:
+                for k in c.execute("SELECT id, type FROM connectors WHERE config->>'account_id' = %s",
+                                   (str(old),)).fetchall():
+                    twin = c.execute("SELECT id FROM connectors WHERE type=%s AND config->>'account_id' = %s",
+                                     (k["type"], str(keep))).fetchone()
+                    if twin:
+                        c.execute("DELETE FROM connectors WHERE id=%s", (k["id"],))  # its copies of items go too
+                    else:
+                        c.execute("UPDATE connectors SET config = jsonb_set(config, '{account_id}', to_jsonb(%s::int)) "
+                                  "WHERE id=%s", (keep, k["id"]))
+                c.execute("DELETE FROM oauth_accounts WHERE id=%s", (old,))
+                merged += 1
+    return merged
