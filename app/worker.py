@@ -13,6 +13,12 @@ from .ingest.pipeline import process_document
 log = logging.getLogger("worker")
 _wake = threading.Event()
 _finished: deque = deque(maxlen=300)  # times at which items finished, to measure real speed
+_durations: deque = deque(maxlen=50)  # (seconds, kind, title) of recent items
+current: dict = {}  # the item being prepared right now
+
+
+def recent_durations() -> list[tuple[float, str, str]]:
+    return list(_durations)
 
 
 def speed_per_minute() -> float | None:
@@ -56,7 +62,15 @@ def _loop() -> None:
                 last_scan = time.time()
             doc_id = _next_pending()
             if doc_id is not None:
-                process_document(doc_id)
+                with conn() as c:
+                    row = c.execute("SELECT title, kind FROM documents WHERE id=%s", (doc_id,)).fetchone()
+                started = time.time()
+                current.update(id=doc_id, title=(row or {}).get("title", ""), kind=(row or {}).get("kind", ""), started=started)
+                try:
+                    process_document(doc_id)
+                finally:
+                    _durations.append((time.time() - started, current.get("kind", ""), current.get("title", "")))
+                    current.clear()
                 _finished.append(time.time())
                 continue
         except Exception:  # noqa: BLE001 - keep the worker alive

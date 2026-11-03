@@ -132,6 +132,7 @@ async function boot() {
   try { appStatus = await (await fetch("/api/status")).json(); } catch { appStatus = { company: "", license: {} }; }
   $("#login-company").textContent = appStatus.company || "";
   $("#company-name").textContent = appStatus.company || "";
+  $("#app-version").textContent = appStatus.version ? `Version ${appStatus.version}` : "";
   if (!token) return showView("#login-view");
   try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
   await refreshDepartments();

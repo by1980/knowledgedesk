@@ -1,6 +1,7 @@
 """KnowledgeDesk web server: API + web interface."""
 import json
 import logging
+import os
 import secrets
 import threading
 from contextlib import asynccontextmanager
@@ -53,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.5"
+APP_VERSION = "0.6"
 
 
 def _ensure_secret_key() -> None:
@@ -97,7 +98,7 @@ app = FastAPI(title="KnowledgeDesk", lifespan=lifespan)
 def status():
     lic = license.status()
     return {"company": settings.company_name, "license": lic.__dict__ | {"allows_use": lic.allows_use},
-            "llm_configured": bool(llm.api_key()) or settings.fake_llm}
+            "llm_configured": bool(llm.api_key()) or settings.fake_llm, "version": APP_VERSION}
 
 
 class LoginIn(BaseModel):
@@ -753,6 +754,62 @@ def setup_progress(_: dict = Depends(auth.admin_user)):
             "has_asked": row["questions"] > 0}
 
 
+def _memory_gb() -> float | None:
+    """Memory this installation may use (the Docker limit if there is one)."""
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            value = Path(path).read_text().strip()
+            if value.isdigit() and int(value) < 1 << 50:
+                return int(value) / 1024 ** 3
+        except OSError:
+            continue
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1]) / 1024 ** 2
+    except OSError:
+        pass
+    return None
+
+
+def _cpus() -> float:
+    try:
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if quota != "max":
+            return round(int(quota) / int(period), 1)
+    except (OSError, ValueError):
+        pass
+    return float(os.cpu_count() or 1)
+
+
+def _resources_check(waiting: int) -> dict:
+    import time
+
+    mem, cpus = _memory_gb(), _cpus()
+    durations = worker.recent_durations()
+    avg = sum(d for d, _, _ in durations) / len(durations) if durations else None
+    slowest = max(durations, default=None)
+    parts = [f"{cpus:g} CPU cores", f"{mem:.1f} GB memory" if mem else "memory unknown"]
+    if avg is not None:
+        parts.append(f"{avg:.1f} s per item on average")
+    if worker.current:
+        parts.append(f"now preparing \"{worker.current.get('title', '')[:60]}\" "
+                     f"({int(time.time() - worker.current.get('started', time.time()))} s so far)")
+    detail = "; ".join(parts) + "."
+    state = "ok"
+    if (mem and mem < 3.5) or cpus < 2:
+        state = "warn"
+        detail += (" That's too little: give Docker more (Docker Desktop → Settings → Resources: "
+                   "at least 4 CPUs and 8 GB memory), then restart KnowledgeDesk.")
+    elif avg is not None and avg > 15 and waiting:
+        state = "warn"
+        detail += (f" Items are slow to prepare (slowest: {slowest[1]} \"{slowest[2][:50]}\", {slowest[0]:.0f} s). "
+                   "Giving Docker more CPU and memory usually fixes this.")
+    return {"id": "resources", "label": "Computer resources", "state": state, "detail": detail,
+            "cpus": cpus, "memory_gb": round(mem, 1) if mem else None, "avg_seconds": round(avg, 1) if avg else None,
+            "recent": [{"seconds": round(d, 1), "kind": k, "title": t[:80]} for d, k, t in durations[-15:]]}
+
+
 _ai_check: dict = {"at": 0.0, "result": None}
 
 
@@ -848,6 +905,7 @@ def health(_: dict = Depends(auth.admin_user)):
     else:
         checks.append({"id": "indexing", "label": "Preparing content for search", "state": "ok",
                        "detail": f"All {docs['ready']} items are searchable."})
+    checks.append(_resources_check(docs["waiting"]))
     if docs["failed"]:
         checks.append({"id": "failed", "label": "Items that couldn't be read", "state": "warn",
                        "detail": f"{docs['failed']} item(s): " + "; ".join(f"{f['reason']} ({f['n']})" for f in failures)})
