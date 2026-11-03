@@ -121,37 +121,25 @@ function docBadge(d) {
 }
 
 // ================================================================== start, login, navigation
-// Two sides, one switch at the top of the sidebar: Chat (ask and your conversations) and Brain (the company's knowledge)
-const CHAT_PAGES = [["ask", "Ask", "ask"], ["conversations", "All conversations", "chat"]];
-const BRAIN_PAGES = {
-  admin: [["home", "Home", "home"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
+// One sidebar that never changes: New chat, the pages, then your recent chats (like other AI chat apps)
+const NAV = {
+  admin: [["home", "Home", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
     ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
-  member: [["brain", "Brain", "brain"], ["learning", "Learning Center", "learn"]],
-  learner: [["learning", "Learning Center", "learn"]],   // new employees: only their learning path
+  member: [["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["learning", "Learning Center", "learn"]],
+  learner: [["learning", "Learning Center", "learn"], ["ask", "Chat", "ask"]],   // new employees: only their learning path
 };
 const HOME_PAGE = { admin: "home", member: "ask", learner: "learning" };
-const brainPagesFor = (u) => BRAIN_PAGES[u.role] || BRAIN_PAGES.member;
-const pagesFor = (u) => [...CHAT_PAGES, ...brainPagesFor(u)];
-const modeOf = (page) => CHAT_PAGES.some(([id]) => id === page) ? "chat" : "brain";
-let navMode = null;
-function drawNav(mode) {
-  navMode = mode;
-  $$("#mode-switch button").forEach((b) => { const on = b.dataset.mode === mode; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
-  $("#nav").innerHTML = mode === "chat"
-    ? `<button type="button" class="nav-new" id="nav-new">${ic("plus")}<span>New chat</span></button>
-       <a href="#conversations" data-page="conversations">${ic("chat")}<span>All conversations</span></a>
-       <div class="chat-history" id="chat-history"></div>`
-    : brainPagesFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("");
-  if (mode === "chat") {
-    $("#nav-new").onclick = () => { if (location.hash !== "#ask") location.hash = "#ask"; setTimeout(newChat, 0); };
-    loadChatHistory();
-  }
+const navFor = (u) => NAV[u.role] || NAV.member;
+// every page a person may open (Conversations is reached from "See all" above the recent chats)
+const pagesFor = (u) => [...navFor(u), ["conversations", "Conversations", "chat"]];
+function drawNav() {
+  $("#nav").innerHTML = `<button type="button" class="nav-new" id="nav-new">${ic("plus")}<span>New chat</span></button>
+    ${navFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("")}
+    <div class="recent-head"><span>Recent chats</span><a href="#conversations" data-page="conversations">See all</a></div>
+    <div class="chat-history" id="chat-history"></div>`;
+  $("#nav-new").onclick = () => { if (location.hash !== "#ask") location.hash = "#ask"; setTimeout(newChat, 0); };
+  loadChatHistory();
 }
-$$("#mode-switch button").forEach((b) => b.onclick = () => {
-  const mode = b.dataset.mode;
-  if (mode === navMode) return;
-  location.hash = mode === "chat" ? "#ask" : `#${(HOME_PAGE[me.role] !== "ask" ? HOME_PAGE[me.role] : null) || brainPagesFor(me)[0][0]}`;
-});
 // Your recent conversations, grouped like in other AI chats
 async function loadChatHistory() {
   const box = $("#chat-history");
@@ -196,7 +184,7 @@ async function boot() {
   try { me = await getJSON("/api/me"); } catch { return showView("#login-view"); }
   await refreshDepartments();
   drawMe();
-  navMode = null;
+  drawNav();
   updateBanner();
   showView("#app-view");
   const connected = new URLSearchParams(location.search).get("connected");
@@ -234,7 +222,6 @@ function route() {
   const pages = pagesFor(me);
   let name = location.hash.slice(1);
   if (!pages.some(([id]) => id === name)) name = HOME_PAGE[me.role] || "ask";
-  if (modeOf(name) !== navMode) drawNav(modeOf(name));
   $$(".page").forEach((p) => p.classList.toggle("hidden", p.id !== `page-${name}`));
   $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === name));
   LOADERS[name]?.().catch((err) => toast(err.message, true));

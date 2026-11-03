@@ -620,3 +620,12 @@ a.side-link { text-decoration: none; }
   .chat-history { display: none; }
   .nav-new span { display: none; } .nav-new { margin: 0; padding: 6px 10px; }
 }
+
+/* one fixed sidebar: New chat, pages, recent chats */
+.sidebar .nav-new { margin: 10px 0 8px; }
+.recent-head { display: flex; justify-content: space-between; align-items: center; margin: 16px 0 0; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+#nav .recent-head a { display: inline; padding: 0; font-size: 12px; font-weight: 500; color: var(--accent); background: none; }
+#nav .recent-head a:hover { text-decoration: underline; }
+#nav .recent-head a.active { background: none; }
+.chat-history { margin-top: 2px; }
+@media (max-width: 640px) { .recent-head { display: none; } }

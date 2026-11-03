@@ -43,12 +43,12 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
   check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
   await page.click("#dialog[open] [data-close]");
-  check("Admin: Brain side of the sidebar lists the knowledge pages", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Home,Brain,Sources,People,Learning Center,Health,Settings");
-  await page.click("#mode-switch [data-mode=chat]");
-  check("Chat / Brain switch: Chat side has New chat and your conversations", await until(async () => /New chat/.test(await text("#nav")) && /All conversations/.test(await text("#nav"))
-    && !(await page.isHidden("#page-ask")), 5000, 200));
-  await page.click("#mode-switch [data-mode=brain]");
-  check("Chat / Brain switch: back to the Brain side", await until(async () => !(await page.isHidden("#page-home")) && /Sources/.test(await text("#nav")), 5000, 200));
+  check("Admin sidebar: New chat, then every page, then recent chats", /^\s*New chat/.test(await text("#nav"))
+    && (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Home,Chat,Brain,Sources,People,Learning Center,Health,Settings" && /Recent chats[\s\S]*See all/.test(await text("#nav")));
+  check("Sidebar has no switch: it stays the same on every page", !(await page.$("#mode-switch")));
+  await go("ask");
+  check("Sidebar is the same on the chat page", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Home,Chat,Brain,Sources,People,Learning Center,Health,Settings");
+  await go("home");
 
   // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
@@ -409,8 +409,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
   check("Team member lands on the chat, with New chat in the sidebar", !(await page.isHidden("#page-ask")) && /New chat/.test(await text("#nav")));
-  await page.click("#mode-switch [data-mode=brain]");
-  check("Team member: Brain side has Brain and Learning Center only", await until(async () => (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Brain,Learning Center", 5000, 200));
+  check("Team member sidebar: Chat, Brain and Learning Center", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Chat,Brain,Learning Center");
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
@@ -433,7 +432,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "noa@acme.test"); await page.fill("input[name=password]", "noa-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("New employee: Brain side has only the Learning Center", (await page.$$eval("#nav a", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center");
+  check("New employee sidebar: only the Learning Center and Chat", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center,Chat");
   check("New employee lands on the Learning Center with the path and note", await until(async () => !(await page.isHidden("#page-learning"))
     && /Interview - Moshe/.test(await text("#learn-list")) && /read this first/.test(await text("#learn-list")) && /0 of 1/.test(await text("#learn-progress")), 8000, 300));
   check("New employee doesn't see admin buttons", !(await page.isVisible("#learn-add")) && !(await page.isVisible("#learn-people-card")));
