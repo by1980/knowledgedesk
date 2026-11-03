@@ -364,7 +364,7 @@ function drawLearning(a) {
     const [icon] = SERVICE_INFO[k.type] || ["file"];
     const state = k.last_error ? badge("bad", "Needs attention") : !k.enabled ? badge("", "Paused") : badge("ok", "Live");
     const next = k.last_sync ? Math.max(0, a.check_every_minutes - Math.round((Date.now() - new Date(k.last_sync)) / 60000)) : 0;
-    return `<div class="learn-row"><span class="icon-tile sm">${ic(icon)}</span>
+    return `<div class="learn-row">${brandTile(k.type, icon, "sm")}
       <div><div class="who">${esc(LEARN_LABEL[k.type] || k.name)} ${state}</div>
         <div class="meta" dir="auto">${esc(k.account || (k.type === "website" ? k.name : ""))}</div></div>
       <div class="right">${k.last_new ? `Last new item ${ago(k.last_new)}` : "Nothing new yet"}${k.added_today ? ` · <b>${num(k.added_today)}</b> today` : ""}
@@ -568,6 +568,33 @@ LOADERS.library = async () => pagedDocs($("#lib-list"), { reset: true, query: { 
   { empty: "Nothing to show yet. Your admin is still adding the company's information." });
 $("#lib-search").addEventListener("input", debounce(() => LOADERS.library()));
 
+
+// Real service logos, so every connection is recognisable at a glance
+const BRAND_SVG = {
+  google: '<path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z"/><path fill="#FBBC04" d="M6.4 14c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.4H3.1a10 10 0 0 0 0 9.2z"/><path fill="#EA4335" d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.4L6.4 10c.8-2.4 3-4.1 5.6-4.1z"/>',
+  gmail: '<path fill="#4285F4" d="M3.5 19h3V11L2 7.6v9.9c0 .8.7 1.5 1.5 1.5z"/><path fill="#34A853" d="M17.5 19h3c.8 0 1.5-.7 1.5-1.5V7.6L17.5 11z"/><path fill="#FBBC04" d="M17.5 5.5V11L22 7.6V6.3c0-1.7-1.9-2.6-3.2-1.6z"/><path fill="#EA4335" d="M6.5 11V5.5L12 9.6l5.5-4.1V11L12 15.1z"/><path fill="#C5221F" d="M2 6.3v1.3L6.5 11V5.5L5.2 4.7C3.9 3.7 2 4.6 2 6.3z"/>',
+  gcal: '<rect x="3" y="3" width="18" height="18" rx="2.5" fill="#fff" stroke="#4285F4" stroke-width="1.6"/><path fill="#4285F4" d="M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v2H3z"/><path fill="#EA4335" d="M17 21l4-4h-4z"/><text x="12" y="17.6" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="8" fill="#1A73E8">31</text>',
+  gdrive: '<path fill="#FBBC04" d="M8.3 3h7.4L22 14h-7.4z"/><path fill="#34A853" d="M8.3 3 12 9.4 5.7 20.5 2 14z"/><path fill="#4285F4" d="M5.7 20.5 9.4 14H22l-3.7 6.5z"/>',
+  youtube: '<rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#FF0000"/><path fill="#fff" d="M10 8.8v6.4l5.5-3.2z"/>',
+  microsoft: '<path fill="#F25022" d="M2 2h9.5v9.5H2z"/><path fill="#7FBA00" d="M12.5 2H22v9.5h-9.5z"/><path fill="#00A4EF" d="M2 12.5h9.5V22H2z"/><path fill="#FFB900" d="M12.5 12.5H22V22h-9.5z"/>',
+  ms_mail: '<rect x="2" y="4" width="20" height="16" rx="3" fill="#0A64C9"/><ellipse cx="9" cy="12" rx="3.4" ry="4" fill="none" stroke="#fff" stroke-width="2"/><path d="M14.5 9h5M14.5 12h5M14.5 15h5" stroke="#9DCBFF" stroke-width="1.6"/>',
+  ms_cal: '<rect x="3" y="3.5" width="18" height="17" rx="3" fill="#0A64C9"/><path fill="#fff" d="M6 9h12v8.5H6z"/><path d="M10 9v8.5M14 9v8.5M6 13.2h12" stroke="#0A64C9" stroke-width="1.2"/>',
+  ms_drive: '<path fill="#0364B8" d="M10 8.2a5.2 5.2 0 0 1 9.4 2.4 3.7 3.7 0 0 1-.6 7.4H6.6A4.4 4.4 0 0 1 5.8 9.3 5.2 5.2 0 0 1 10 8.2z"/><path fill="#28A8EA" d="M10 8.2a5.2 5.2 0 0 1 9.4 2.4L12 13.8 5.8 9.3A5.2 5.2 0 0 1 10 8.2z" opacity=".85"/>',
+  slack: '<g transform="scale(.444)"><path fill="#E01E5A" d="M19.7 34.2a5.4 5.4 0 1 1-5.4-5.4h5.4zm2.7 0a5.4 5.4 0 1 1 10.8 0v13.5a5.4 5.4 0 1 1-10.8 0z"/><path fill="#36C5F0" d="M27.8 19.7a5.4 5.4 0 1 1 5.4-5.4v5.4zm0 2.7a5.4 5.4 0 1 1 0 10.8H14.3a5.4 5.4 0 1 1 0-10.8z"/><path fill="#2EB67D" d="M34.3 27.8a5.4 5.4 0 1 1 5.4 5.4h-5.4zm-2.7 0a5.4 5.4 0 1 1-10.8 0V14.3a5.4 5.4 0 1 1 10.8 0z"/><path fill="#ECB22E" d="M26.2 34.3a5.4 5.4 0 1 1-5.4 5.4v-5.4zm0-2.7a5.4 5.4 0 1 1 0-10.8h13.5a5.4 5.4 0 1 1 0 10.8z"/></g>',
+  facebook: '<circle cx="12" cy="12" r="11" fill="#1877F2"/><path fill="#fff" d="M13.4 21.9v-7.3h2.4l.4-2.9h-2.8V9.9c0-.8.3-1.4 1.4-1.4h1.5V6a19 19 0 0 0-2.2-.1c-2.2 0-3.7 1.3-3.7 3.8v2.1H8v2.9h2.4v7.3z"/>',
+  instagram: '<defs><linearGradient id="ig-grad" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".65" stop-color="#D62976"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs><rect x="1" y="1" width="22" height="22" rx="6" fill="url(#ig-grad)"/><rect x="5.5" y="5.5" width="13" height="13" rx="4" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="16.4" cy="7.6" r="1" fill="#fff"/>',
+  linkedin: '<rect x="1" y="1" width="22" height="22" rx="4" fill="#0A66C2"/><path fill="#fff" d="M5.5 9.5h2.8V18H5.5zM6.9 5.3a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM10 9.5h2.7v1.2c.4-.7 1.3-1.4 2.7-1.4 2.9 0 3.4 1.9 3.4 4.3V18H16v-3.9c0-.9 0-2.1-1.3-2.1s-1.5 1-1.5 2V18H10z"/>',
+  whatsapp: '<path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/><path fill="#fff" d="M8.9 7.3c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.3.3-.9.9-.9 2.2s.9 2.6 1.1 2.7c.1.2 1.8 2.9 4.5 3.9 2.2.9 2.7.7 3.1.7.5 0 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.6-.3l-1.8-.9c-.3-.1-.5-.1-.7.1-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.5-1.5-1.8-.1-.3 0-.4.1-.6l.4-.5.3-.5v-.5z"/>',
+};
+BRAND_SVG.whatsapp_business = BRAND_SVG.whatsapp;
+const SOURCE_BRAND = { meta_social: ["facebook", "instagram"] };
+// A logo tile for a source type; falls back to a plain icon for things without a brand (website, uploads).
+function brandTile(type, fallbackIcon, size = "") {
+  const marks = SOURCE_BRAND[type] || (BRAND_SVG[type] ? [type] : null);
+  if (!marks) return `<span class="icon-tile ${size}">${ic(fallbackIcon)}</span>`;
+  return `<span class="icon-tile brand ${size} ${marks.length > 1 ? "duo" : ""}">${marks.map((m) => `<svg viewBox="0 0 24 24" aria-hidden="true">${BRAND_SVG[m]}</svg>`).join("")}</span>`;
+}
+
 // ================================================================== Sources
 const PROVIDER_TYPES = { google: { mail: "gmail", calendar: "gcal", files: "gdrive" }, microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" },
   slack: { messages: "slack" }, meta: { social: "meta_social" }, youtube: { youtube: "youtube" } };
@@ -675,7 +702,7 @@ function drawTiles(uploads) {
     if (type === "uploads") [state, text, count] = uploads ? ["ok", "Added", plural(uploads, "file", "files")] : ["", "None yet", ""];
     const action = type === "uploads" ? "Upload" : type === "website" ? "Add" : type === "linkedin" ? "Import" : "Connect";
     return `<div class="tile ${state ? "" : "off"}" data-tile="${type}" data-target="${target}" role="button" tabindex="0">
-      <span class="icon-tile">${ic(icon)}</span><span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}
+      ${brandTile(type, icon)}<span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}
       ${state ? "" : `<button type="button" class="btn small primary tile-connect" data-connect-tile="${type}">${action}</button>`}</span></div>`;
   }).join("");
   $$("#overview-tiles .tile").forEach((t) => t.onclick = (e) => {
@@ -808,7 +835,7 @@ function drawProvider(provider) {
     const rows = Object.entries(PROVIDER_TYPES[provider]).map(([svc, type]) => {
       const k = list.find((x) => x.type === type);
       const [icon, label] = SERVICE_INFO[type];
-      const name = `<div class="svc-name"><span class="icon-tile sm">${ic(icon)}</span>${label}</div>`;
+      const name = `<div class="svc-name">${brandTile(type, icon, "sm")}${label}</div>`;
       if (!k) return `<div class="svc">${name}<div class="status-line">${badge("", "Not connected")}</div>
         <div><button class="btn small" data-add-svc="${svc}" data-account="${accountId}">${ic("plus")}Connect</button></div></div>`;
       return `<div class="svc">${name}<div>${sourceStatus(k)}${socialAccounts(k)}</div>
@@ -959,7 +986,7 @@ function socialAccounts(k) {
   if (!list.length) return "";
   const icon = { Facebook: "share", Instagram: "share", YouTube: "play" };
   return `<div class="social-list">${list.map((a) => `<div class="social-acc">
-      <span class="social-pf pf-${a.platform.toLowerCase()}">${esc(a.platform)}</span>
+      ${brandTile(a.platform.toLowerCase(), "share", "sm")}
       <div class="grow"><b dir="auto">${a.link ? `<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.handle || a.name)}</a>` : esc(a.handle || a.name)}</b>
         <div class="muted small">${num(a.followers)} ${a.platform === "YouTube" ? "subscribers" : "followers"} · ${plural(a.posts, a.platform === "YouTube" ? "video" : "post", a.platform === "YouTube" ? "videos" : "posts")}
           ${a.last_post ? ` · last ${a.platform === "YouTube" ? "video" : "post"} ${ago(a.last_post)}` : ""}</div></div>
@@ -1045,7 +1072,7 @@ function drawWhatsApp() {
         <div class="muted small">Who can find this: ${visibilityPills(k)}</div></div>
         <div class="acc-actions">${k.documents ? `<button class="btn link" data-items="${k.id}">View conversations</button>` : ""}
           <button class="btn link danger" data-wa-del="${k.id}">Disconnect</button></div></div>
-      <div class="svc"><div class="svc-name"><span class="icon-tile sm">${ic("chat")}</span>Messages</div>
+      <div class="svc"><div class="svc-name">${brandTile("whatsapp", "chat", "sm")}Messages</div>
         <div>${k.last_error ? `${badge("bad", "Needs attention")}<div class="status-detail bad">${esc(k.last_error)}</div>`
           : `<div class="status-line">${badge("ok", "Connected")} <span class="state-text ok small">${k.documents ? `${plural(k.events, "message", "messages")} so far` : "Waiting for the first message"}</span></div>`}
           ${isPublicAddress() ? "" : `<div class="warn-box">${ic("alert")} Meta can only deliver messages to a public <b>https</b> address. On this computer

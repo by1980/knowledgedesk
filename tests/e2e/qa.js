@@ -452,6 +452,16 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
     await shot(`phone-${p}`, p !== "sources");
   }
 
+  // ------------------------------------------------------------------ 15. Marketing page
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(APP + "/welcome");
+  check("Marketing page: explains the product", /Ask your company/.test(await text("h1")) && (await page.$$(".logo-chip")).length >= 10);
+  check("Marketing page: product screenshots load", await page.evaluate(async () => (await Promise.all([...document.images].map((i) => fetch(i.src).then((r) => r.ok && /image/.test(r.headers.get("content-type")))))).every(Boolean)));
+  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/");
+  await page.setViewportSize({ width: 390, height: 844 });
+  check("Marketing page fits a phone screen", await noOverflow());
+  check("Login page links to the marketing page", (await (await page.request.get(APP + "/")).text()).includes('href="/welcome"'));
+
   check("No JavaScript errors during the whole run", consoleErrors.length === 0, consoleErrors.join(" | "));
   await browser.close();
   const failed = results.filter((r) => !r.ok);

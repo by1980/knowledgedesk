@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.9.3"
+APP_VERSION = "0.9.4"
 
 
 def _ensure_secret_key() -> None:
@@ -1323,3 +1323,9 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/welcome")
+def marketing_page():
+    """The public page that explains KnowledgeDesk and leads to the product."""
+    return FileResponse(STATIC / "site" / "index.html")

@@ -422,3 +422,11 @@ dialog:has(.setup-steps) { width: min(680px, calc(100vw - 32px)); }
 .learn-note { margin-top: 4px; font-size: 14px; color: var(--muted); white-space: pre-wrap; }
 .btn.icon-only { padding: 4px 6px; }
 @media (max-width: 640px) { .learn-item { flex-wrap: wrap; } .learn-item .acc-actions { width: 100%; justify-content: flex-start; } }
+
+/* Service logos */
+.icon-tile.brand { background: var(--surface); border: 1px solid var(--line); }
+.icon-tile.brand svg { width: 20px; height: 20px; }
+.icon-tile.brand.sm svg { width: 16px; height: 16px; }
+.icon-tile.brand.duo { width: auto; padding: 0 6px; gap: 4px; }
+.tile.off .icon-tile.brand svg { filter: grayscale(.15); }
+.center { text-align: center; }

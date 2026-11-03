@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KnowledgeDesk – Ask your company anything</title>
+<meta name="description" content="KnowledgeDesk connects your email, files, chats, calendar, website and social channels, and gives every employee clear answers with sources – only from what they're allowed to see.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff; --bg-2: #f7f8fa; --ink: #0b1220; --ink-2: #344054; --muted: #667085; --line: #e4e7ec;
+    --accent: #2f5bea; --accent-2: #2349c9; --accent-soft: #eef2fe; --ok: #067647; --ok-soft: #ecfdf3;
+    --dark: #0b1220; --dark-2: #111a2e; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--ink); background: var(--bg);
+    -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  img { max-width: 100%; height: auto; display: block; }
+  .wrap { width: min(1160px, 100% - 32px); margin: 0 auto; }
+  h1, h2, h3 { letter-spacing: -.025em; line-height: 1.12; margin: 0; }
+  h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; }
+  h3 { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+  p { margin: 0; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+  .lead { font-size: 18px; color: var(--ink-2); }
+  .muted { color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 46px; padding: 0 20px; border-radius: 10px; font-weight: 600;
+    font-size: 15px; text-decoration: none; border: 1px solid transparent; cursor: pointer; transition: background .15s, border-color .15s, transform .15s; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); color: #fff; box-shadow: 0 6px 16px -6px rgba(47, 91, 234, .6); }
+  .btn.primary:hover { background: var(--accent-2); }
+  .btn.ghost { background: #fff; border-color: var(--line); color: var(--ink); }
+  .btn.ghost:hover { border-color: #c9ced8; }
+  .btn.sm { height: 38px; padding: 0 14px; font-size: 14px; }
+  .btn svg { width: 18px; height: 18px; }
+
+  /* nav */
+  header { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.85); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+  header.scrolled { border-bottom-color: var(--line); }
+  .nav { display: flex; align-items: center; gap: 28px; height: 68px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; text-decoration: none; letter-spacing: -.01em; }
+  .logo-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 17px; }
+  .nav-links { display: flex; gap: 24px; margin-left: 12px; }
+  .nav-links a { text-decoration: none; color: var(--ink-2); font-size: 15px; font-weight: 500; }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .nav-cta .login { text-decoration: none; font-weight: 500; font-size: 15px; color: var(--ink-2); padding: 0 8px; }
+  @media (max-width: 900px) { .nav-links { display: none; } .nav-cta .login { display: none; } }
+  .btn { white-space: nowrap; }
+  .show-sm { display: none; }
+  @media (max-width: 520px) { .hide-sm { display: none; } .show-sm { display: inline; } }
+
+  /* hero */
+  .hero { position: relative; overflow: hidden; padding: 72px 0 0; background:
+    radial-gradient(800px 400px at 85% -10%, rgba(47,91,234,.12), transparent 60%),
+    radial-gradient(700px 400px at 0% 0%, rgba(54,197,240,.10), transparent 60%); }
+  .hero-grid { display: grid; gap: 24px; justify-items: center; text-align: center; }
+  .hero h1 { font-size: clamp(40px, 6.4vw, 72px); font-weight: 800; max-width: 900px; }
+  .hero h1 .grad { background: linear-gradient(90deg, #2f5bea, #7c3aed 60%, #db2777); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero .lead { max-width: 680px; font-size: 19px; }
+  .hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+  .hero-notes { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--muted); }
+  .hero-notes span { display: inline-flex; align-items: center; gap: 6px; }
+  .hero-notes svg { width: 16px; height: 16px; color: var(--ok); }
+  .shot { margin-top: 48px; border-radius: 16px 16px 0 0; border: 1px solid var(--line); border-bottom: 0; background: #fff; overflow: hidden;
+    box-shadow: 0 40px 80px -30px rgba(16, 24, 40, .35), 0 0 0 8px rgba(255,255,255,.6); width: min(1100px, 100%); }
+  .shot .bar { display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--line); background: #f9fafb; }
+  .shot .bar i { width: 11px; height: 11px; border-radius: 50%; background: #e4e7ec; }
+  .shot .bar b { margin: 0 auto; font-size: 12px; font-weight: 500; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 2px 40px; }
+
+  /* logos */
+  .logos { padding: 56px 0; border-bottom: 1px solid var(--line); }
+  .logos p { text-align: center; font-size: 14px; font-weight: 500; color: var(--muted); margin-bottom: 22px; }
+  .logo-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+  .logo-chip { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 14px; font-weight: 500; }
+  .logo-chip svg { width: 22px; height: 22px; }
+
+  section.block { padding: 96px 0; }
+  .center { text-align: center; }
+  .head { display: grid; gap: 14px; max-width: 720px; margin: 0 auto 52px; text-align: center; }
+
+  /* problem */
+  .problems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .problem { padding: 28px; border-radius: var(--radius); background: var(--bg-2); border: 1px solid var(--line); }
+  .problem .q { font-size: 15px; color: var(--ink-2); font-style: italic; margin-bottom: 14px; }
+  .problem h3 { margin-bottom: 8px; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; counter-reset: s; }
+  .step { position: relative; padding: 30px 28px; border-radius: var(--radius); border: 1px solid var(--line); background: #fff; }
+  .step .n { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; margin-bottom: 18px; }
+  .step h3 { margin-bottom: 8px; }
+  .step p { color: var(--ink-2); font-size: 15px; }
+
+  /* feature split */
+  .split { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; }
+  .split.rev { grid-template-columns: 1.25fr 1fr; }
+  .split.rev .text { order: 2; }
+  .split .text { display: grid; gap: 16px; }
+  .split ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 12px; }
+  .split li { display: flex; gap: 10px; color: var(--ink-2); font-size: 15px; }
+  .split li svg { flex: none; width: 20px; height: 20px; color: var(--accent); margin-top: 2px; }
+  .frame { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 30px 60px -30px rgba(16, 24, 40, .35); background: #fff; }
+
+  /* features grid */
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .feature { padding: 26px; border-radius: var(--radius); border: 1px solid var(--line); background: #fff; display: grid; gap: 10px; align-content: start; }
+  .feature .ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+  .feature .ico svg { width: 21px; height: 21px; }
+  .feature p { color: var(--ink-2); font-size: 15px; }
+
+  /* teams */
+  .tinted { background: var(--bg-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .teams { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .team { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; display: grid; gap: 12px; }
+  .team b { font-size: 15px; }
+  .bubble { background: var(--accent-soft); color: #1d3fb8; border-radius: 12px 12px 12px 4px; padding: 10px 14px; font-size: 14.5px; }
+
+  /* security */
+  .dark { background: var(--dark); color: #e6e9f0; }
+  .dark h2 { color: #fff; }
+  .dark .lead, .dark p { color: #aab3c5; }
+  .sec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .sec { padding: 24px; border-radius: var(--radius); background: var(--dark-2); border: 1px solid #1f2a44; display: flex; gap: 16px; }
+  .sec svg { flex: none; width: 24px; height: 24px; color: #7ea2ff; margin-top: 2px; }
+  .sec h3 { color: #fff; margin-bottom: 6px; }
+
+  /* faq */
+  .faq { max-width: 780px; margin: 0 auto; display: grid; gap: 10px; }
+  details { border: 1px solid var(--line); border-radius: 12px; padding: 0 20px; background: #fff; }
+  summary { cursor: pointer; list-style: none; padding: 18px 0; font-weight: 600; display: flex; justify-content: space-between; gap: 16px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font-size: 22px; line-height: 1; color: var(--muted); }
+  details[open] summary::after { content: "–"; }
+  details p { padding: 0 0 18px; color: var(--ink-2); }
+
+  /* cta */
+  .cta { padding: 96px 0; }
+  .cta-box { border-radius: 24px; padding: 64px 32px; text-align: center; color: #fff; display: grid; gap: 18px; justify-items: center;
+    background: radial-gradient(600px 300px at 20% 0%, rgba(124,58,237,.55), transparent 60%), linear-gradient(135deg, #2f5bea, #1d3fb8); }
+  .cta-box h2 { color: #fff; max-width: 640px; }
+  .cta-box p { color: #dbe4ff; max-width: 560px; }
+  .cta-box .btn.ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.4); }
+  footer { border-top: 1px solid var(--line); padding: 32px 0; font-size: 14px; color: var(--muted); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+  footer a { text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (max-width: 900px) {
+    .problems, .steps, .features, .teams, .sec-grid { grid-template-columns: 1fr; }
+    .split, .split.rev { grid-template-columns: 1fr; gap: 28px; }
+    .split.rev .text { order: 0; }
+    section.block { padding: 64px 0; }
+    .hero { padding-top: 48px; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-quote" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.9-3.5L3 10M3 4v6h6M4 13a8 8 0 0 0 14.9 3.5L21 14M21 20v-6h-6"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/><path d="M16 3.5a4 4 0 0 1 0 7.5"/><path d="M22 21v-1a6 6 0 0 0-4-5.6"/></symbol>
+  <symbol id="i-learn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m2 9 10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5M22 9v6"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6.5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8.5z"/><path d="M14 3v5.5h5.5"/></symbol>
+</svg>
+
+<header id="top">
+  <div class="wrap nav">
+    <a class="logo" href="#top"><span class="logo-mark">K</span>KnowledgeDesk</a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#how">How it works</a><a href="#connections">Connections</a><a href="#teams">For teams</a><a href="#security">Security</a><a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta"><a class="login" href="/">Log in</a><a class="btn primary sm" href="/"><span class="hide-sm">Open KnowledgeDesk</span><span class="show-sm">Open app</span></a></div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <span class="eyebrow">Your company's knowledge, answered</span>
+      <h1>Ask your company <span class="grad">anything.</span></h1>
+      <p class="lead">KnowledgeDesk connects your email, files, chats, calendar, website and social channels – and gives every employee a clear answer with its source in seconds. Only from what they're allowed to see.</p>
+      <div class="hero-ctas">
+        <a class="btn primary" href="/">Open KnowledgeDesk <svg><use href="#i-arrow"/></svg></a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+      <div class="hero-notes">
+        <span><svg><use href="#i-check"/></svg>Connect in minutes</span>
+        <span><svg><use href="#i-check"/></svg>Reads only – never changes anything</span>
+        <span><svg><use href="#i-check"/></svg>Answers in your team's language</span>
+      </div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><b>KnowledgeDesk</b></div>
+        <img src="/static/site/img/home.png" alt="The KnowledgeDesk dashboard: what the knowledge base holds and what the team asks" width="1440" height="900"></div>
+    </div>
+  </section>
+
+  <section class="logos" id="connections">
+    <div class="wrap">
+      <p>Connects to the tools your business already runs on</p>
+      <div class="logo-row" id="logo-row"></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="head"><span class="eyebrow">The problem</span>
+        <h2>The answer already exists. Finding it is the hard part.</h2>
+        <p class="lead">Every business runs on knowledge that's scattered, buried or stuck in one person's head. People ask around, wait, and guess.</p></div>
+      <div class="problems">
+        <div class="problem"><p class="q">"What price did we agree with that customer?"</p><h3>Buried in inboxes</h3><p class="muted">The answer is in an email thread from March – in someone else's mailbox.</p></div>
+        <div class="problem"><p class="q">"How do we handle a return?"</p><h3>Stuck in people's heads</h3><p class="muted">Only the senior employee knows. When they're busy, on holiday or gone, so is the answer.</p></div>
+        <div class="problem"><p class="q">"Where's the latest version?"</p><h3>Spread across ten tools</h3><p class="muted">Drive, WhatsApp, Slack, the website, a spreadsheet. Nobody knows where to look first.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block tinted" id="how">
+    <div class="wrap">
+      <div class="head"><span class="eyebrow">How it works</span><h2>Three steps. No IT project.</h2>
+        <p class="lead">Set it up once in an afternoon. From then on it keeps itself up to date.</p></div>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h3>Connect your sources</h3><p>Sign in with Google, Microsoft, Slack or Facebook with one click, add your website, upload documents and recordings. Clear status for every source – connected, importing, or what needs attention.</p></div>
+        <div class="step"><div class="n">2</div><h3>It learns – and keeps learning</h3><p>Everything is read, understood and indexed. New emails, files, messages and posts are picked up automatically every few minutes. Nothing to maintain.</p></div>
+        <div class="step"><div class="n">3</div><h3>Everyone just asks</h3><p>Employees ask in plain words and get a short, clear answer with the exact sources – limited to what their department is allowed to see.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap split">
+      <div class="text"><span class="eyebrow">Answers you can trust</span>
+        <h2>Every answer shows where it came from.</h2>
+        <p class="lead">No guessing and no made-up facts. KnowledgeDesk answers only from your company's own information, and every sentence points to its source.</p>
+        <ul>
+          <li><svg><use href="#i-check"/></svg>One click opens the email, file or page behind the answer</li>
+          <li><svg><use href="#i-check"/></svg>Says plainly when something isn't in your information – and who might know</li>
+          <li><svg><use href="#i-check"/></svg>Spots conflicting information and prefers the most recent</li>
+          <li><svg><use href="#i-check"/></svg>Search everything, or just emails, the calendar, Slack or social media</li>
+        </ul></div>
+      <div class="frame"><img src="/static/site/img/ask-answer.png" alt="A question about a customer contract, answered with the email it came from" loading="lazy" width="2110" height="465"></div>
+    </div>
+  </section>
+
+  <section class="block" style="padding-top:0">
+    <div class="wrap split rev">
+      <div class="text"><span class="eyebrow">Connection hub</span>
+        <h2>All your sources in one place – clearly connected.</h2>
+        <p class="lead">See at a glance what's connected, how much has been learned, and what needs attention. Connect anything new with one click.</p>
+        <ul>
+          <li><svg><use href="#i-check"/></svg>Gmail, Outlook, calendars, Google Drive and OneDrive</li>
+          <li><svg><use href="#i-check"/></svg>Slack channels and WhatsApp Business conversations</li>
+          <li><svg><use href="#i-check"/></svg>Facebook, Instagram, YouTube and LinkedIn – posts, likes, views and followers</li>
+          <li><svg><use href="#i-check"/></svg>Your website, documents, spreadsheets and recordings</li>
+        </ul></div>
+      <div class="frame"><img src="/static/site/img/hub.png" alt="The Connection hub showing each source with its logo and status" loading="lazy" width="2110" height="1115"></div>
+    </div>
+  </section>
+
+  <section class="block tinted">
+    <div class="wrap">
+      <div class="head"><span class="eyebrow">Everything included</span><h2>Built for how small and growing businesses actually work.</h2></div>
+      <div class="features">
+        <div class="feature"><span class="ico"><svg><use href="#i-people"/></svg></span><h3>Access by department</h3><p>Sales sees sales, HR sees HR. Permissions are checked before anything reaches the AI, so private information stays private.</p></div>
+        <div class="feature"><span class="ico"><svg><use href="#i-learn"/></svg></span><h3>Learning Center</h3><p>An onboarding path for new employees. They see only what you choose, in order, and you see how far they got.</p></div>
+        <div class="feature"><span class="ico"><svg><use href="#i-mic"/></svg></span><h3>Employee interviews</h3><p>Record a conversation with your most experienced people. It becomes searchable know-how that stays when they're not around.</p></div>
+        <div class="feature"><span class="ico"><svg><use href="#i-chart"/></svg></span><h3>Social media numbers</h3><p>"What was our last Instagram post?" "How many likes did we get last week?" Answered from your real accounts.</p></div>
+        <div class="feature"><span class="ico"><svg><use href="#i-eye"/></svg></span><h3>See what people ask</h3><p>A dashboard of the questions your team asks, by department and person – and the ones nobody could answer, so you know what's missing.</p></div>
+        <div class="feature"><span class="ico"><svg><use href="#i-refresh"/></svg></span><h3>Always up to date</h3><p>Sources are checked automatically. Ask about this morning's email or yesterday's post – it's already there.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="teams">
+    <div class="wrap">
+      <div class="head"><span class="eyebrow">For every team</span><h2>One place every team can ask.</h2></div>
+      <div class="teams">
+        <div class="team"><b>Sales</b><div class="bubble">What did we offer Cohen Towers, and when does the contract renew?</div></div>
+        <div class="team"><b>Customer service</b><div class="bubble">What's our policy when a customer cancels after the technician left?</div></div>
+        <div class="team"><b>Operations</b><div class="bubble">Which supplier do we call for boiler parts, and what's their lead time?</div></div>
+        <div class="team"><b>HR and onboarding</b><div class="bubble">What should a new technician read in their first week?</div></div>
+        <div class="team"><b>Marketing</b><div class="bubble">Which Instagram post did best this month, and what did people comment?</div></div>
+        <div class="team"><b>Management</b><div class="bubble">What was decided about the Haifa expansion, and who's handling it?</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block dark" id="security">
+    <div class="wrap">
+      <div class="head"><span class="eyebrow" style="color:#7ea2ff">Security and privacy</span><h2>Your information stays yours.</h2>
+        <p class="lead">Designed from day one for real company data.</p></div>
+      <div class="sec-grid">
+        <div class="sec"><svg><use href="#i-eye"/></svg><div><h3>Reads only</h3><p>KnowledgeDesk never sends, posts, edits or deletes anything in your accounts.</p></div></div>
+        <div class="sec"><svg><use href="#i-people"/></svg><div><h3>Permissions enforced first</h3><p>Each person can only get answers from information their department is allowed to see. New employees see only their learning path.</p></div></div>
+        <div class="sec"><svg><use href="#i-lock"/></svg><div><h3>Encrypted sign-ins</h3><p>Connections use each provider's official sign-in. Access keys are stored encrypted and can be disconnected at any time.</p></div></div>
+        <div class="sec"><svg><use href="#i-file"/></svg><div><h3>Not used for training</h3><p>Answers are written by a leading AI model under business terms – your data is not used to train it.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="faq">
+    <div class="wrap">
+      <div class="head"><span class="eyebrow">Questions</span><h2>Frequently asked</h2></div>
+      <div class="faq">
+        <details><summary>Which tools can I connect?</summary><p>Gmail, Google Calendar, Google Drive, Outlook mail and calendar, OneDrive, Slack, WhatsApp Business, Facebook Pages, Instagram, YouTube, LinkedIn (by import), any website, and files: PDF, Word, Excel, PowerPoint, text, emails and audio or video recordings. Personal and group WhatsApp chats can be imported from the phone.</p></details>
+        <details><summary>Do employees see everything?</summary><p>No. You decide who can find each source – everyone, or specific departments. Answers are built only from what the person asking is allowed to see. New employees can be limited to the Learning Center only.</p></details>
+        <details><summary>How long does it take to set up?</summary><p>Most businesses connect their main accounts and website in under an hour. Importing runs in the background, and you can start asking right away.</p></details>
+        <details><summary>Does it work in Hebrew?</summary><p>Yes. Ask in Hebrew or English and the answer comes back in the language you asked in – even when the sources are in the other language.</p></details>
+        <details><summary>Will it make things up?</summary><p>It's built not to. It answers only from your information, shows the source for every fact, and says plainly when it couldn't find something.</p></details>
+        <details><summary>What does it cost?</summary><p>A simple monthly plan, starting with small teams and growing with you. We're onboarding our first customers now – talk to us for early access.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="wrap">
+      <div class="cta-box">
+        <h2>Give your team the answers they're looking for.</h2>
+        <p>Connect your first source in minutes and ask your first question today.</p>
+        <div class="hero-ctas"><a class="btn ghost" style="background:#fff;color:#1d3fb8;border-color:#fff" href="/">Open KnowledgeDesk <svg><use href="#i-arrow"/></svg></a>
+          <a class="btn ghost" href="https://by1labs.com" target="_blank" rel="noopener">Talk to us</a></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="logo" href="#top" style="font-size:15px"><span class="logo-mark" style="width:24px;height:24px;font-size:13px;border-radius:6px">K</span>KnowledgeDesk</a>
+    <span>A product by <a href="https://by1labs.com" target="_blank" rel="noopener">BY1 Labs</a> · © <span id="year">2026</span></span>
+    <span><a href="#how">How it works</a> · <a href="#security">Security</a> · <a href="/">Log in</a></span>
+  </div>
+</footer>
+
+<script>
+  // Service logos (same marks as in the product)
+  const L = {
+    Gmail: '<path fill="#4285F4" d="M3.5 19h3V11L2 7.6v9.9c0 .8.7 1.5 1.5 1.5z"/><path fill="#34A853" d="M17.5 19h3c.8 0 1.5-.7 1.5-1.5V7.6L17.5 11z"/><path fill="#FBBC04" d="M17.5 5.5V11L22 7.6V6.3c0-1.7-1.9-2.6-3.2-1.6z"/><path fill="#EA4335" d="M6.5 11V5.5L12 9.6l5.5-4.1V11L12 15.1z"/><path fill="#C5221F" d="M2 6.3v1.3L6.5 11V5.5L5.2 4.7C3.9 3.7 2 4.6 2 6.3z"/>',
+    "Google Calendar": '<rect x="3" y="3" width="18" height="18" rx="2.5" fill="#fff" stroke="#4285F4" stroke-width="1.6"/><path fill="#4285F4" d="M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v2H3z"/><path fill="#EA4335" d="M17 21l4-4h-4z"/><text x="12" y="17.6" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="8" fill="#1A73E8">31</text>',
+    "Google Drive": '<path fill="#FBBC04" d="M8.3 3h7.4L22 14h-7.4z"/><path fill="#34A853" d="M8.3 3 12 9.4 5.7 20.5 2 14z"/><path fill="#4285F4" d="M5.7 20.5 9.4 14H22l-3.7 6.5z"/>',
+    Outlook: '<rect x="2" y="4" width="20" height="16" rx="3" fill="#0A64C9"/><ellipse cx="9" cy="12" rx="3.4" ry="4" fill="none" stroke="#fff" stroke-width="2"/><path d="M14.5 9h5M14.5 12h5M14.5 15h5" stroke="#9DCBFF" stroke-width="1.6"/>',
+    OneDrive: '<path fill="#0364B8" d="M10 8.2a5.2 5.2 0 0 1 9.4 2.4 3.7 3.7 0 0 1-.6 7.4H6.6A4.4 4.4 0 0 1 5.8 9.3 5.2 5.2 0 0 1 10 8.2z"/><path fill="#28A8EA" d="M10 8.2a5.2 5.2 0 0 1 9.4 2.4L12 13.8 5.8 9.3A5.2 5.2 0 0 1 10 8.2z" opacity=".85"/>',
+    Slack: '<g transform="scale(.444)"><path fill="#E01E5A" d="M19.7 34.2a5.4 5.4 0 1 1-5.4-5.4h5.4zm2.7 0a5.4 5.4 0 1 1 10.8 0v13.5a5.4 5.4 0 1 1-10.8 0z"/><path fill="#36C5F0" d="M27.8 19.7a5.4 5.4 0 1 1 5.4-5.4v5.4zm0 2.7a5.4 5.4 0 1 1 0 10.8H14.3a5.4 5.4 0 1 1 0-10.8z"/><path fill="#2EB67D" d="M34.3 27.8a5.4 5.4 0 1 1 5.4 5.4h-5.4zm-2.7 0a5.4 5.4 0 1 1-10.8 0V14.3a5.4 5.4 0 1 1 10.8 0z"/><path fill="#ECB22E" d="M26.2 34.3a5.4 5.4 0 1 1-5.4 5.4v-5.4zm0-2.7a5.4 5.4 0 1 1 0-10.8h13.5a5.4 5.4 0 1 1 0 10.8z"/></g>',
+    WhatsApp: '<path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/><path fill="#fff" d="M8.9 7.3c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.3.3-.9.9-.9 2.2s.9 2.6 1.1 2.7c.1.2 1.8 2.9 4.5 3.9 2.2.9 2.7.7 3.1.7.5 0 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.6-.3l-1.8-.9c-.3-.1-.5-.1-.7.1-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.5-1.5-1.8-.1-.3 0-.4.1-.6l.4-.5.3-.5v-.5z"/>',
+    Facebook: '<circle cx="12" cy="12" r="11" fill="#1877F2"/><path fill="#fff" d="M13.4 21.9v-7.3h2.4l.4-2.9h-2.8V9.9c0-.8.3-1.4 1.4-1.4h1.5V6a19 19 0 0 0-2.2-.1c-2.2 0-3.7 1.3-3.7 3.8v2.1H8v2.9h2.4v7.3z"/>',
+    Instagram: '<defs><linearGradient id="igs" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".65" stop-color="#D62976"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs><rect x="1" y="1" width="22" height="22" rx="6" fill="url(#igs)"/><rect x="5.5" y="5.5" width="13" height="13" rx="4" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="16.4" cy="7.6" r="1" fill="#fff"/>',
+    YouTube: '<rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#FF0000"/><path fill="#fff" d="M10 8.8v6.4l5.5-3.2z"/>',
+    LinkedIn: '<rect x="1" y="1" width="22" height="22" rx="4" fill="#0A66C2"/><path fill="#fff" d="M5.5 9.5h2.8V18H5.5zM6.9 5.3a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM10 9.5h2.7v1.2c.4-.7 1.3-1.4 2.7-1.4 2.9 0 3.4 1.9 3.4 4.3V18H16v-3.9c0-.9 0-2.1-1.3-2.1s-1.5 1-1.5 2V18H10z"/>',
+  };
+  const row = document.getElementById("logo-row");
+  row.innerHTML = Object.entries(L).map(([name, svg]) => `<span class="logo-chip"><svg viewBox="0 0 24 24" aria-hidden="true">${svg}</svg>${name}</span>`).join("") +
+    '<span class="logo-chip"><svg viewBox="0 0 24 24" style="color:#475467"><use href="#i-globe"/></svg>Websites</span>' +
+    '<span class="logo-chip"><svg viewBox="0 0 24 24" style="color:#475467"><use href="#i-file"/></svg>PDF, Word, Excel, recordings</span>';
+  document.getElementById("year").textContent = new Date().getFullYear();
+  const header = document.querySelector("header");
+  addEventListener("scroll", () => header.classList.toggle("scrolled", scrollY > 8), { passive: true });
+</script>
+</body>
+</html>
