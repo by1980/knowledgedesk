@@ -360,3 +360,9 @@ def test_overview_counts_only_what_user_can_see(client):
     nobody = login(client, "nodept@test.local", "password-123")
     mine = client.get("/api/overview", headers=nobody).json()
     assert mine["total"] < o["total"]  # department-only items are not counted for someone outside those departments
+
+
+def test_masked_api_key_is_explained(client):
+    admin = login(client, "admin@test.local", "admin-pass-123")
+    r = client.put("/api/admin/ai-key", headers=admin, json={"key": "sk-ant-u" + "•" * 90 + "WwAA"})
+    assert r.status_code == 400 and "hidden dots" in r.json()["detail"]

@@ -838,6 +838,10 @@ def ai_key_save(body: KeyIn, _: dict = Depends(auth.admin_user)):
     seen = f"{key[:14]}…{key[-4:]}, {len(key)} characters" if len(key) > 20 else f"{len(key)} characters"
     if not key.startswith("sk-ant-"):
         raise HTTPException(400, f"That doesn't look like a Claude API key (received: {seen}). It starts with sk-ant-.")
+    if any(ch in key for ch in "•*…●") or not key.isascii():
+        raise HTTPException(400, "This key contains hidden dots (•) instead of letters – it was copied from a place that "
+                                 "hides keys, such as a chat. Copy it again directly from console.anthropic.com "
+                                 "(create a new key if needed).")
     try:
         anthropic.Anthropic(api_key=key).messages.count_tokens(
             model=settings.llm_model, messages=[{"role": "user", "content": "ok"}])
