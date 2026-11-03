@@ -259,7 +259,8 @@
         <div class="card" id="ai-card">
           <div class="toolbar"><h2>Claude API key</h2><span id="ai-state"></span></div>
           <p class="muted small">Answers are written by Claude. Create a key at console.anthropic.com → API Keys, then paste it here. It's tested before it's saved, and stored encrypted.</p>
-          <form id="ai-form" class="inline-form"><input name="key" type="password" placeholder="sk-ant-…" autocomplete="off" aria-label="Claude API key">
+          <form id="ai-form" class="inline-form" autocomplete="off"><input name="key" type="text" placeholder="Paste your key here – it starts with sk-ant-" autocomplete="off"
+            spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" aria-label="Claude API key">
             <button class="btn primary" type="submit">Save and test</button></form>
           <p class="error" id="ai-error" role="alert"></p>
         </div>

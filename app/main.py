@@ -54,7 +54,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.6"
+APP_VERSION = "0.6.1"
 
 
 def _ensure_secret_key() -> None:
@@ -834,14 +834,16 @@ def ai_key_status(_: dict = Depends(auth.admin_user)):
 def ai_key_save(body: KeyIn, _: dict = Depends(auth.admin_user)):
     import anthropic
 
-    key = body.key.strip()
+    key = "".join(body.key.split())  # drop spaces and line breaks picked up while copying
+    seen = f"{key[:14]}…{key[-4:]}, {len(key)} characters" if len(key) > 20 else f"{len(key)} characters"
     if not key.startswith("sk-ant-"):
-        raise HTTPException(400, "That doesn't look like a Claude API key. It starts with sk-ant-.")
+        raise HTTPException(400, f"That doesn't look like a Claude API key (received: {seen}). It starts with sk-ant-.")
     try:
         anthropic.Anthropic(api_key=key).messages.count_tokens(
             model=settings.llm_model, messages=[{"role": "user", "content": "ok"}])
     except anthropic.AuthenticationError:
-        raise HTTPException(400, "Claude didn't accept this key. Check that you copied all of it, or create a new one.")
+        raise HTTPException(400, f"Claude didn't accept this key (received: {seen}). Check that it's the whole key, "
+                                 "or create a new one.")
     except anthropic.APIStatusError as e:
         raise HTTPException(400, f"Claude answered with an error: {e.message}")
     except anthropic.APIConnectionError:

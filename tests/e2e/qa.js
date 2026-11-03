@@ -250,7 +250,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#health-download")]);
   check("Health: report can be downloaded", /knowledgedesk-health/.test(download.suggestedFilename()));
   await page.fill("#ai-form input[name=key]", "hello"); await page.click("#ai-form button");
-  check("Claude API key: a wrong key gets a clear message", await until(async () => /doesn't look like a Claude API key/.test(await text("#ai-error")), 5000, 200));
+  check("Claude API key: a wrong key gets a clear message", await until(async () => /doesn.t look like a Claude API key \(received: 5 characters\)/.test(await text("#ai-error")), 5000, 200));
   await shot("settings");
 
   // ------------------------------------------------------------------ 13. Disconnect
