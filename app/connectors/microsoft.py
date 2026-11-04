@@ -97,7 +97,7 @@ def sync_calendar(sync: Sync) -> None:
                               for a in ev.get("attendees", [])],
                 "description": ev.get("bodyPreview"),
             })
-    calendar_ics.save_months(sync, calendar_ics.group_by_month(events))
+    calendar_ics.save(sync, events)
 
 
 # ------------------------------------------------------------------ OneDrive

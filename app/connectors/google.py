@@ -116,7 +116,7 @@ def sync_gcal(sync: Sync) -> None:
                 page = data.get("nextPageToken")
                 if not page:
                     break
-    calendar_ics.save_months(sync, calendar_ics.group_by_month(events))
+    calendar_ics.save(sync, events)
 
 
 # ------------------------------------------------------------------ Google Drive

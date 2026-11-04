@@ -21,12 +21,18 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const go = async (p) => { await page.evaluate((x) => { location.hash = "#" + x; }, p); await sleep(400); };
   const consoleErrors = [];
   page.on("pageerror", (e) => consoleErrors.push("pageerror: " + e.message));
+  // A code error caught by the app shows as an error message: count those too
+  await page.exposeFunction("__errToast", (m) => { if (/is not defined|Cannot (read|set) properties|is not a function|undefined|\bnull\b/.test(m)) consoleErrors.push("error message: " + m); });
+  await page.addInitScript(() => new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => {
+    if (n.classList?.contains("toast") && n.classList.contains("bad")) window.__errToast(n.textContent);
+  }))).observe(document, { childList: true, subtree: true }));
   page.on("console", (m) => { if (m.type() === "error" && !/401|Failed to load resource/.test(m.text())) consoleErrors.push(m.text()); });
   let shotN = 0;
   const shot = async (name, full = true) => page.screenshot({ path: path.join(OUT, `${String(++shotN).padStart(2, "0")}-${name}.png`), fullPage: full });
   const text = async (sel) => (await page.textContent(sel)) || "";
   const noOverflow = async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   const emojisOnPage = async () => page.evaluate(() => (document.body.innerText.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}]/gu) || []).join(""));
+  const navNames = async () => (await page.$$eval("#nav a[data-page] > span", (as) => as.map((a) => a.textContent))).join(",");
   const toastSeen = async (re) => until(async () => re.test(await page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "))), 8000, 200);
 
   // ------------------------------------------------------------------ 1. Login
@@ -38,31 +44,33 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("login-error");
   await page.fill("input[name=password]", "admin-pass-123"); await page.click("#login-form button");
   await page.waitForSelector("#app-view:not(.hidden)");
-  check("Admin lands on Home", /#home|\/app$/.test(page.url()) && await page.isVisible("#page-home"));
-  check("Home greets by first name, guessed from the email when no name is set", await until(async () => /^Hi Admin/.test((await text("#home-title")).trim()), 5000, 200));
+  check("Admin lands on Today", /#today|\/app$/.test(page.url()) && await page.isVisible("#page-today"));
+  check("Today greets by first name, guessed from the email when no name is set", await until(async () => /, Admin$/.test((await text("#today-title")).trim()), 5000, 200));
+  check("Today: meetings and what needs attention", /Needs your attention[\s\S]*Meetings today/.test(await text("#page-today")));
+  check("Today: no calendar yet, offers to connect one", await until(async () => /Connect your calendar/.test(await text("#today-meetings")), 5000, 200));
+  check("Today: setup checklist for a new admin (0 of 3)", await until(async () => (await text("#today-setup")).includes("0 of 3 done"), 8000, 300));
+  check("Today: no alert box when nothing is broken", (await text("#today-health")).trim() === "");
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
-  check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
+  check("My account: saving my name updates the greeting", await until(async () => /, Yaniv$/.test((await text("#today-title")).trim()), 5000, 200));
   await page.click("#dialog[open] [data-close]");
-  check("Admin sidebar: New chat, then every page, then recent chats", /^\s*New chat/.test(await text("#nav"))
-    && (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Home,Chat,Brain,Sources,People,Learning Center,Health,Settings" && /Recent chats[\s\S]*See all/.test(await text("#nav")));
+  check("Admin sidebar: New chat, then every page, no recent chats", /^\s*New chat/.test(await text("#nav"))
+    && (await navNames()) === "Today,Chat,Brain,Sources,People,Insights,Learning Center,Health,Settings" && !/Recent chats/.test(await text("#nav")));
   check("Sidebar has no switch: it stays the same on every page", !(await page.$("#mode-switch")));
   await go("ask");
-  check("Sidebar is the same on the chat page", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Home,Chat,Brain,Sources,People,Learning Center,Health,Settings");
+  check("Sidebar is the same on the chat page", (await navNames()) === "Today,Chat,Brain,Sources,People,Insights,Learning Center,Health,Settings");
   await go("home");
 
-  // ------------------------------------------------------------------ 2. Home on first use
-  await until(async () => (await text("#home-setup")).includes("0 of 3"), 10000, 300);
-  check("Home shows the setup checklist (0 of 3)", (await text("#home-setup")).includes("0 of 3 done"));
+  // ------------------------------------------------------------------ 2. Insights on first use
+  await until(async () => /things Cortex knows/.test(await text("#home-kpis")), 10000, 300);
   check("Home: four numbers in plain words", /things Cortex knows[\s\S]*new items learned this week[\s\S]*questions asked this week[\s\S]*of questions answered/.test(await text("#home-kpis")));
-  check("Home: every chart says what question it answers", /Is your team using Cortex\?[\s\S]*What Cortex couldn't answer[\s\S]*What Cortex knows[\s\S]*Who asks the most/.test(await text("#page-home")));
+  check("Home: every chart says what question it answers", /Questions per day[\s\S]*What Cortex couldn't answer[\s\S]*What Cortex knows[\s\S]*Who asks the most/.test(await text("#page-home")));
   check("Home: empty chart explains itself", /No questions yet/.test(await text("#home-q-chart")));
-  check("Home: no alert box when nothing is broken", (await text("#home-health")).trim() === "");
   check("Home: no 'Not your name?' link", !/Not your name/.test(await text("#page-home")));
   await shot("home-first-use");
 
   // ------------------------------------------------------------------ 3. Ask before anything is connected
   await go("ask");
-  check("Ask page explains nothing can be searched yet", await until(async () => /Nothing can be searched yet/.test(await text("#chat-hello")), 5000, 200));
+  check("Ask page says to connect a source first", await until(async () => /Connect your first source/.test(await text("#chat-hello")), 5000, 200));
   check("…and offers to connect a source", await page.isVisible("#chat-hello a[href='#sources']"));
 
   // ------------------------------------------------------------------ 4. Connect Google
@@ -95,12 +103,31 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const gtext = await text(`${g} .account`);
   check("Gmail: all 30 emails imported despite a Google slow-down", /30 emails searchable/.test(gtext), gtext);
   check("Drive: protected file is skipped and explained, not an error", /Skipped 1 item: Locked contract: can't be downloaded/.test(gtext) && !/Needs attention/.test(gtext), gtext);
-  check("Calendar: counted in events (3), not months", /3 events searchable/.test(gtext), gtext);
+  check("Calendar: counted in events (4), not months", /4 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
+  await go("today");
+  check("Today: today's meeting from the calendar", await until(async () => /Pricing call with Levi Gardens/.test(await text("#today-meetings")), 10000, 300), await text("#today-meetings"));
+  check("Today: coming up lists the next days", /Weekly team meeting/.test(await text("#today-soon")));
+  await page.click("#today-refresh");
+  check("Today: an email waiting for a reply, with its source and a Draft reply button", await until(async () => /Reply to Support[\s\S]*Ramat Aviv/.test(await text("#today-alerts"))
+    && /Draft reply/.test(await text("#today-alerts")), 20000, 500), await text("#today-alerts"));
+  check("Today: the sidebar shows how many things need attention", /^[1-9]/.test(await text("[data-count=today]")));
+  await shot("today");
+  const before = (await page.$$("#today-alerts .alert-card")).length;
+  await page.click("#today-alerts .alert-card >> nth=0 >> [data-state=later]");
+  check("Today: Later hides it until tomorrow", await until(async () => (await page.$$("#today-alerts .alert-card")).length === before - 1, 4000, 200));
+  await page.click("#today-meetings [data-prep] >> nth=0");
+  check("Today: Prepare me opens the chat with the request", await until(async () => /Prepare me for my meeting "Pricing call with Levi Gardens"/.test(await text("#messages")), 5000, 200));
+  await page.waitForSelector(".msg.bot .msg-actions", { timeout: 30000 });
+  await go("sources");
   check("Sources: no 'Ask a question' button on this page", !/Ask a question/.test(await text("#page-sources")));
-  check("Sources: explains who sees what (Only me, Teams, Everyone)", /Only me[\s\S]*Teams[\s\S]*Everyone/.test(await text("#page-sources .circles-guide")));
+  check("Sources: no explainer cards, one short line", !(await page.$(".circles-guide")) && /Each tile shows who can find it/.test(await text("#page-sources .page-head")));
+  check("Sources: each connected tile shows who can find it", /Only you|Everyone/.test(await text("[data-tile=gmail] .tile-circle")));
+  await page.click("[data-tile=gmail] .tile-circle");
+  check("Sources: clicking the label opens 'Who can find Gmail?'", await until(async () => /Who can find Gmail\?/.test(await text("#dialog[open] h2")), 3000, 200));
+  await page.click("#dialog[open] [data-close]");
   await until(async () => /Connected/.test(await text("[data-tile=gmail]")), 15000, 500);
-  check("Connection hub: named 'Connection hub'", /Connection hub/.test(await text("#overview-card h2")));
+  check("Sources hub: named 'All sources'", /All sources/.test(await text("#overview-card h2")));
   check("Connection hub: unconnected Outlook tile has a Connect button", await page.isVisible("[data-tile=ms_mail] [data-connect-tile]"));
   const scrollBefore = await page.evaluate(() => window.scrollY);
   await page.click("[data-tile=ms_mail] [data-connect-tile]");
@@ -130,9 +157,9 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click(`${g} [data-items]`);
   await page.waitForSelector("#dialog[open] .list-row");
   check("'View items' lists the imported emails", (await page.$$("#dialog[open] .list-row")).length === 15);
-  check("…with paging (30 emails)", /1–15 of 30/.test(await text("#dialog[open] .pager")));
+  check("…with paging (30 emails)", /1 to 15 of 30/.test(await text("#dialog[open] .pager")));
   await page.click("#dialog[open] [data-next]"); await sleep(500);
-  check("…and the next page works", /16–30 of 30/.test(await text("#dialog[open] .pager")));
+  check("…and the next page works", /16 to 30 of 30/.test(await text("#dialog[open] .pager")));
   await page.fill("#dialog[open] [data-q]", "Levi"); await sleep(800);
   check("…and search inside the items works", (await page.$$("#dialog[open] .list-row")).length === 1);
   await shot("view-items", false);
@@ -413,8 +440,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("Team member lands on the chat, with New chat in the sidebar", !(await page.isHidden("#page-ask")) && /New chat/.test(await text("#nav")));
-  check("Team member sidebar: Chat, Brain, My sources and Learning Center", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Chat,Brain,My sources,Learning Center");
+  check("Team member lands on Today, with New chat in the sidebar", !(await page.isHidden("#page-today")) && /New chat/.test(await text("#nav")));
+  check("Team member sidebar: Today, Chat, Brain, My sources and Learning Center", (await navNames()) === "Today,Chat,Brain,My sources,Learning Center");
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
@@ -448,7 +475,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "noa@acme.test"); await page.fill("input[name=password]", "noa-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("New employee sidebar: only the Learning Center and Chat", (await page.$$eval("#nav a[data-page]:not(.recent-head a)", (as) => as.map((a) => a.textContent))).join(",") === "Learning Center,Chat");
+  check("New employee sidebar: only the Learning Center and Chat", (await navNames()) === "Learning Center,Chat");
   check("New employee lands on the Learning Center with the path and note", await until(async () => !(await page.isHidden("#page-learning"))
     && /Interview - Moshe/.test(await text("#learn-list")) && /read this first/.test(await text("#learn-list")) && /0 of 1/.test(await text("#learn-progress")), 8000, 300));
   check("New employee doesn't see admin buttons", !(await page.isVisible("#learn-add")) && !(await page.isVisible("#learn-people-card")));
@@ -468,8 +495,9 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "admin@acme.test"); await page.fill("input[name=password]", "admin-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  await until(async () => /Items in the knowledge base/.test(await text("#home-kpis")), 10000, 300);
-  check("Home: setup checklist complete (hidden)", (await text("#home-setup")).trim() === "");
+  check("Today: setup checklist complete (hidden)", await until(async () => /Needs your attention/.test(await text("#page-today")), 8000, 300) && (await text("#today-setup")).trim() === "");
+  await go("home");
+  await until(async () => /things Cortex knows/.test(await text("#home-kpis")), 10000, 300);
   check("Home: questions-per-day chart drawn", await until(async () => (await page.$$("#home-q-chart svg path, #home-q-chart svg rect:not(.hit)")).length > 0, 5000, 300));
   check("Home: questions by person shows who asked", /Yaniv Barak/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
   check("Home: What Cortex knows lists the apps with their counts", /Gmail[\s\S]*30/.test(await text("#home-knows")));
@@ -519,7 +547,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 14. Phone layout
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ["home", "ask", "sources", "people", "learning", "conversations", "brain", "health", "settings"]) {
+  for (const p of ["today", "home", "ask", "sources", "people", "learning", "conversations", "brain", "health", "settings"]) {
     await go(p); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
     const emojis = await emojisOnPage();
@@ -537,11 +565,11 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Marketing page: Do shows a finished task", await until(async () => /Briefing ready/.test(await text("#out")), 8000, 300));
   await page.click("#tabs .tab >> nth=4");
   check("Marketing page: team tabs switch the example", /Instagram/.test(await text("#team")));
-  check("Marketing page: See how it works opens the dashboard", (await page.getAttribute(".ctas .btn.glow", "href")) === "/app#home");
+  check("Marketing page: See how it works opens the dashboard", (await page.getAttribute(".ctas .btn.glow", "href")) === "/app");
   check("Marketing page: no small labels above headlines", (await page.$$(".tag, .badge, .num")).length === 0);
   check("Marketing page: no dashes in the text", !/[–—]/.test(await page.evaluate(() => document.body.innerText)));
   check("Marketing page: product screenshots load", await page.evaluate(async () => (await Promise.all([...document.images].map((i) => fetch(i.src).then((r) => r.ok && /image/.test(r.headers.get("content-type")))))).every(Boolean)));
-  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/app#home");
+  check("Marketing page: buttons lead to the product", (await page.getAttribute(".nav-cta .btn", "href")) === "/app");
   await page.setViewportSize({ width: 390, height: 844 });
   check("Marketing page fits a phone screen", await noOverflow());
   check("Dashboard links back to the website (login page and sidebar)", (await (await page.request.get(APP + "/app")).text()).includes('id="to-website" class="side-link" href="/"'));

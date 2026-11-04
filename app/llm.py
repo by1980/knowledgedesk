@@ -87,7 +87,9 @@ buttons, so don't add instructions about clicking. Use [[file:N]] only for file 
 with its date and who it was from and to. Only when the user asks for several items, or for "all" of something, list \
 them, newest first. Each source has a date and, for emails, from/to/cc.
 - When asked to write something (a summary, a briefing, a reply or email draft, a checklist), write it in full from the \
-sources, ready to use, with citations.
+sources, ready to use, with citations. For an email, write one line "To: name <address>" (the address from the sources), one line "Subject: ...", \
+an empty line, then the email itself, without citations inside it. Cortex never sends email: the person sends it \
+from their own mail app.
 - Start with the direct answer in the first sentence; details after. Reply in the same language the question was \
 written in. Be concise and practical: short paragraphs, numbered steps for procedures."""
 
@@ -231,3 +233,53 @@ def plan_search(question: str, history: list[dict], company: str = "", website: 
                 log.info("Search plan: %s", plan)
                 return plan
     return None
+
+
+BRIEF_TOOL = {
+    "name": "attention_list",
+    "description": "The few things this person should act on soon, each tied to the items it comes from.",
+    "input_schema": {"type": "object", "properties": {"alerts": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
+        "kind": {"type": "string", "enum": ["reply", "send", "renew", "follow_up", "prepare", "deadline"],
+                 "description": "reply: someone is waiting for their answer. send: they promised to send something. renew: a contract, "
+                                "subscription or agreement ends or renews soon. follow_up: a conversation went quiet and should be chased. "
+                                "prepare: a meeting soon that needs preparation. deadline: something is due."},
+        "title": {"type": "string", "description": "Short and specific, e.g. 'Reply to Dima about the website proposal'."},
+        "why": {"type": "string", "description": "One plain sentence: why this needs attention now."},
+        "due": {"type": "string", "description": "YYYY-MM-DD if a date is known, else empty."},
+        "person": {"type": "string", "description": "Who it is about, if anyone."},
+        "source_ids": {"type": "array", "items": {"type": "integer"}, "description": "ids of the items this comes from."},
+        "action": {"type": "string", "description": "The request to give the assistant to help, e.g. 'Draft a reply to Dima's email about the "
+                                                    "website proposal, confirming the price and asking when they want to start.'"}},
+        "required": ["kind", "title", "why", "source_ids", "action"]}}}, "required": ["alerts"]},
+}
+BRIEF_SYSTEM = ("You are a sharp chief of staff. From the person's recent emails, documents and meetings, pick only the few things they "
+                "truly need to act on: questions waiting for their answer, things they promised to send, renewals and contract ends "
+                "coming up, conversations they should chase, meetings worth preparing. Skip newsletters, notifications, receipts, "
+                "marketing mail and anything already answered (a later email from them in the same thread means it was answered). "
+                "Never invent anything: every item must come from the ids given. Fewer, important items beat many. "
+                "Write in the language of the items. Do not use dashes as punctuation.")
+
+
+def briefing(name: str, company: str, addresses: list[str], items: list[dict], meetings: list[dict]) -> list[dict]:
+    """The 'needs your attention' list, made by the AI from what this person may see."""
+    from datetime import date
+
+    def line(i):
+        m = i["metadata"] or {}
+        head = f"[id {i['id']}] {i['kind']} | {i['at']:%Y-%m-%d} | {i['title']}"
+        if i["kind"] == "email":
+            head += f" | from: {m.get('from', '')} | to: {m.get('to', '')}"
+        return head + "\n" + (i["text"] or "")[:900]
+
+    cal = "\n".join(f"- {e['starts_at']:%Y-%m-%d %H:%M} UTC {e['title']} (with {', '.join(e['attendees'][:6]) or 'no one listed'})"
+                    for e in meetings) or "(none)"
+    body = (f"Today is {date.today():%Y-%m-%d}. The person is {name}" + (f" at {company}" if company else "") +
+            f". Their own addresses: {', '.join(addresses) or 'unknown'} (emails from these were sent by them).\n\n"
+            f"Meetings in the next week:\n{cal}\n\nItems:\n\n" + "\n\n".join(line(i) for i in items))
+    r = client().messages.create(model=settings.llm_model, max_tokens=3000, system=BRIEF_SYSTEM, tools=[BRIEF_TOOL],
+                                 tool_choice={"type": "tool", "name": "attention_list"},
+                                 messages=[{"role": "user", "content": body[:120000]}], timeout=90)
+    for block in r.content:
+        if block.type == "tool_use":
+            return list(block.input.get("alerts") or [])
+    return []

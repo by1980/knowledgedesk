@@ -169,3 +169,30 @@ ALTER TABLE oauth_accounts ADD COLUMN IF NOT EXISTS owner_id INT REFERENCES user
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS owner_id INT REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS private BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS allowed_emails TEXT[];
+
+-- v0.11: proactive. Each calendar event as its own row (linked to its month's document, so it follows the same
+-- circle), and each person's "needs your attention" briefing.
+CREATE TABLE IF NOT EXISTS events (
+    id          BIGSERIAL PRIMARY KEY,
+    connector_id INT NOT NULL REFERENCES connectors(id) ON DELETE CASCADE,
+    document_id INT REFERENCES documents(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL DEFAULT '',
+    starts_at   TIMESTAMPTZ NOT NULL,
+    ends_at     TIMESTAMPTZ,
+    all_day     BOOLEAN NOT NULL DEFAULT FALSE,
+    location    TEXT,
+    organizer   TEXT,
+    attendees   TEXT[] NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS events_start ON events(starts_at);
+CREATE TABLE IF NOT EXISTS briefings (
+    user_id     INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    alerts      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS alert_states (
+    user_id     INT REFERENCES users(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,
+    until       TIMESTAMPTZ,            -- NULL = done for good; a time = snoozed until then
+    PRIMARY KEY (user_id, key)
+);

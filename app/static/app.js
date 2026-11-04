@@ -134,43 +134,22 @@ function docBadge(d) {
 }
 
 // ================================================================== start, login, navigation
-// One sidebar that never changes: New chat, the pages, then your recent chats (like other AI chat apps)
+// One sidebar that never changes: New chat, then the pages
 const NAV = {
-  admin: [["home", "Home", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
-    ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
-  member: [["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["mine", "My sources", "sources"], ["learning", "Learning Center", "learn"]],
+  admin: [["today", "Today", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
+    ["home", "Insights", "activity"], ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
+  member: [["today", "Today", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["mine", "My sources", "sources"], ["learning", "Learning Center", "learn"]],
   learner: [["learning", "Learning Center", "learn"], ["ask", "Chat", "ask"]],   // new employees: only their learning path
 };
-const HOME_PAGE = { admin: "home", member: "ask", learner: "learning" };
+const HOME_PAGE = { admin: "today", member: "today", learner: "learning" };
 const navFor = (u) => NAV[u.role] || NAV.member;
-// every page a person may open (Conversations is reached from "See all" above the recent chats)
-const pagesFor = (u) => [...navFor(u), ["conversations", "Conversations", "chat"]];
+// every page a person may open (past chats open from the clock button in the chat)
+const pagesFor = (u) => [...navFor(u), ["conversations", "Past chats", "chat"]];
 function drawNav() {
   $("#nav").innerHTML = `<button type="button" class="nav-new" id="nav-new">${ic("plus")}<span>New chat</span></button>
-    ${navFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span></a>`).join("")}
-    <div class="recent-head"><span>Recent chats</span><a href="#conversations" data-page="conversations">See all</a></div>
-    <div class="chat-history" id="chat-history"></div>`;
+    ${navFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span><b class="nav-count hidden" data-count="${id}"></b></a>`).join("")}`;
   $("#nav-new").onclick = () => { if (location.hash !== "#ask") location.hash = "#ask"; setTimeout(newChat, 0); };
-  loadChatHistory();
-}
-// Your recent conversations, grouped like in other AI chats
-async function loadChatHistory() {
-  const box = $("#chat-history");
-  if (!box) return;
-  let rows = [];
-  try { rows = await getJSON("/api/conversations?limit=40"); } catch {}
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const groups = [["Today", 0], ["Yesterday", 1], ["Previous 7 days", 7], ["Previous 30 days", 30], ["Older", Infinity]];
-  const byGroup = new Map(groups.map(([g]) => [g, []]));
-  for (const c of rows) {
-    const d = new Date(c.updated_at); d.setHours(0, 0, 0, 0);
-    const age = Math.round((today - d) / 86400000);
-    byGroup.get(groups.find(([, max]) => age <= max)[0]).push(c);
-  }
-  box.innerHTML = rows.length ? [...byGroup].filter(([, list]) => list.length).map(([g, list]) => `<div class="hist-group">${g}</div>` +
-    list.map((c) => `<a href="#" class="hist ${chat.cid === c.id ? "active" : ""}" data-open-conv="${c.id}" title="${esc(c.title)}" dir="auto">${esc(c.title || "Conversation")}</a>`).join("")).join("")
-    : '<div class="hist-empty">Your conversations will appear here.</div>';
-  $$("[data-open-conv]", box).forEach((a) => a.onclick = (e) => { e.preventDefault(); openConversation(Number(a.dataset.openConv)).catch((err) => toast(err.message, true)); });
+  refreshTodayCount();
 }
 const ROLE_LABEL = { admin: "Admin", learner: "New employee" };
 const LOADERS = {};
@@ -270,7 +249,7 @@ $("#user-name").addEventListener("click", () => {
     try {
       await api("/api/me", { method: "PUT", json: { name: f.name.value } });
       me.name = f.name.value.trim(); drawMe(); toast("Name saved.");
-      if (location.hash === "#home" || !location.hash) LOADERS.home?.();
+      if (location.hash === "#today" || !location.hash) LOADERS.today?.();
     } catch (err) { $(".error", f).textContent = err.message; }
   });
   f.onsubmit = (e) => {
@@ -350,35 +329,121 @@ function hbarChart(rows, empty) {
     <span class="val">${num(r.n)}</span>`).join("")}</div></div>`;
 }
 
-// ================================================================== Home (admins)
-LOADERS.home = async function loadHome() {
-  const first = firstName(me);
-  $("#home-title").textContent = first ? `Hi ${first}` : "Home";
-  const days = Number($("#home-days").value);
-  const [setup, health, a] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health"), getJSON(`/api/admin/analytics?days=${days}`)]);
+// ================================================================== Today: your meetings and what needs you
+const ALERT_KIND = {
+  reply: ["mail", "Draft reply"], send: ["send", "Draft email"], renew: ["refresh", "Review"], follow_up: ["people", "Draft follow up"],
+  prepare: ["calendar", "Prepare me"], deadline: ["clock", "Help me"],
+};
+const timeOf = (d) => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const dayOf = (d) => new Date(d).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+// Start a new chat with this request, as if typed
+function askInChat(prompt) {
+  if (chat.busy) return toast("Wait for the current answer to finish.", true);
+  chat.history = []; chat.cid = null; $("#messages").innerHTML = ""; leaveWelcome();
+  location.hash = "#ask";
+  setTimeout(() => { qBox.value = prompt; $("#ask-form").requestSubmit(); }, 0);
+}
+function setNavCount(page, n) {
+  const el = $(`[data-count="${page}"]`);
+  if (el) { el.textContent = n > 9 ? "9+" : String(n || ""); el.classList.toggle("hidden", !n); }
+}
+async function refreshTodayCount() {
+  if (!me || me.role === "learner") return;
+  try { const t = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`); setNavCount("today", t.alerts.length); } catch {}
+}
+function meetingPrompt(e) {
+  const who = (e.attendees || []).slice(0, 8).join(", ");
+  return `Prepare me for my meeting "${e.title}" ${e.all_day ? `on ${dayOf(e.starts_at)}` : `at ${timeOf(e.starts_at)} on ${dayOf(e.starts_at)}`}${who ? ` with ${who}` : ""}: `
+    + "who they are, what we discussed with them before, what is still open, and what I should bring up.";
+}
+function meetingRow(e, withDay) {
+  const when = e.all_day ? "All day" : timeOf(e.starts_at);
+  const people = (e.attendees || []).length;
+  return `<div class="meeting">
+    <div class="m-time">${withDay ? `<span>${esc(dayOf(e.starts_at))}</span>` : ""}<b>${esc(when)}</b></div>
+    <div class="grow"><div class="m-title" dir="auto">${esc(e.title)}</div>
+      ${people || e.location ? `<div class="muted small">${[people ? plural(people, "person", "people") : "", e.location ? esc(e.location) : ""].filter(Boolean).join(" · ")}</div>` : ""}</div>
+    <button type="button" class="btn small" data-prep="${e.id}">${ic("brain")}Prepare me</button></div>`;
+}
+let todayData = null;
+LOADERS.today = async function loadToday() {
+  const t = todayData = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`);
+  $("#today-title").textContent = greeting();
+  $("#today-date").textContent = new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+  setNavCount("today", t.alerts.length);
+  if (me.role === "admin") drawAdminNotices().catch(() => {});
 
-  // Only things that are broken and need the admin. Work in progress and small notes live on the Health page.
+  $("#today-alerts").innerHTML = t.alerts.length ? t.alerts.map((a) => {
+    const [icon, label] = ALERT_KIND[a.kind] || ["info", "Help me"];
+    return `<div class="alert-card" data-key="${esc(a.key)}">
+      <span class="a-icon kind-${esc(a.kind)}">${ic(icon)}</span>
+      <div class="grow">
+        <div class="a-title" dir="auto">${esc(a.title)}${a.due ? ` <span class="pill">${esc(dayOf(a.due))}</span>` : ""}</div>
+        <div class="a-why muted" dir="auto">${esc(a.why || "")}</div>
+        ${(a.sources || []).length ? `<div class="a-src">${a.sources.map((d) => `<a href="#" data-doc="${d.id}" title="Open">${ic(KIND_ICON[d.kind] || "file")}<span>${esc(d.title)}</span></a>`).join("")}</div>` : ""}
+      </div>
+      <div class="a-actions">
+        <button type="button" class="btn small primary" data-act>${label}</button>
+        <button type="button" class="icon-btn" data-state="done" title="Done" aria-label="Done">${ic("tick")}</button>
+        <button type="button" class="icon-btn" data-state="later" title="Remind me tomorrow" aria-label="Later">${ic("clock")}</button>
+      </div></div>`;
+  }).join("") : `<div class="empty-state">${ic("check")}<span>${t.refreshing ? "Checking your emails and documents…" : "Nothing needs you right now."}</span></div>`;
+  $("#today-updated").textContent = t.refreshing ? "Checking…" : t.updated_at ? `Updated ${timeOf(t.updated_at)}` : "";
+
+  const soon = t.meetings_soon.slice(0, 5);
+  const noCalendar = !t.meetings_today.length && !t.meetings_soon.length;
+  $("#today-meetings").innerHTML = t.meetings_today.length ? t.meetings_today.map((e) => meetingRow(e, false)).join("")
+    : `<div class="empty-state small">${ic("calendar")}<span>${noCalendar ? `No meetings found. <a href="${me.role === "admin" ? "#sources" : "#mine"}">Connect your calendar</a>` : "No meetings today."}</span></div>`;
+  $("#today-soon-card").classList.toggle("hidden", !soon.length);
+  $("#today-soon").innerHTML = soon.map((e) => meetingRow(e, true)).join("");
+
+  const all = [...t.meetings_today, ...t.meetings_soon];
+  $$("#page-today [data-prep]").forEach((b) => b.onclick = () => askInChat(meetingPrompt(all.find((e) => String(e.id) === b.dataset.prep))));
+  $$("#today-alerts .alert-card").forEach((card) => {
+    const a = t.alerts.find((x) => x.key === card.dataset.key);
+    $("[data-act]", card).onclick = () => askInChat(a.action || a.title);
+    $$("[data-state]", card).forEach((b) => b.onclick = async () => {
+      card.classList.add("leaving");
+      try { await api(`/api/today/alerts/${a.key}`, { method: "POST", json: { action: b.dataset.state } }); } catch (err) { toast(err.message, true); }
+      todayData.alerts = todayData.alerts.filter((x) => x.key !== a.key);
+      setTimeout(() => { card.remove(); setNavCount("today", todayData.alerts.length);
+        if (!todayData.alerts.length) $("#today-alerts").innerHTML = `<div class="empty-state">${ic("check")}<span>Nothing needs you right now.</span></div>`; }, 200);
+      toast(b.dataset.state === "done" ? "Marked done." : "We'll remind you tomorrow.");
+    });
+  });
+  if (t.refreshing) poll(LOADERS.today, 3000);
+};
+$("#today-refresh").addEventListener("click", async () => {
+  const b = $("#today-refresh"); b.disabled = true;
+  try { await api("/api/today/refresh", { method: "POST" }); await LOADERS.today(); } catch (err) { toast(err.message, true); }
+  b.disabled = false;
+});
+// Admins: things that are broken, and the first steps, at the top of Today
+async function drawAdminNotices() {
+  const [setup, health] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health")]);
   const FIX = { ai: ["#health", "Fix it"], sources: ["#sources", "Open Sources"], license: ["#settings", "Open Settings"] };
   const broken = health.checks.filter((c) => c.state === "bad");
-  $("#home-health").innerHTML = !broken.length ? "" : `<div class="health-banner bad">${ic("error")}<div class="grow">
-      <b>${broken.length === 1 ? "Something needs your attention" : "Some things need your attention"}</b>
+  $("#today-health").innerHTML = !broken.length ? "" : `<div class="health-banner bad">${ic("error")}<div class="grow">
+      <b>${broken.length === 1 ? "Something isn't working" : "Some things aren't working"}</b>
       <ul>${broken.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul></div>
       <a class="btn" href="${(FIX[broken[0].id] || ["#health"])[0]}">${(FIX[broken[0].id] || ["", "See details"])[1]}</a></div>`;
-  const issues = broken;
-
   const steps = [
-    [setup.has_sources, "Connect your company's information", "Email, calendar, Drive, Slack, your website, documents.", "#sources", "Connect sources"],
-    [setup.has_team, "Add your team", "Create departments and add the people who will ask questions.", "#people", "Add people"],
-    [setup.has_asked, "Ask your first question", "See how Cortex answers from your own information.", "#ask", "Ask a question"],
+    [setup.has_sources, "Connect your company's information", "#sources", "Connect sources"],
+    [setup.has_team, "Add your team", "#people", "Add people"],
+    [setup.has_asked, "Ask your first question", "#ask", "Ask a question"],
   ];
   const done = steps.filter((x) => x[0]).length, nextIndex = steps.findIndex((x) => !x[0]);
-  $("#home-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
+  $("#today-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
       <span class="muted small">${done} of ${steps.length} done</span></div>
-    <ol class="steps">${steps.map(([ok, title, text, href, label], i) => `<li class="${ok ? "done" : ""}">
-      <span class="step-dot">${ok ? ic("tick") : i + 1}</span>
-      <div><div class="step-title"><b>${title}</b></div><div class="muted small">${text}</div></div>
+    <ol class="steps">${steps.map(([ok, title, href, label], i) => `<li class="${ok ? "done" : ""}">
+      <span class="step-dot">${ok ? ic("tick") : i + 1}</span><div><b>${title}</b></div>
       ${ok ? badge("ok", "Done") : `<a class="btn ${nextIndex === i ? "primary" : ""}" href="${href}">${label}</a>`}</li>`).join("")}</ol></div>`;
+}
 
+// ================================================================== Insights (admins)
+LOADERS.home = async function loadHome() {
+  const days = Number($("#home-days").value);
+  const a = await getJSON(`/api/admin/analytics?days=${days}`);
   const t = a.totals;
   const rate = t.asked_period ? Math.round((t.answered_period / t.asked_period) * 100) : null;
   const [brain, qs] = await Promise.all([getJSON("/api/brain"), getJSON("/api/admin/questions?limit=300")]);
@@ -390,9 +455,9 @@ LOADERS.home = async function loadHome() {
   const gaps = qs.questions.filter((q) => !q.found_sources || q.feedback === -1);
   const tiles = [
     ["brain", "#brain", num(t.searchable), "things Cortex knows", `From ${plural(brain.apps.length, "connected app", "connected apps")}`],
-    ["refresh", "#sources", num(t.added_week), "new items learned this week", `${num(t.added_today)} today. New items are added automatically.`],
+    ["refresh", "#sources", num(t.added_week), "new items learned this week", `${num(t.added_today)} today`],
     ["ask", "#conversations", num(askedWeek), "questions asked this week", trend(askedWeek, askedBefore) || `${num(t.asked_period)} in the last ${days} days`],
-    ["check", "#conversations", rate == null ? "–" : `${rate}%`, "of questions answered", rate == null ? "Shows once people start asking" : `In the last ${days} days`],
+    ["check", "#conversations", rate == null ? "0" : `${rate}%`, "of questions answered", rate == null ? "Once people start asking" : `In the last ${days} days`],
   ];
   $("#home-kpis").innerHTML = tiles.map(([, href, value, label, sub]) => `<a class="stat-tile" href="${href}">
       <span class="st-text"><span class="st-value">${value}</span> <span class="st-label">${label}</span>
@@ -427,7 +492,6 @@ LOADERS.home = async function loadHome() {
   $("#home-by-person").innerHTML = hbarChart(a.by_person, "No questions yet.");
   $("#home-by-dept").innerHTML = hbarChart(a.by_department, "No questions yet.");
   drawLearning(a);
-  if (issues.some((c) => c.state === "busy")) poll(LOADERS.home, 15000);
 };
 $("#home-days").addEventListener("change", () => LOADERS.home());
 
@@ -450,8 +514,7 @@ function drawLearning(a) {
       <div><div class="who">Uploaded files ${badge("ok", "Added")}</div><div class="meta">Documents, interviews and chats added by hand</div></div>
       <div class="right">Last added ${ago(a.uploads.last_new)}${a.uploads.added_today ? ` · <b>${num(a.uploads.added_today)}</b> today` : ""}</div></div>`);
   $("#home-learning").innerHTML = `<div class="learn-head"><div><h2>Keeping up to date</h2>
-      <p class="muted small" style="margin:0">Cortex checks your connected sources every ${a.check_every_minutes} minutes and adds anything new by itself –
-      you don't need to do anything. Each row shows when that source last brought in something new.</p></div>
+      <p class="muted small" style="margin:0">Checked every ${a.check_every_minutes} minutes.</p></div>
       <div class="learn-stats"><div><div class="big-number">${num(t.added_today)}</div><div class="muted small">new today</div></div>
       <div><div class="big-number">${num(t.added_week)}</div><div class="muted small">new this week</div></div></div></div>
     <div style="margin-top:12px">${rows.join("") || '<div class="empty">Nothing connected yet. <a href="#sources">Connect your first source</a></div>'}</div>
@@ -499,7 +562,7 @@ function drawWelcome(o) {
   const examples = Object.keys(EXAMPLES).filter((k) => o.ready[k]).map((k) => EXAMPLES[k]).slice(0, 4);
   $("#chat-hello").innerHTML = `<img src="/static/cortex.svg" alt="" class="hello-logo"><h1>${esc(greeting())}</h1>
     <p class="muted">${o.total ? "What would you like to know about the company?" : me.role === "admin"
-      ? 'Nothing can be searched yet. <a href="#sources">Connect your first source</a> and ask away.' : "Nothing can be searched yet. Your admin is still adding the company's information."}</p>`;
+      ? '<a href="#sources">Connect your first source</a> to start.' : "Your admin is still adding the company's information."}</p>`;
   $("#chat-suggest").innerHTML = examples.map((x) => `<button type="button">${esc(x)}</button>`).join("");
   $$("#chat-suggest button").forEach((b) => b.onclick = () => { qBox.value = b.textContent; $("#ask-form").requestSubmit(); });
 }
@@ -510,7 +573,6 @@ function leaveWelcome() {
 function newChat() {
   if (chat.busy) return;
   chat.history = []; chat.cid = null;
-  $$("#chat-history .hist.active").forEach((a) => a.classList.remove("active"));
   $("#messages").innerHTML = "";
   getJSON("/api/overview").then(drawWelcome).catch(() => drawWelcome({ ready: {}, total: 0 }));
   qBox.value = ""; qBox.style.height = "auto"; qBox.focus();
@@ -584,8 +646,21 @@ function scrollChat(force) {
   if (force || el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
 }
 // Under every answer: its sources as chips, then copy and feedback
+// An email draft in an answer: "To: ...", "Subject: ...", then the body
+function emailDraft(text) {
+  const clean = text.replace(/\[\[file:\d+\]\]\n?/g, "").replace(/\s*\[\d+\]/g, "").replace(/\*\*/g, "");
+  const subj = clean.match(/^\s*(?:Subject|נושא)\s*:\s*(.+)$/mi);
+  if (!subj) return null;
+  const to = clean.match(/^\s*(?:To|אל)\s*:\s*(.+)$/mi);
+  const after = clean.slice(subj.index + subj[0].length).replace(/^\s*\n/, "");
+  const bodyText = after.replace(/\n\s*```\s*$/, "").trim();
+  if (!bodyText) return null;
+  const addr = to ? (to[1].match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g) || []).join(",") : "";
+  return { to: addr, subject: subj[1].trim(), body: bodyText };
+}
 function finishBot(bot, text, sources, qid, feedback = null) {
   const body = $(".bot-body", bot);
+  const draft = emailDraft(text);
   const carded = new Set([...$$(".file-card [data-download]", body)].map((a) => a.dataset.doc));
   const cited = sources.filter((s) => text.includes(`[${s.n}]`) && !carded.has(String(s.document_id)));
   if (cited.length) body.insertAdjacentHTML("beforeend", `<div class="src-chips">${cited.map((s) => {
@@ -596,6 +671,12 @@ function finishBot(bot, text, sources, qid, feedback = null) {
       : `<a class="src-chip" href="#" data-doc="${s.document_id}" title="Open ${esc(s.title + (s.location ? ", " + s.location : ""))}">${label}</a>`;
     return ext && !s.url ? `<span class="src-file">${chip}<a class="src-dl" href="#" data-doc="${s.document_id}" data-download title="Download ${esc(s.filename)}" aria-label="Download ${esc(s.filename)}">${ic("download")}</a></span>` : chip;
   }).join("")}</div>`);
+  if (draft) body.insertAdjacentHTML("beforeend", `<div class="draft-actions">
+    <a class="btn small primary" href="mailto:${encodeURIComponent(draft.to).replace(/%2C/g, ",")}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}" data-open-mail>${ic("send")}Open in email</a>
+    <button type="button" class="btn small" data-copy-mail>${ic("copy")}Copy email</button></div>`);
+  if (draft) $("[data-copy-mail]", body).onclick = async () => {
+    try { await navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`); toast("Email copied."); } catch { toast("Select the text and copy it.", true); }
+  };
   body.insertAdjacentHTML("beforeend", `<div class="msg-actions">
     <button type="button" data-copy-answer title="Copy" aria-label="Copy">${ic("copy")}</button>
     ${qid ? `<button type="button" data-v="1" title="Helpful" aria-label="Helpful" class="${feedback === 1 ? "chosen" : ""}">${ic("up")}</button>
@@ -652,7 +733,6 @@ $("#ask-form").addEventListener("submit", async (e) => {
     return;
   }
   answerEl.innerHTML = renderAnswer(text, sources);
-  loadChatHistory();
   if (!/\[\[file:\d+\]\]/.test(text)) {
     const files = sources.filter((s) => isFile(s) && text.includes(`[${s.n}]`));
     if (files.length === 1) answerEl.insertAdjacentHTML("beforeend", fileCard(files[0]));
@@ -681,7 +761,7 @@ async function openConversation(id) {
     chat.history.push({ role: "user", content: m.question }, { role: "assistant", content: m.answer || "" });
   }
   location.hash = "#ask";
-  setTimeout(() => { scrollChat(true); loadChatHistory(); }, 50);
+  setTimeout(() => scrollChat(true), 50);
 }
 // Someone else's conversation (admins): read only
 function viewConversation(c) {
@@ -702,8 +782,7 @@ LOADERS.conversations = async function loadConversations() {
   $("#conv-gaps-label").classList.toggle("hidden", !admin || conv.scope !== "all");
   $("#q-stats").classList.toggle("hidden", !admin || conv.scope !== "all");
   $("#conv-intro").textContent = admin && conv.scope === "all"
-    ? "Everyone's conversations. Unanswered questions and thumbs down show what information is missing."
-    : "Your past chats with Cortex. Open one to continue where you left off.";
+    ? "Everyone's chats." : "";
   if (admin && conv.scope === "all") {
     const s = (await getJSON("/api/admin/questions?limit=1")).stats;
     $("#q-stats").innerHTML = [["Questions asked", s.total], ["This week", s.last_7_days], ["Helpful", s.helpful], ["Not helpful", s.not_helpful], ["No answer found", s.no_sources]]
@@ -728,7 +807,7 @@ LOADERS.conversations = async function loadConversations() {
     if (!await confirmBox({ title: "Delete this conversation?", text: "It will be removed from your conversations.", confirm: "Delete", danger: true })) return;
     await api(`/api/conversations/${b.dataset.delConv}`, { method: "DELETE" });
     if (chat.cid === Number(b.dataset.delConv)) { chat.cid = null; chat.history = []; $("#messages").innerHTML = ""; }
-    toast("Deleted."); LOADERS.conversations(); loadChatHistory();
+    toast("Deleted."); LOADERS.conversations();
   });
 };
 $$("#conv-scope button").forEach((b) => b.onclick = () => {
@@ -773,7 +852,7 @@ async function pagedDocs(container, params, { manage = false, pageSize = 25, emp
   const res = await api(`/api/documents?${q}`);
   const rows = await res.json(); const total = Number(res.headers.get("X-Total-Count") || rows.length);
   container.innerHTML = rows.length ? rows.map((d) => docRow(d, { manage })).join("") +
-    (total > pageSize ? `<div class="pager"><span>${num(state.offset + 1)}–${num(state.offset + rows.length)} of ${num(total)}</span><span class="row tight">
+    (total > pageSize ? `<div class="pager"><span>${num(state.offset + 1)} to ${num(state.offset + rows.length)} of ${num(total)}</span><span class="row tight">
       <button type="button" class="btn small" data-prev ${state.offset ? "" : "disabled"}>Newer</button>
       <button type="button" class="btn small" data-next ${state.offset + pageSize < total ? "" : "disabled"}>Older</button></span></div>` : "")
     : `<div class="empty">${esc(empty)}</div>`;
@@ -920,16 +999,50 @@ function tileState(type) {
   if (ks.some((k) => k.syncing || !k.last_sync || k.more || k.indexing)) return ["busy", "Importing", count ? `${plural(count, one, many)} so far` : ""];
   return ["ok", "Connected", plural(count, one, many)];
 }
+// Who can find a source, in two or three words. Several accounts with different circles: "Mixed".
+function circleLabel(list) {
+  const labels = [...new Set(list.map((k) => k.private ? "Only you" : k.company_wide ? "Everyone" : (k.departments || []).map((d) => d.name).join(", ") || "Admins only"))];
+  return labels.length === 1 ? labels[0] : "Mixed";
+}
+// Change who can find one or more connections (an account's mail, calendar and files together, or one source)
+function circleDialog(list, title, after) {
+  const k = list[0];
+  const f = openDialog(`<h2>${esc(title)}</h2>
+    <div data-vis>${visibilityPicker(k.departments.map((d) => d.id), k.company_wide, "Who can find it?", { only: k.private })}</div><p class="error" role="alert"></p>
+    <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Save</button></div>`);
+  $("[data-close]", f).onclick = closeDialog;
+  $("[data-save]", f).onclick = (e) => busy(e.target, "Saving…", async () => {
+    const v = readVisibility($("[data-vis]", f)); const err = visibilityError(v);
+    if (err) { $(".error", f).textContent = err; return; }
+    try {
+      for (const x of list) await api(`/api/connectors/${x.id}`, { method: "PUT", json: { type: x.type, name: x.name, config: {}, enabled: x.enabled, ...v } });
+      closeDialog(); toast("Saved."); after();
+    } catch (err2) { $(".error", f).textContent = err2.message; }
+  });
+}
+function tileConns(type) {
+  if (type === "whatsapp") return conns.filter((k) => k.type === "whatsapp_business");
+  return conns.filter((k) => k.type === type);
+}
+const CIRCLE_ICON = { "Only you": "lock", Everyone: "globe" };
 function drawTiles(uploads) {
   $("#overview-tiles").innerHTML = TILES.map(([type, label, icon, target]) => {
     let [state, text, count] = tileState(type);
     if (type === "uploads") [state, text, count] = uploads ? ["ok", "Added", plural(uploads, "file", "files")] : ["", "None yet", ""];
     const action = type === "uploads" ? "Upload" : type === "website" ? "Add" : type === "linkedin" ? "Import" : "Connect";
+    const ks = state ? tileConns(type) : [];
+    const who = ks.length ? circleLabel(ks) : "";
+    const circle = who ? `<button type="button" class="tile-circle" data-circle-tile="${type}" title="Who can find it. Click to change.">${ic(CIRCLE_ICON[who] || "people")}<span>${esc(who)}</span></button>` : "";
     return `<div class="tile ${state ? "" : "off"}" data-tile="${type}" data-target="${target}" role="button" tabindex="0">
-      ${brandTile(type, icon)}<span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}
+      ${brandTile(type, icon)}<span><b>${label}</b>${text ? badge(state, text) : ""}${count ? `<div class="count">${count}</div>` : ""}${circle}
       ${state ? "" : `<button type="button" class="btn small primary tile-connect" data-connect-tile="${type}">${action}</button>`}</span></div>`;
   }).join("");
   $$("#overview-tiles .tile").forEach((t) => t.onclick = (e) => {
+    const c = e.target.closest("[data-circle-tile]");
+    if (c) {
+      const label = TILES.find(([x]) => x === c.dataset.circleTile)[1];
+      return circleDialog(tileConns(c.dataset.circleTile), `Who can find ${label}?`, () => refreshSources());
+    }
     if (e.target.closest("[data-connect-tile]") || t.classList.contains("off")) return connectFromTile(t.dataset.tile);
     const el = document.getElementById(t.dataset.target) || $(`.provider-card[data-provider=${t.dataset.target}]`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1878,16 +1991,7 @@ LOADERS.mine = async function loadMine() {
   });
   $$("[data-mine-vis]").forEach((b) => b.onclick = () => {
     const k = rows.find((x) => x.id === Number(b.dataset.mineVis));
-    const f = openDialog(`<h2>Who can find your ${esc((SERVICE_INFO[k.type] || ["", k.name])[1])}?</h2>
-      <div data-vis>${visibilityPicker(k.departments.map((d) => d.id), k.company_wide, "Who can find it?", { only: k.private })}</div><p class="error" role="alert"></p>
-      <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-save>Save</button></div>`);
-    $("[data-close]", f).onclick = closeDialog;
-    $("[data-save]", f).onclick = (e) => busy(e.target, "Saving…", async () => {
-      const v = readVisibility($("[data-vis]", f)); const err = visibilityError(v);
-      if (err) { $(".error", f).textContent = err; return; }
-      try { await api(`/api/connectors/${k.id}`, { method: "PUT", json: { type: k.type, name: k.name, config: {}, enabled: k.enabled, ...v } }); closeDialog(); toast("Saved. This applies to everything already learned."); LOADERS.mine(); }
-      catch (err2) { $(".error", f).textContent = err2.message; }
-    });
+    circleDialog([k], `Who can find your ${(SERVICE_INFO[k.type] || ["", k.name])[1]}?`, () => LOADERS.mine());
   });
 };
 $$("[data-mine-connect]").forEach((b) => b.onclick = () => {

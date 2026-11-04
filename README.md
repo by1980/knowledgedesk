@@ -8,6 +8,16 @@ to see.
 
 ## What it does
 
+- **Today: it tells you what needs you.** Everyone (except new employees in training) starts on
+  Today: their meetings today and coming up, each with a **Prepare me** button, and **Needs your
+  attention**: emails waiting for their reply, things they promised to send, contracts and
+  renewals coming up, people to follow up with. Each item shows why, where it comes from, and
+  one button that gets the work started (usually an email draft). **Done** removes it, **Later**
+  brings it back tomorrow. The list is made by the AI from what that person is allowed to see,
+  refreshed every 4 hours or with **Refresh**. Nothing is invented: every item points to its source.
+- **Writes your emails, you send them.** An email draft in an answer gets **Open in email** (opens
+  your own mail app with the recipient, subject and text filled in) and **Copy email**. Cortex
+  itself never sends anything.
 - **Answers questions by department.** Each document belongs to one or more departments, or to
   everyone. Sales staff can never get answers built from HR files. This is enforced in the
   database search, before the AI ever sees anything.
@@ -92,7 +102,7 @@ The installer asks for the company name, admin login and Claude API key, creates
 random passwords, and starts everything with Docker. The first start downloads the AI models
 (a few GB). Then open `http://<server-ip>:8000/app` and log in as the admin (`http://<server-ip>:8000` is the Cortex website).
 
-**First setup in the app.** The **Home** page shows a 3-step checklist:
+**First setup in the app.** The **Today** page shows admins a 3-step checklist:
 1. **Sources:** connect Google or Microsoft accounts, add the website, and upload files,
    interviews or WhatsApp chats. Each source shows its status (⏳ Importing, ✓ N items
    searchable, or ⚠ a plain-English problem), and **View items** shows exactly what was imported.

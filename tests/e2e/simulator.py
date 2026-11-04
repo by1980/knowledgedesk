@@ -32,7 +32,7 @@ EMAILS = {
            "paid quarterly. Contact person: Yossi Levi, 050-1112233.\n\nOn Mon, Dana wrote:\n> old quoted text that should not matter", "Dana Cohen <dana@acme-plumbing.test>", 3),
     "g2": ("Supplier for heating elements", "From next month we order heating elements from Electra Parts only. Orders go out every Monday.",
            "Moshe <moshe@acme-plumbing.test>", 6),
-    "g3": ("Complaint – Ramat Aviv tower", "The customer at Ramat Aviv tower complained about a leak after our visit. Avi will go back on Thursday.",
+    "g3": ("Complaint – Ramat Aviv tower", "The customer at Ramat Aviv tower complained about a leak after our visit. Avi will go back on Thursday. Can you call the customer today to apologise?",
            "Support <support@acme-plumbing.test>", 1),
     "g4": ("מחירון חדש לשירות", "שלום, מחיר קריאת שירות עולה ל-280 ש\"ח החל מהחודש הבא. התקנת דוד שמש: 2,600 ש\"ח.", "Rina <rina@acme-plumbing.test>", 2),
 }
@@ -118,6 +118,8 @@ def cal_events():
     def at(days, hour):
         return (datetime.combine(TODAY + timedelta(days=days), datetime.min.time()) + timedelta(hours=hour)).isoformat() + "Z"
     return {"items": [
+        {"summary": "Pricing call with Levi Gardens", "start": {"dateTime": at(0, 15)}, "end": {"dateTime": at(0, 16)},
+         "attendees": [{"email": "yossi@levigardens.test"}]},
         {"summary": "Supplier visit – Electra Parts", "start": {"dateTime": at(2, 9)}, "end": {"dateTime": at(2, 10)}, "location": "Warehouse"},
         {"summary": "Weekly team meeting", "start": {"dateTime": at(1, 8)}, "end": {"dateTime": at(1, 9)}, "location": "Office",
          "attendees": [{"displayName": "Dana"}, {"displayName": "Avi"}]},

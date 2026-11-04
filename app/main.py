@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.11.0"
 
 
 def _ensure_secret_key() -> None:
@@ -323,6 +323,44 @@ def _title(question: str) -> str:
     """A short conversation title from its first question."""
     t = " ".join(question.split())
     return t if len(t) <= 80 else t[:77].rsplit(" ", 1)[0] + "…"
+
+
+# ---------------------------------------------------------------- today: meetings and what needs attention
+
+@app.get("/api/today")
+def get_today(user: dict = Depends(auth.current_user), tz: int = 0):
+    """Your meetings today and soon, and the things that need your attention. tz: the browser's getTimezoneOffset()."""
+    if user["role"] == "learner":
+        raise HTTPException(403, "Not available")
+    from . import briefing
+
+    data = briefing.today(user, max(-840, min(tz, 840)))
+    data["refreshing"] = briefing.refresh_in_background(user)
+    return data
+
+
+@app.post("/api/today/refresh")
+def refresh_today(user: dict = Depends(auth.current_user)):
+    if user["role"] == "learner":
+        raise HTTPException(403, "Not available")
+    from . import briefing
+
+    return {"refreshing": briefing.refresh_in_background(user, force=True)}
+
+
+class AlertState(BaseModel):
+    action: str = "done"
+
+
+@app.post("/api/today/alerts/{key}")
+def alert_state(key: str, body: AlertState, user: dict = Depends(auth.current_user)):
+    """Done (gone for good) or Later (back tomorrow)."""
+    if body.action not in ("done", "later") or not re.fullmatch(r"[0-9a-f]{16}", key):
+        raise HTTPException(400, "Unknown action")
+    from . import briefing
+
+    briefing.set_state(user, key, body.action)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- conversations
