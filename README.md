@@ -15,6 +15,12 @@ to see.
   one button that gets the work started (usually an email draft). **Done** removes it, **Later**
   brings it back tomorrow. The list is made by the AI from what that person is allowed to see,
   refreshed every 4 hours or with **Refresh**. Nothing is invented: every item points to its source.
+- **Remembers every date.** Cortex reads each contract, agreement, invoice and email once and remembers
+  the dates someone must act on: contract ends, renewals, the last day to give notice, payments due,
+  deadlines and promises ("I'll send it by Thursday"). Tasks shows them under **Key dates** ahead of
+  time (renewals 45 days before, notice 21, payments and deadlines 10, promises 5), each linked to its
+  source, with a button that gets the work started. Admins also get the end of the month, quarter and
+  year a little ahead.
 - **Writes your emails, you send them.** An email draft in an answer gets **Open in email** (opens
   your own mail app with the recipient, subject and text filled in) and **Copy email**. Cortex
   itself never sends anything.

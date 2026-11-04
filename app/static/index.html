@@ -51,6 +51,7 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></symbol>
+    <symbol id="i-money" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9.5v5M18 9.5v5"/></symbol>
     <symbol id="i-tasks" viewBox="0 0 24 24"><path d="m4 6.5 1.8 1.8L9 5M4 13.5l1.8 1.8L9 12M4 20.5l1.8 1.8"/><path d="M12 7h8M12 14h8M12 21h8"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-4 16-4-6.5z"/><path d="M12 13.5 20 4"/></symbol>
   </svg>
@@ -94,7 +95,10 @@
           <div class="row tight"><span class="muted small" id="today-updated"></span>
             <button class="btn" type="button" id="today-refresh" title="Check again"><svg class="ic"><use href="#i-refresh"/></svg>Refresh</button></div></div>
         <div class="today-grid">
-          <div class="card"><h2>Needs your attention</h2><div id="today-alerts" class="alerts"></div></div>
+          <div class="today-main">
+            <div class="card"><h2>Needs your attention</h2><div id="today-alerts" class="alerts"></div></div>
+            <div class="card" id="today-dates-card"><h2>Key dates</h2><div id="today-dates" class="alerts"></div></div>
+          </div>
           <div class="today-side">
             <div class="card"><h2>Meetings today</h2><div id="today-meetings"></div></div>
             <div class="card hidden" id="today-soon-card"><h2>Coming up</h2><div id="today-soon"></div></div>

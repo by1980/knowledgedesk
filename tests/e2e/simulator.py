@@ -150,7 +150,9 @@ def drive_export(fid: str):
 
 @app.get("/www.googleapis.com/drive/v3/files/{fid}")
 def drive_download(fid: str):
-    return Response(b"Price list: service call 250 NIS. Solar water heater installation 2,500 NIS. Pipe repair from 400 NIS.")
+    renew = TODAY + timedelta(days=20)
+    return Response(("Price list: service call 250 NIS. Solar water heater installation 2,500 NIS. Pipe repair from 400 NIS.\n"
+                     f"Our supplier agreement with Electra Parts renews automatically on {renew.day} {renew:%B %Y}.").encode())
 
 
 # ---------------------------------------------------------------- Microsoft Graph

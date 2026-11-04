@@ -65,9 +65,6 @@ def _heuristic(items: list[dict], mine: list[str]) -> list[dict]:
             who = re.sub(r"\s*<[^>]*>", "", meta.get("from", "")).strip() or "them"
             out.append({"kind": "reply", "title": f"Reply to {who} about {subject}", "why": f"{who} asked you something and hasn't had an answer yet.",
                         "due": "", "person": who, "source_ids": [i["id"]], "action": f"Draft a reply to {who}'s email \"{subject}\"."})
-        elif re.search(r"renew|renewal|contract|expir|חידוש|חוזה", text, re.I) and i["kind"] != "email":
-            out.append({"kind": "renew", "title": f"Check the renewal: {i['title']}", "why": "This mentions a contract or renewal.",
-                        "due": "", "person": "", "source_ids": [i["id"]], "action": f"Summarise the renewal terms and dates in \"{i['title']}\"."})
     return out[:8]
 
 
@@ -81,7 +78,10 @@ def compute(user: dict) -> list[dict]:
     if settings.fake_llm:
         alerts = _heuristic(items, mine)
     else:
-        alerts = llm.briefing(user.get("name") or user["email"], llm.company_name(), mine, items, meetings)
+        from . import dates
+
+        known = [f"{d['due']:%Y-%m-%d} {d['title']}" for d in dates.upcoming(user, datetime.now(timezone.utc).date())]
+        alerts = llm.briefing(user.get("name") or user["email"], llm.company_name(), mine, items, meetings, known)
     known = {i["id"] for i in items}
     clean = []
     for a in alerts or []:
@@ -169,7 +169,10 @@ def today(user: dict, tz_minutes: int = 0) -> dict:
         a["sources"] = [docs[s] for s in a.get("source_ids", []) if s in docs]
     def local_day(e):
         return e["starts_at"].date() if e["all_day"] else (e["starts_at"] - timedelta(minutes=tz_minutes)).date()
-    return {"date": local_date.isoformat(),
+    from . import dates
+
+    key_dates = [d for d in dates.rhythms(user, local_date) + dates.upcoming(user, local_date) if d["key"] not in states]
+    return {"date": local_date.isoformat(), "dates": key_dates,
             "meetings_today": [e for e in events if local_day(e) == local_date],
             "meetings_soon": [e for e in events if local_day(e) > local_date][:12],
             "alerts": alerts, "updated_at": row["created_at"] if row else None}

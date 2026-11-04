@@ -73,7 +73,7 @@ def process_document(doc_id: int) -> None:
                         [(doc_id, i, p, loc, v) for i, ((p, loc), v) in enumerate(zip(pieces, vectors))],
                     )
                 c.execute(
-                    "UPDATE documents SET status='ready', metadata=%s, updated_at=now() WHERE id=%s",
+                    "UPDATE documents SET status='ready', metadata=%s, updated_at=now(), dates_checked=NULL WHERE id=%s",
                     (json.dumps(meta), doc_id),
                 )
         log.info("Indexed %s (%d chunks)", doc["filename"], len(pieces))

@@ -111,6 +111,11 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await go("tasks");
   check("Tasks: today's meeting from the calendar", await until(async () => /Pricing call with Levi Gardens/.test(await text("#today-meetings")), 10000, 300), await text("#today-meetings"));
   check("Tasks: coming up lists the next days", /Weekly team meeting/.test(await text("#today-soon")));
+  check("Tasks: Key dates found a renewal inside a Drive document", await until(async () => { await page.evaluate(() => LOADERS.tasks()); return /Price list[\s\S]*In 20 days/.test(await text("#today-dates")); }, 60000, 3000), await text("#today-dates"));
+  await page.click("#today-dates .alert-card >> nth=0 >> [data-act]");
+  check("Tasks: Review asks the chat about the renewal", await until(async () => /renews on/.test(await text("#messages")), 5000, 200));
+  await page.waitForSelector(".msg.bot .msg-actions", { timeout: 30000 });
+  await go("tasks");
   let lastRefresh = 0;   // emails may still be importing: press Refresh again now and then, like a person would
   check("Tasks: an email waiting for a reply, with its source and a Draft reply button", await until(async () => {
     if (Date.now() - lastRefresh > 6000 && !(await page.isDisabled("#today-refresh"))) { lastRefresh = Date.now(); await page.click("#today-refresh"); }

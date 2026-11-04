@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.11.2"
+APP_VERSION = "0.12.0"
 
 
 def _ensure_secret_key() -> None:
@@ -355,7 +355,7 @@ class AlertState(BaseModel):
 @app.post("/api/today/alerts/{key}")
 def alert_state(key: str, body: AlertState, user: dict = Depends(auth.current_user)):
     """Done (gone for good) or Later (back tomorrow)."""
-    if body.action not in ("done", "later") or not re.fullmatch(r"[0-9a-f]{16}", key):
+    if body.action not in ("done", "later") or not re.fullmatch(r"[0-9a-z]{16}", key):
         raise HTTPException(400, "Unknown action")
     from . import briefing
 

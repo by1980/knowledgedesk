@@ -260,7 +260,8 @@ BRIEF_SYSTEM = ("You are a sharp chief of staff. From the person's recent emails
                 "Write in the language of the items. Do not use dashes as punctuation.")
 
 
-def briefing(name: str, company: str, addresses: list[str], items: list[dict], meetings: list[dict]) -> list[dict]:
+def briefing(name: str, company: str, addresses: list[str], items: list[dict], meetings: list[dict],
+             known_dates: list[str] | None = None) -> list[dict]:
     """The 'needs your attention' list, made by the AI from what this person may see."""
     from datetime import date
 
@@ -275,11 +276,58 @@ def briefing(name: str, company: str, addresses: list[str], items: list[dict], m
                     for e in meetings) or "(none)"
     body = (f"Today is {date.today():%Y-%m-%d}. The person is {name}" + (f" at {company}" if company else "") +
             f". Their own addresses: {', '.join(addresses) or 'unknown'} (emails from these were sent by them).\n\n"
-            f"Meetings in the next week:\n{cal}\n\nItems:\n\n" + "\n\n".join(line(i) for i in items))
+            f"Meetings in the next week:\n{cal}\n\n"
+            + ("Dates already shown to the person separately (do not repeat them):\n" + "\n".join(known_dates) + "\n\n" if known_dates else "")
+            + "Items:\n\n" + "\n\n".join(line(i) for i in items))
     r = client().messages.create(model=settings.llm_model, max_tokens=3000, system=BRIEF_SYSTEM, tools=[BRIEF_TOOL],
                                  tool_choice={"type": "tool", "name": "attention_list"},
                                  messages=[{"role": "user", "content": body[:120000]}], timeout=90)
     for block in r.content:
         if block.type == "tool_use":
             return list(block.input.get("alerts") or [])
+    return []
+
+
+DATES_TOOL = {
+    "name": "dated_commitments",
+    "description": "Dates in this item that someone will have to act on.",
+    "input_schema": {"type": "object", "properties": {"items": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
+        "kind": {"type": "string", "enum": ["renewal", "contract_end", "notice", "payment", "deadline", "promise"],
+                 "description": "renewal: a contract or subscription renews (often automatically). contract_end: an agreement, "
+                                "lease, licence, insurance or warranty ends. notice: the last day to cancel or give notice (work it "
+                                "out: end date minus the notice period). payment: money due on a date. deadline: something must be "
+                                "delivered or decided by a date. promise: someone said they would do or send something by a date."},
+        "title": {"type": "string", "description": "Short and specific, with who or what, e.g. 'Meridian Clinics retainer ends' or "
+                                                   "'Send Harbor Coffee the revised proposal'."},
+        "due": {"type": "string", "description": "YYYY-MM-DD. Resolve relative dates ('by Thursday', 'end of next month') "
+                                                 "against the item's own date."},
+        "person": {"type": "string", "description": "Who it is with or who must act, if known."},
+        "amount": {"type": "string", "description": "Money involved, if stated, e.g. '4,800 USD per month'."},
+        "quote": {"type": "string", "description": "The exact words from the item that show this date."}},
+        "required": ["kind", "title", "due", "quote"]}}}, "required": ["items"]},
+}
+DATES_SYSTEM = ("You read one business document or message and list the dates in it that someone will have to act on: "
+                "contract ends, renewals, the last day to give notice, payments due, deadlines and promises with a date. "
+                "Ignore dates that need no action (when a document was written or signed, past meetings, newsletters, "
+                "marketing offers, shipping notices) and anything already done. A promise needs a clear commitment "
+                "and a time ('I'll send it by Thursday'). Never guess a date that isn't stated or clearly implied. "
+                "If there is nothing, return an empty list. Write titles in the language of the item, without dashes as punctuation.")
+
+
+def extract_dates(text: str) -> list[dict]:
+    """The dated commitments in one document (fast model first, the main one if it isn't available)."""
+    if settings.fake_llm:
+        return []
+    c = client()
+    for model in dict.fromkeys([settings.planner_model, settings.llm_model]):
+        try:
+            r = c.messages.create(model=model, max_tokens=1500, system=DATES_SYSTEM, tools=[DATES_TOOL],
+                                  tool_choice={"type": "tool", "name": "dated_commitments"},
+                                  messages=[{"role": "user", "content": text}], timeout=60)
+        except (anthropic.NotFoundError, anthropic.BadRequestError, anthropic.PermissionDeniedError):
+            continue
+        for block in r.content:
+            if block.type == "tool_use":
+                return list(block.input.get("items") or [])
+        return []
     return []

@@ -90,7 +90,7 @@ def test_attention_list_keeps_only_real_sources_the_person_may_see(client, offic
         ids = {r["title"]: r["id"] for r in c.execute("SELECT id, title FROM documents WHERE title LIKE '%%Quorvex%%' OR title LIKE '%%newsletter%%'").fetchall()}
     seen = {}
 
-    def fake_briefing(name, company, addresses, items, meetings):
+    def fake_briefing(name, company, addresses, items, meetings, known_dates=None):
         seen["items"] = [i["title"] for i in items]
         seen["meetings"] = [m["title"] for m in meetings]
         seen["addresses"] = addresses
@@ -137,7 +137,7 @@ def test_test_mode_list_without_ai(client, office, monkeypatch):
     monkeypatch.setattr(settings, "fake_llm", True)
     alerts = briefing.compute(_user_row(office["rina_id"]))
     kinds = {a["kind"]: a for a in alerts}
-    assert "Dima" in kinds["reply"]["title"] and "renew" in kinds
+    assert "Dima" in kinds["reply"]["title"]
     assert not any("newsletter" in a["title"].lower() for a in alerts)
 
 

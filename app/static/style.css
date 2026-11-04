@@ -712,3 +712,12 @@ h2 { letter-spacing: -.01em; }
 a.round-btn { text-decoration: none; }
 @media (max-width: 900px) { .today-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .alert-card { flex-wrap: wrap; } .a-actions { width: 100%; padding-left: 44px; } }
+
+/* v0.12 key dates */
+.today-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.today-main .card { margin: 0; }
+.a-icon.kind-notice, .a-icon.kind-payment { background: var(--bad-soft); color: var(--bad); }
+.a-icon.kind-contract_end, .a-icon.kind-period { background: var(--busy-soft); color: var(--busy); }
+.a-icon.kind-promise { background: var(--accent-soft); color: var(--accent); }
+.pill-soon { background: var(--busy-soft); color: var(--busy); border-color: var(--busy-line); }
+.pill-late { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-line); }

@@ -347,7 +347,7 @@ function setNavCount(page, n) {
 }
 async function refreshTodayCount() {
   if (!me || me.role === "learner") return;
-  try { const t = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`); setNavCount("tasks", t.alerts.length); } catch {}
+  try { const t = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`); setNavCount("tasks", t.alerts.length + (t.dates || []).length); } catch {}
 }
 function meetingPrompt(e) {
   const who = (e.attendees || []).slice(0, 8).join(", ");
@@ -363,11 +363,62 @@ function meetingRow(e, withDay) {
       ${people || e.location ? `<div class="muted small">${[people ? plural(people, "person", "people") : "", e.location ? esc(e.location) : ""].filter(Boolean).join(" · ")}</div>` : ""}</div>
     <button type="button" class="btn small" data-prep="${e.id}">${ic("brain")}Prepare me</button></div>`;
 }
+// Key dates: what each kind means, its button, and the request that button gives the chat
+const DATE_KIND = {
+  renewal: ["refresh", "Renews", "Review", (d, when) => `"${d.title}" renews on ${when}. From the source, summarise the terms, the price and how to cancel or change it, and tell me what I should decide before then.`],
+  contract_end: ["file", "Ends", "Review", (d, when) => `"${d.title}" ends on ${when}. From the source, explain what happens when it ends and whether we should renew, and draft an email to the other side if action is needed.`],
+  notice: ["alert", "Last day for notice", "Draft notice", (d, when) => `The last day to give notice for "${d.title}" is ${when}. From the source, explain the notice terms and draft the notice email.`],
+  payment: ["money", "Payment due", "Check", (d, when) => `"${d.title}" is due on ${when}${d.amount ? ` (${d.amount})` : ""}. Check in our emails whether it was paid, and draft a reminder or a payment note.`],
+  deadline: ["clock", "Deadline", "Help me", (d, when) => `"${d.title}" is due on ${when}. From the source, tell me what is needed and what is still open.`],
+  promise: ["send", "You promised", "Do it now", (d, when) => `I promised: "${d.title}", by ${when}. Help me do it now: find what I need in our emails and documents and draft the email.`],
+  period: ["calendar", "Coming up", "Prepare", (d) => d.action],
+};
+function daysText(n) {
+  if (n === 0) return "Today";
+  if (n === 1) return "Tomorrow";
+  if (n < 0) return `${plural(-n, "day", "days")} overdue`;
+  return `In ${n} days`;
+}
+function drawDates(list) {
+  $("#today-dates-card").classList.toggle("hidden", !list.length);
+  $("#today-dates").innerHTML = list.map((d) => {
+    const [icon, label, button] = DATE_KIND[d.kind] || DATE_KIND.deadline;
+    return `<div class="alert-card" data-date-key="${esc(d.key)}">
+      <span class="a-icon kind-${esc(d.kind)}">${ic(icon)}</span>
+      <div class="grow">
+        <div class="a-title" dir="auto">${esc(d.title)} <span class="pill ${d.days < 0 ? "pill-late" : d.days <= 7 ? "pill-soon" : ""}">${esc(daysText(d.days))}</span></div>
+        <div class="a-why muted">${esc(label)} ${esc(dayOf(d.due))}${d.person ? ` · ${esc(d.person)}` : ""}${d.amount ? ` · ${esc(d.amount)}` : ""}</div>
+        ${d.doc_id ? `<div class="a-src"><a href="#" data-doc="${d.doc_id}" title="${esc(d.quote || "Open")}">${ic(KIND_ICON[d.doc_kind] || "file")}<span>${esc(d.doc_title)}</span></a></div>` : ""}
+      </div>
+      <div class="a-actions">
+        <button type="button" class="btn small primary" data-act>${button}</button>
+        <button type="button" class="icon-btn" data-state="done" title="Done" aria-label="Done">${ic("tick")}</button>
+        <button type="button" class="icon-btn" data-state="later" title="Remind me tomorrow" aria-label="Later">${ic("clock")}</button>
+      </div></div>`;
+  }).join("");
+  $$("#today-dates .alert-card").forEach((card) => {
+    const d = list.find((x) => x.key === card.dataset.dateKey);
+    const when = new Date(d.due + "T12:00:00").toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("[data-act]", card).onclick = () => askInChat((DATE_KIND[d.kind] || DATE_KIND.deadline)[3](d, when));
+    $$("[data-state]", card).forEach((b) => b.onclick = () => dismiss(card, d.key, b.dataset.state, () => {
+      todayData.dates = todayData.dates.filter((x) => x.key !== d.key);
+      if (!todayData.dates.length) $("#today-dates-card").classList.add("hidden");
+    }));
+  });
+}
+// Done or Later, for both lists
+async function dismiss(card, key, state, after) {
+  card.classList.add("leaving");
+  try { await api(`/api/today/alerts/${key}`, { method: "POST", json: { action: state } }); } catch (err) { toast(err.message, true); }
+  setTimeout(() => { card.remove(); after(); setNavCount("tasks", todayData.alerts.length + todayData.dates.length); }, 200);
+  toast(state === "done" ? "Marked done." : "We'll remind you tomorrow.");
+}
 let todayData = null;
 LOADERS.tasks = async function loadTasks() {
   const t = todayData = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`);
   $("#today-date").textContent = new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
-  setNavCount("tasks", t.alerts.length);
+  setNavCount("tasks", t.alerts.length + t.dates.length);
+  drawDates(t.dates);
 
   $("#today-alerts").innerHTML = t.alerts.length ? t.alerts.map((a) => {
     const [icon, label] = ALERT_KIND[a.kind] || ["info", "Help me"];
@@ -398,14 +449,10 @@ LOADERS.tasks = async function loadTasks() {
   $$("#today-alerts .alert-card").forEach((card) => {
     const a = t.alerts.find((x) => x.key === card.dataset.key);
     $("[data-act]", card).onclick = () => askInChat(a.action || a.title);
-    $$("[data-state]", card).forEach((b) => b.onclick = async () => {
-      card.classList.add("leaving");
-      try { await api(`/api/today/alerts/${a.key}`, { method: "POST", json: { action: b.dataset.state } }); } catch (err) { toast(err.message, true); }
+    $$("[data-state]", card).forEach((b) => b.onclick = () => dismiss(card, a.key, b.dataset.state, () => {
       todayData.alerts = todayData.alerts.filter((x) => x.key !== a.key);
-      setTimeout(() => { card.remove(); setNavCount("tasks", todayData.alerts.length);
-        if (!todayData.alerts.length) $("#today-alerts").innerHTML = `<div class="empty-state">${ic("check")}<span>Nothing needs you right now.</span></div>`; }, 200);
-      toast(b.dataset.state === "done" ? "Marked done." : "We'll remind you tomorrow.");
-    });
+      if (!todayData.alerts.length) $("#today-alerts").innerHTML = `<div class="empty-state">${ic("check")}<span>Nothing needs you right now.</span></div>`;
+    }));
   });
   if (t.refreshing) poll(LOADERS.tasks, 3000);
 };

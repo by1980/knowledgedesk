@@ -196,3 +196,21 @@ CREATE TABLE IF NOT EXISTS alert_states (
     until       TIMESTAMPTZ,            -- NULL = done for good; a time = snoozed until then
     PRIMARY KEY (user_id, key)
 );
+
+-- v0.12: the memory of dates and commitments. Every contract end, renewal, notice deadline, payment due and promise
+-- found in the company's documents and emails, so Cortex reminds the right person before it's too late.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS dates_checked SMALLINT;
+CREATE TABLE IF NOT EXISTS commitments (
+    id          BIGSERIAL PRIMARY KEY,
+    document_id INT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    due         DATE NOT NULL,
+    person      TEXT,
+    amount      TEXT,
+    quote       TEXT,
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS commitments_due ON commitments(due);
+CREATE INDEX IF NOT EXISTS commitments_doc ON commitments(document_id);
+CREATE INDEX IF NOT EXISTS documents_dates_todo ON documents(id) WHERE dates_checked IS NULL;

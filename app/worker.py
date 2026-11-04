@@ -91,6 +91,8 @@ def _connector_loop() -> None:
 def start() -> None:
     threading.Thread(target=_loop, name="indexer", daemon=True).start()
     threading.Thread(target=_connector_loop, name="connectors", daemon=True).start()
+    from . import dates
+    threading.Thread(target=dates.loop, name="dates", daemon=True).start()
 
 
 def rescan_now() -> int:
