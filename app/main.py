@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.12.1"
+APP_VERSION = "0.12.2"
 
 
 def _ensure_secret_key() -> None:

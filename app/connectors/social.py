@@ -194,8 +194,15 @@ def sync_youtube(sync: Sync) -> None:
                                   "tick YouTube.")
             raise
         if not channels:
-            raise SocialError("This Google account has no YouTube channel. Click Connect YouTube channel again and, on "
-                              "Google's page, choose the account or brand account that owns the channel.")
+            from ..db import conn as _conn
+
+            with _conn() as c:
+                row = c.execute("SELECT email FROM oauth_accounts WHERE id=%s", (int(sync.connector["config"]["account_id"]),)).fetchone()
+            who = (row or {}).get("email") or "This Google account"
+            raise SocialError(f"{who} has no YouTube channel of its own, so your channel is under another Google login or a "
+                              "Brand Account. To see which: open youtube.com, click your picture at the top right, then Switch "
+                              "account; the one showing your channel's name is the right one. Click Disconnect here, then "
+                              "Connect YouTube channel and choose that account on Google's page.")
         for ch in channels:
             uploads = ch.get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
             ids: list[str] = []
