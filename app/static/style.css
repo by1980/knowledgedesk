@@ -518,9 +518,7 @@ a.side-link { text-decoration: none; }
 .mode-switch button .ic { width: 17px; height: 17px; }
 .mode-switch button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(16,24,40,.12); }
 .mode-switch button:not(.on):hover { color: var(--text); }
-.nav-new { display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin-bottom: 4px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--surface);
   color: var(--text); font: 600 14px Inter, system-ui, sans-serif; cursor: pointer; box-shadow: var(--shadow); }
-.nav-new:hover { border-color: var(--accent); color: var(--accent); }
 .sidebar #nav { flex: 1; min-height: 0; overflow-y: auto; }
 
 /* ---------- Home: four numbers as plain sentences */
@@ -607,11 +605,9 @@ a.side-link { text-decoration: none; }
   .finder { grid-template-columns: 1fr; } .finder-side { display: none; } .finder-preview { width: 100%; }
   .finder-bar { flex-wrap: wrap; } .fl-date { display: none; }
   .mode-switch { order: 2; margin: 0; } .mode-switch button span { display: none; } .mode-switch button { width: 40px; }
-  .nav-new span { display: none; } .nav-new { margin: 0; padding: 6px 10px; }
 }
 
 /* one fixed sidebar: New chat, pages, recent chats */
-.sidebar .nav-new { margin: 10px 0 8px; }
 
 .knows { --series-1: #2a78d6; }
 @media (prefers-color-scheme: dark) { .knows { --series-1: #3987e5; } }

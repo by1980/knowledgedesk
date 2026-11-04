@@ -8,8 +8,8 @@ to see.
 
 ## What it does
 
-- **Today: it tells you what needs you.** Everyone (except new employees in training) starts on
-  Today: their meetings today and coming up, each with a **Prepare me** button, and **Needs your
+- **Tasks: it tells you what needs you.** On the Tasks page (where team members start; admins
+  start on Home) everyone sees their meetings today and coming up, each with a **Prepare me** button, and **Needs your
   attention**: emails waiting for their reply, things they promised to send, contracts and
   renewals coming up, people to follow up with. Each item shows why, where it comes from, and
   one button that gets the work started (usually an email draft). **Done** removes it, **Later**
@@ -102,7 +102,7 @@ The installer asks for the company name, admin login and Claude API key, creates
 random passwords, and starts everything with Docker. The first start downloads the AI models
 (a few GB). Then open `http://<server-ip>:8000/app` and log in as the admin (`http://<server-ip>:8000` is the Cortex website).
 
-**First setup in the app.** The **Today** page shows admins a 3-step checklist:
+**First setup in the app.** The **Home** page shows admins a 3-step checklist:
 1. **Sources:** connect Google or Microsoft accounts, add the website, and upload files,
    interviews or WhatsApp chats. Each source shows its status (⏳ Importing, ✓ N items
    searchable, or ⚠ a plain-English problem), and **View items** shows exactly what was imported.

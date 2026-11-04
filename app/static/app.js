@@ -136,19 +136,17 @@ function docBadge(d) {
 // ================================================================== start, login, navigation
 // One sidebar that never changes: New chat, then the pages
 const NAV = {
-  admin: [["today", "Today", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
-    ["home", "Insights", "activity"], ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
-  member: [["today", "Today", "home"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["mine", "My sources", "sources"], ["learning", "Learning Center", "learn"]],
+  admin: [["home", "Home", "home"], ["tasks", "Tasks", "tasks"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["sources", "Sources", "sources"], ["people", "People", "people"],
+    ["learning", "Learning Center", "learn"], ["health", "Health", "check"], ["settings", "Settings", "settings"]],
+  member: [["tasks", "Tasks", "tasks"], ["ask", "Chat", "ask"], ["brain", "Brain", "brain"], ["mine", "My sources", "sources"], ["learning", "Learning Center", "learn"]],
   learner: [["learning", "Learning Center", "learn"], ["ask", "Chat", "ask"]],   // new employees: only their learning path
 };
-const HOME_PAGE = { admin: "today", member: "today", learner: "learning" };
+const HOME_PAGE = { admin: "home", member: "tasks", learner: "learning" };
 const navFor = (u) => NAV[u.role] || NAV.member;
 // every page a person may open (past chats open from the clock button in the chat)
 const pagesFor = (u) => [...navFor(u), ["conversations", "Past chats", "chat"]];
 function drawNav() {
-  $("#nav").innerHTML = `<button type="button" class="nav-new" id="nav-new">${ic("plus")}<span>New chat</span></button>
-    ${navFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span><b class="nav-count hidden" data-count="${id}"></b></a>`).join("")}`;
-  $("#nav-new").onclick = () => { if (location.hash !== "#ask") location.hash = "#ask"; setTimeout(newChat, 0); };
+  $("#nav").innerHTML = `    ${navFor(me).map(([id, label, icon]) => `<a href="#${id}" data-page="${id}">${ic(icon)}<span>${label}</span><b class="nav-count hidden" data-count="${id}"></b></a>`).join("")}`;
   refreshTodayCount();
 }
 const ROLE_LABEL = { admin: "Admin", learner: "New employee" };
@@ -249,7 +247,7 @@ $("#user-name").addEventListener("click", () => {
     try {
       await api("/api/me", { method: "PUT", json: { name: f.name.value } });
       me.name = f.name.value.trim(); drawMe(); toast("Name saved.");
-      if (location.hash === "#today" || !location.hash) LOADERS.today?.();
+      if (location.hash === "#home" || !location.hash) LOADERS.home?.();
     } catch (err) { $(".error", f).textContent = err.message; }
   });
   f.onsubmit = (e) => {
@@ -329,7 +327,7 @@ function hbarChart(rows, empty) {
     <span class="val">${num(r.n)}</span>`).join("")}</div></div>`;
 }
 
-// ================================================================== Today: your meetings and what needs you
+// ================================================================== Tasks: your meetings and what needs you
 const ALERT_KIND = {
   reply: ["mail", "Draft reply"], send: ["send", "Draft email"], renew: ["refresh", "Review"], follow_up: ["people", "Draft follow up"],
   prepare: ["calendar", "Prepare me"], deadline: ["clock", "Help me"],
@@ -349,7 +347,7 @@ function setNavCount(page, n) {
 }
 async function refreshTodayCount() {
   if (!me || me.role === "learner") return;
-  try { const t = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`); setNavCount("today", t.alerts.length); } catch {}
+  try { const t = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`); setNavCount("tasks", t.alerts.length); } catch {}
 }
 function meetingPrompt(e) {
   const who = (e.attendees || []).slice(0, 8).join(", ");
@@ -366,12 +364,10 @@ function meetingRow(e, withDay) {
     <button type="button" class="btn small" data-prep="${e.id}">${ic("brain")}Prepare me</button></div>`;
 }
 let todayData = null;
-LOADERS.today = async function loadToday() {
+LOADERS.tasks = async function loadTasks() {
   const t = todayData = await getJSON(`/api/today?tz=${new Date().getTimezoneOffset()}`);
-  $("#today-title").textContent = greeting();
   $("#today-date").textContent = new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
-  setNavCount("today", t.alerts.length);
-  if (me.role === "admin") drawAdminNotices().catch(() => {});
+  setNavCount("tasks", t.alerts.length);
 
   $("#today-alerts").innerHTML = t.alerts.length ? t.alerts.map((a) => {
     const [icon, label] = ALERT_KIND[a.kind] || ["info", "Help me"];
@@ -398,7 +394,7 @@ LOADERS.today = async function loadToday() {
   $("#today-soon").innerHTML = soon.map((e) => meetingRow(e, true)).join("");
 
   const all = [...t.meetings_today, ...t.meetings_soon];
-  $$("#page-today [data-prep]").forEach((b) => b.onclick = () => askInChat(meetingPrompt(all.find((e) => String(e.id) === b.dataset.prep))));
+  $$("#page-tasks [data-prep]").forEach((b) => b.onclick = () => askInChat(meetingPrompt(all.find((e) => String(e.id) === b.dataset.prep))));
   $$("#today-alerts .alert-card").forEach((card) => {
     const a = t.alerts.find((x) => x.key === card.dataset.key);
     $("[data-act]", card).onclick = () => askInChat(a.action || a.title);
@@ -406,24 +402,24 @@ LOADERS.today = async function loadToday() {
       card.classList.add("leaving");
       try { await api(`/api/today/alerts/${a.key}`, { method: "POST", json: { action: b.dataset.state } }); } catch (err) { toast(err.message, true); }
       todayData.alerts = todayData.alerts.filter((x) => x.key !== a.key);
-      setTimeout(() => { card.remove(); setNavCount("today", todayData.alerts.length);
+      setTimeout(() => { card.remove(); setNavCount("tasks", todayData.alerts.length);
         if (!todayData.alerts.length) $("#today-alerts").innerHTML = `<div class="empty-state">${ic("check")}<span>Nothing needs you right now.</span></div>`; }, 200);
       toast(b.dataset.state === "done" ? "Marked done." : "We'll remind you tomorrow.");
     });
   });
-  if (t.refreshing) poll(LOADERS.today, 3000);
+  if (t.refreshing) poll(LOADERS.tasks, 3000);
 };
 $("#today-refresh").addEventListener("click", async () => {
   const b = $("#today-refresh"); b.disabled = true;
-  try { await api("/api/today/refresh", { method: "POST" }); await LOADERS.today(); } catch (err) { toast(err.message, true); }
+  try { await api("/api/today/refresh", { method: "POST" }); await LOADERS.tasks(); } catch (err) { toast(err.message, true); }
   b.disabled = false;
 });
-// Admins: things that are broken, and the first steps, at the top of Today
+// Admins: things that are broken, and the first steps, at the top of Home
 async function drawAdminNotices() {
   const [setup, health] = await Promise.all([getJSON("/api/admin/setup"), getJSON("/api/admin/health")]);
   const FIX = { ai: ["#health", "Fix it"], sources: ["#sources", "Open Sources"], license: ["#settings", "Open Settings"] };
   const broken = health.checks.filter((c) => c.state === "bad");
-  $("#today-health").innerHTML = !broken.length ? "" : `<div class="health-banner bad">${ic("error")}<div class="grow">
+  $("#home-health").innerHTML = !broken.length ? "" : `<div class="health-banner bad">${ic("error")}<div class="grow">
       <b>${broken.length === 1 ? "Something isn't working" : "Some things aren't working"}</b>
       <ul>${broken.map((c) => `<li><b>${esc(c.label)}:</b> ${esc(c.detail)}</li>`).join("")}</ul></div>
       <a class="btn" href="${(FIX[broken[0].id] || ["#health"])[0]}">${(FIX[broken[0].id] || ["", "See details"])[1]}</a></div>`;
@@ -433,15 +429,18 @@ async function drawAdminNotices() {
     [setup.has_asked, "Ask your first question", "#ask", "Ask a question"],
   ];
   const done = steps.filter((x) => x[0]).length, nextIndex = steps.findIndex((x) => !x[0]);
-  $("#today-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
+  $("#home-setup").innerHTML = done === steps.length ? "" : `<div class="card"><div class="toolbar"><h2>Get set up</h2>
       <span class="muted small">${done} of ${steps.length} done</span></div>
     <ol class="steps">${steps.map(([ok, title, href, label], i) => `<li class="${ok ? "done" : ""}">
       <span class="step-dot">${ok ? ic("tick") : i + 1}</span><div><b>${title}</b></div>
       ${ok ? badge("ok", "Done") : `<a class="btn ${nextIndex === i ? "primary" : ""}" href="${href}">${label}</a>`}</li>`).join("")}</ol></div>`;
 }
 
-// ================================================================== Insights (admins)
+// ================================================================== Home (admins)
 LOADERS.home = async function loadHome() {
+  const first = firstName(me);
+  $("#home-title").textContent = first ? `Hi ${first}` : "Home";
+  drawAdminNotices().catch(() => {});
   const days = Number($("#home-days").value);
   const a = await getJSON(`/api/admin/analytics?days=${days}`);
   const t = a.totals;

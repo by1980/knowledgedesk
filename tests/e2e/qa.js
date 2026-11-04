@@ -46,23 +46,24 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.waitForSelector("#app-view:not(.hidden)");
   check("After an update the browser always gets the new code (versioned, not cached)", (await page.$eval("script[src*='app.js']", (x) => x.getAttribute("src"))).includes("?v=")
     && /no-store/.test((await page.request.get(APP + "/app")).headers()["cache-control"] || ""));
-  check("Admin lands on Today", /#today|\/app$/.test(page.url()) && await page.isVisible("#page-today"));
-  check("Today greets by first name, guessed from the email when no name is set", await until(async () => /, Admin$/.test((await text("#today-title")).trim()), 5000, 200));
-  check("Today: meetings and what needs attention", /Needs your attention[\s\S]*Meetings today/.test(await text("#page-today")));
-  check("Today: no calendar yet, offers to connect one", await until(async () => /Connect your calendar/.test(await text("#today-meetings")), 5000, 200));
-  check("Today: setup checklist for a new admin (0 of 3)", await until(async () => (await text("#today-setup")).includes("0 of 3 done"), 8000, 300));
-  check("Today: no alert box when nothing is broken", (await text("#today-health")).trim() === "");
+  check("Admin lands on Home", /#home|\/app$/.test(page.url()) && await page.isVisible("#page-home"));
+  check("Home greets by first name, guessed from the email when no name is set", await until(async () => /^Hi Admin/.test((await text("#home-title")).trim()), 5000, 200));
+  check("Home: setup checklist for a new admin (0 of 3)", await until(async () => (await text("#home-setup")).includes("0 of 3 done"), 8000, 300));
+  check("Home: no alert box when nothing is broken", (await text("#home-health")).trim() === "");
   await page.click("#user-name"); await page.fill("#dialog[open] input[name=name]", "Yaniv Barak"); await page.click("#dialog[open] [data-save-name]");
-  check("My account: saving my name updates the greeting", await until(async () => /, Yaniv$/.test((await text("#today-title")).trim()), 5000, 200));
+  check("My account: saving my name updates the greeting", await until(async () => /^Hi Yaniv/.test((await text("#home-title")).trim()), 5000, 200));
   await page.click("#dialog[open] [data-close]");
-  check("Admin sidebar: New chat, then every page, no recent chats", /^\s*New chat/.test(await text("#nav"))
-    && (await navNames()) === "Today,Chat,Brain,Sources,People,Insights,Learning Center,Health,Settings" && !/Recent chats/.test(await text("#nav")));
+  check("Admin sidebar: Home first, no New chat button, no recent chats", !/New chat|Recent chats/.test(await text("#nav"))
+    && (await navNames()) === "Home,Tasks,Chat,Brain,Sources,People,Learning Center,Health,Settings");
   check("Sidebar has no switch: it stays the same on every page", !(await page.$("#mode-switch")));
   await go("ask");
-  check("Sidebar is the same on the chat page", (await navNames()) === "Today,Chat,Brain,Sources,People,Insights,Learning Center,Health,Settings");
+  check("Sidebar is the same on the chat page", (await navNames()) === "Home,Tasks,Chat,Brain,Sources,People,Learning Center,Health,Settings");
+  await go("tasks");
+  check("Tasks: what needs attention and meetings", await until(async () => /Tasks[\s\S]*Needs your attention[\s\S]*Meetings today/.test(await text("#page-tasks")), 5000, 200));
+  check("Tasks: no calendar yet, offers to connect one", await until(async () => /Connect your calendar/.test(await text("#today-meetings")), 5000, 200));
   await go("home");
 
-  // ------------------------------------------------------------------ 2. Insights on first use
+  // ------------------------------------------------------------------ 2. Home on first use
   await until(async () => /things Cortex knows/.test(await text("#home-kpis")), 10000, 300);
   check("Home: four numbers in plain words", /things Cortex knows[\s\S]*new items learned this week[\s\S]*questions asked this week[\s\S]*of questions answered/.test(await text("#home-kpis")));
   check("Home: every chart says what question it answers", /Questions per day[\s\S]*What Cortex couldn't answer[\s\S]*What Cortex knows[\s\S]*Who asks the most/.test(await text("#page-home")));
@@ -107,22 +108,22 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Drive: protected file is skipped and explained, not an error", /Skipped 1 item: Locked contract: can't be downloaded/.test(gtext) && !/Needs attention/.test(gtext), gtext);
   check("Calendar: counted in events (4), not months", /4 events searchable/.test(gtext), gtext);
   check("Google: button now says 'Connect another Google account'", /Connect another Google account/.test(await text(`${g} .pc-connect`)));
-  await go("today");
-  check("Today: today's meeting from the calendar", await until(async () => /Pricing call with Levi Gardens/.test(await text("#today-meetings")), 10000, 300), await text("#today-meetings"));
-  check("Today: coming up lists the next days", /Weekly team meeting/.test(await text("#today-soon")));
+  await go("tasks");
+  check("Tasks: today's meeting from the calendar", await until(async () => /Pricing call with Levi Gardens/.test(await text("#today-meetings")), 10000, 300), await text("#today-meetings"));
+  check("Tasks: coming up lists the next days", /Weekly team meeting/.test(await text("#today-soon")));
   let lastRefresh = 0;   // emails may still be importing: press Refresh again now and then, like a person would
-  check("Today: an email waiting for a reply, with its source and a Draft reply button", await until(async () => {
+  check("Tasks: an email waiting for a reply, with its source and a Draft reply button", await until(async () => {
     if (Date.now() - lastRefresh > 6000 && !(await page.isDisabled("#today-refresh"))) { lastRefresh = Date.now(); await page.click("#today-refresh"); }
     return /Reply to Support[\s\S]*Ramat Aviv/.test(await text("#today-alerts"))
       && /Draft reply/.test(await text("#today-alerts"));
   }, 45000, 500), await text("#today-alerts"));
-  check("Today: the sidebar shows how many things need attention", /^[1-9]/.test(await text("[data-count=today]")));
-  await shot("today");
+  check("Tasks: the sidebar shows how many things need attention", /^[1-9]/.test(await text("[data-count=tasks]")));
+  await shot("tasks");
   const before = (await page.$$("#today-alerts .alert-card")).length;
   await page.click("#today-alerts .alert-card >> nth=0 >> [data-state=later]");
-  check("Today: Later hides it until tomorrow", await until(async () => (await page.$$("#today-alerts .alert-card")).length === before - 1, 4000, 200));
+  check("Tasks: Later hides it until tomorrow", await until(async () => (await page.$$("#today-alerts .alert-card")).length === before - 1, 4000, 200));
   await page.click("#today-meetings [data-prep] >> nth=0");
-  check("Today: Prepare me opens the chat with the request", await until(async () => /Prepare me for my meeting "Pricing call with Levi Gardens"/.test(await text("#messages")), 5000, 200));
+  check("Tasks: Prepare me opens the chat with the request", await until(async () => /Prepare me for my meeting "Pricing call with Levi Gardens"/.test(await text("#messages")), 5000, 200));
   await page.waitForSelector(".msg.bot .msg-actions", { timeout: 30000 });
   await go("sources");
   check("Sources: no 'Ask a question' button on this page", !/Ask a question/.test(await text("#page-sources")));
@@ -445,8 +446,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "dana@acme.test"); await page.fill("input[name=password]", danaPassword);
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("Team member lands on Today, with New chat in the sidebar", !(await page.isHidden("#page-today")) && /New chat/.test(await text("#nav")));
-  check("Team member sidebar: Today, Chat, Brain, My sources and Learning Center", (await navNames()) === "Today,Chat,Brain,My sources,Learning Center");
+  check("Team member lands on Tasks", !(await page.isHidden("#page-tasks")));
+  check("Team member sidebar: Tasks, Chat, Brain, My sources and Learning Center", (await navNames()) === "Tasks,Chat,Brain,My sources,Learning Center");
   await page.click("#user-name");
   await page.fill("#dialog[open] input[name=current]", danaPassword); await page.fill("#dialog[open] input[name=next]", "dana-new-pass-1");
   await page.click("#dialog[open] button[type=submit]");
@@ -500,9 +501,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await Promise.all([page.waitForNavigation(), page.click("#logout")]); await page.waitForSelector("#login-form");
   await page.fill("input[name=email]", "admin@acme.test"); await page.fill("input[name=password]", "admin-pass-123");
   await page.click("#login-form button"); await page.waitForSelector("#app-view:not(.hidden)");
-  check("Today: setup checklist complete (hidden)", await until(async () => /Needs your attention/.test(await text("#page-today")), 8000, 300) && (await text("#today-setup")).trim() === "");
-  await go("home");
   await until(async () => /things Cortex knows/.test(await text("#home-kpis")), 10000, 300);
+  check("Home: setup checklist complete (hidden)", (await text("#home-setup")).trim() === "");
   check("Home: questions-per-day chart drawn", await until(async () => (await page.$$("#home-q-chart svg path, #home-q-chart svg rect:not(.hit)")).length > 0, 5000, 300));
   check("Home: questions by person shows who asked", /Yaniv Barak/.test(await text("#home-by-person")) && /Dana Cohen/.test(await text("#home-by-person")));
   check("Home: What Cortex knows lists the apps with their counts", /Gmail[\s\S]*30/.test(await text("#home-knows")));
@@ -552,7 +552,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 14. Phone layout
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const p of ["today", "home", "ask", "sources", "people", "learning", "conversations", "brain", "health", "settings"]) {
+  for (const p of ["home", "tasks", "ask", "sources", "people", "learning", "conversations", "brain", "health", "settings"]) {
     await go(p); await sleep(1200);
     check(`Phone: ${p} page fits the screen (no sideways scrolling)`, await noOverflow());
     const emojis = await emojisOnPage();
