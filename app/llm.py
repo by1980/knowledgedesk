@@ -237,55 +237,71 @@ def plan_search(question: str, history: list[dict], company: str = "", website: 
 
 BRIEF_TOOL = {
     "name": "attention_list",
-    "description": "The few things this person should act on soon, each tied to the items it comes from.",
-    "input_schema": {"type": "object", "properties": {"alerts": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
-        "kind": {"type": "string", "enum": ["reply", "send", "renew", "follow_up", "prepare", "deadline"],
-                 "description": "reply: someone is waiting for their answer. send: they promised to send something. renew: a contract, "
-                                "subscription or agreement ends or renews soon. follow_up: a conversation went quiet and should be chased. "
-                                "prepare: a meeting soon that needs preparation. deadline: something is due."},
-        "title": {"type": "string", "description": "Short and specific, e.g. 'Reply to Dima about the website proposal'."},
-        "why": {"type": "string", "description": "One plain sentence: why this needs attention now."},
-        "due": {"type": "string", "description": "YYYY-MM-DD if a date is known, else empty."},
-        "person": {"type": "string", "description": "Who it is about, if anyone."},
-        "source_ids": {"type": "array", "items": {"type": "integer"}, "description": "ids of the items this comes from."},
-        "action": {"type": "string", "description": "The request to give the assistant to help, e.g. 'Draft a reply to Dima's email about the "
-                                                    "website proposal, confirming the price and asking when they want to start.'"}},
-        "required": ["kind", "title", "why", "source_ids", "action"]}}}, "required": ["alerts"]},
+    "description": "Only the things worth interrupting this person for, and which of the dates are worth showing.",
+    "input_schema": {"type": "object", "properties": {
+        "alerts": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["reply", "send", "follow_up", "prepare", "deadline"],
+                     "description": "reply: a real person is waiting for their answer. send: they promised to send something soon. "
+                                    "follow_up: chase someone (no answer to their proposal or question, or a payment they asked for "
+                                    "with no sign it was paid). prepare: a meeting soon worth preparing. deadline: something due soon."},
+            "title": {"type": "string", "description": "Short and specific, e.g. 'Reply to Dima about the website proposal'."},
+            "why": {"type": "string", "description": "One plain sentence: why now."},
+            "due": {"type": "string", "description": "YYYY-MM-DD if a date is known, else empty."},
+            "person": {"type": "string"},
+            "source_ids": {"type": "array", "items": {"type": "integer"}},
+            "action": {"type": "string", "description": "The request to give the assistant, e.g. 'Draft a reply to Dima confirming the "
+                                                        "price and asking when they want to start.'"}},
+            "required": ["kind", "title", "why", "source_ids", "action"]}},
+        "keep_dates": {"type": "array", "description": "The dates (by id) that truly need this person's attention now, each with why.",
+                       "items": {"type": "object", "properties": {"id": {"type": "integer"}, "why": {"type": "string"}},
+                                 "required": ["id", "why"]}}},
+        "required": ["alerts", "keep_dates"]},
 }
-BRIEF_SYSTEM = ("You are a sharp chief of staff. From the person's recent emails, documents and meetings, pick only the few things they "
-                "truly need to act on: questions waiting for their answer, things they promised to send, renewals and contract ends "
-                "coming up, conversations they should chase, meetings worth preparing. Skip newsletters, notifications, receipts, "
-                "marketing mail and anything already answered (a later email from them in the same thread means it was answered). "
-                "Never invent anything: every item must come from the ids given. Fewer, important items beat many. "
+BRIEF_SYSTEM = ("You are a sharp, discreet chief of staff. You interrupt your boss only for what truly needs them. "
+                "You get conversations already filtered by signals (waiting_for_my_reply, no_answer_to_my_email, "
+                "payment_requested_no_sign_of_payment), upcoming meetings, and dates found in documents. Read them like a person "
+                "would and keep only what matters now:\n"
+                "- reply: only when a real person asked them something or needs a decision, and nobody answered. Not for 'thanks', "
+                "FYI, automatic mail, invoices or receipts from suppliers, marketing, or anything already handled.\n"
+                "- follow_up: a proposal or question they sent with no answer, if still relevant (a few days to a few weeks old). "
+                "A payment they asked for with no sign it was paid: suggest checking with the person.\n"
+                "- prepare: meetings with people outside the company, or important ones. Not routine internal meetings.\n"
+                "- Dates: keep only those that need an action by them soon. Drop bills that are paid automatically (cloud services, "
+                "software subscriptions, card charges), anything the conversations show is already done, proposals that are "
+                "simply old, and duplicates. For each kept date, say in one sentence why it matters.\n"
+                "Never invent anything: use only the ids given. When unsure, leave it out: three right items beat ten noisy ones. "
                 "Write in the language of the items. Do not use dashes as punctuation.")
 
 
 def briefing(name: str, company: str, addresses: list[str], items: list[dict], meetings: list[dict],
-             known_dates: list[str] | None = None) -> list[dict]:
-    """The 'needs your attention' list, made by the AI from what this person may see."""
+             dates: list[dict] | None = None) -> dict:
+    """The 'needs your attention' list and the dates worth showing, judged by the AI from what this person may see."""
     from datetime import date
 
+    def msg(m):
+        meta = m["metadata"] or {}
+        return (f"  {m['at']:%Y-%m-%d} from {meta.get('from', '')} to {meta.get('to', '')}: "
+                + " ".join((m["text"] or "").split())[:500])
+
     def line(i):
-        m = i["metadata"] or {}
-        head = f"[id {i['id']}] {i['kind']} | {i['at']:%Y-%m-%d} | {i['title']}"
-        if i["kind"] == "email":
-            head += f" | from: {m.get('from', '')} | to: {m.get('to', '')}"
-        return head + "\n" + (i["text"] or "")[:900]
+        return (f"[id {i['id']}] signal: {i['signal']} | {i['title']} | last message {i['age']} days ago\n"
+                + "\n".join(msg(m) for m in i["thread"]))
 
     cal = "\n".join(f"- {e['starts_at']:%Y-%m-%d %H:%M} UTC {e['title']} (with {', '.join(e['attendees'][:6]) or 'no one listed'})"
                     for e in meetings) or "(none)"
+    dated = "\n".join(f"[id {d['id']}] {d['kind']} due {d['due']:%Y-%m-%d} ({d['days']} days): {d['title']}"
+                      f"{' | ' + d['direction'] if d.get('direction') else ''} | from '{d['doc_title']}' ({d['doc_at']:%Y-%m-%d}): "
+                      f"\"{d.get('quote') or ''}\"" for d in (dates or [])) or "(none)"
     body = (f"Today is {date.today():%Y-%m-%d}. The person is {name}" + (f" at {company}" if company else "") +
-            f". Their own addresses: {', '.join(addresses) or 'unknown'} (emails from these were sent by them).\n\n"
-            f"Meetings in the next week:\n{cal}\n\n"
-            + ("Dates already shown to the person separately (do not repeat them):\n" + "\n".join(known_dates) + "\n\n" if known_dates else "")
-            + "Items:\n\n" + "\n\n".join(line(i) for i in items))
+            f". Their own addresses: {', '.join(addresses) or 'unknown'}.\n\nMeetings in the next week:\n{cal}\n\n"
+            f"Dates found in documents:\n{dated}\n\nConversations:\n\n" + ("\n\n".join(line(i) for i in items) or "(none)"))
     r = client().messages.create(model=settings.llm_model, max_tokens=3000, system=BRIEF_SYSTEM, tools=[BRIEF_TOOL],
                                  tool_choice={"type": "tool", "name": "attention_list"},
-                                 messages=[{"role": "user", "content": body[:120000]}], timeout=90)
+                                 messages=[{"role": "user", "content": body[:120000]}], timeout=120)
     for block in r.content:
         if block.type == "tool_use":
-            return list(block.input.get("alerts") or [])
-    return []
+            return {"alerts": list(block.input.get("alerts") or []), "keep_dates": list(block.input.get("keep_dates") or [])}
+    return {"alerts": [], "keep_dates": []}
 
 
 DATES_TOOL = {
@@ -303,13 +319,20 @@ DATES_TOOL = {
                                                  "against the item's own date."},
         "person": {"type": "string", "description": "Who it is with or who must act, if known."},
         "amount": {"type": "string", "description": "Money involved, if stated, e.g. '4,800 USD per month'."},
-        "quote": {"type": "string", "description": "The exact words from the item that show this date."}},
-        "required": ["kind", "title", "due", "quote"]}}}, "required": ["items"]},
+        "quote": {"type": "string", "description": "The exact words from the item that show this date."},
+        "direction": {"type": "string", "enum": ["we_get_paid", "we_pay", "we_pay_automatically", "not_money"],
+                      "description": "For payments: money owed to the reader's company, money it must pay by hand, or a bill "
+                                     "charged automatically (card, direct debit, cloud or software subscription)."},
+        "needs_action": {"type": "boolean", "description": "True only if someone at the reader's company must do something by "
+                                                           "this date. False for automatic charges, receipts, information only."}},
+        "required": ["kind", "title", "due", "quote", "direction", "needs_action"]}}}, "required": ["items"]},
 }
-DATES_SYSTEM = ("You read one business document or message and list the dates in it that someone will have to act on: "
-                "contract ends, renewals, the last day to give notice, payments due, deadlines and promises with a date. "
-                "Ignore dates that need no action (when a document was written or signed, past meetings, newsletters, "
-                "marketing offers, shipping notices) and anything already done. A promise needs a clear commitment "
+DATES_SYSTEM = ("You read one business document or message and list the dates in it that someone at the reader's "
+                "company will have to act on: contract ends, renewals, the last day to give notice, payments due, deadlines and "
+                "promises with a date. Ignore dates that need no action: when a document was written or signed, past meetings, "
+                "newsletters, marketing offers, shipping notices, receipts, and invoices from suppliers that are charged "
+                "automatically (cloud services, software subscriptions, card payments). A proposal's 'valid until' date is not "
+                "a task. Ignore anything already done. A promise needs a clear commitment "
                 "and a time ('I'll send it by Thursday'). Never guess a date that isn't stated or clearly implied. "
                 "If there is nothing, return an empty list. Write titles in the language of the item, without dashes as punctuation.")
 

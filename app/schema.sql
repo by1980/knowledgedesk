@@ -214,3 +214,7 @@ CREATE TABLE IF NOT EXISTS commitments (
 CREATE INDEX IF NOT EXISTS commitments_due ON commitments(due);
 CREATE INDEX IF NOT EXISTS commitments_doc ON commitments(document_id);
 CREATE INDEX IF NOT EXISTS documents_dates_todo ON documents(id) WHERE dates_checked IS NULL;
+
+-- v0.12.1: the AI's verdict on which dates matter (and why); payments: which way the money goes
+ALTER TABLE briefings ADD COLUMN IF NOT EXISTS date_notes JSONB;
+ALTER TABLE commitments ADD COLUMN IF NOT EXISTS direction TEXT;

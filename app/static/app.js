@@ -387,7 +387,7 @@ function drawDates(list) {
       <span class="a-icon kind-${esc(d.kind)}">${ic(icon)}</span>
       <div class="grow">
         <div class="a-title" dir="auto">${esc(d.title)} <span class="pill ${d.days < 0 ? "pill-late" : d.days <= 7 ? "pill-soon" : ""}">${esc(daysText(d.days))}</span></div>
-        <div class="a-why muted">${esc(label)} ${esc(dayOf(d.due))}${d.person ? ` · ${esc(d.person)}` : ""}${d.amount ? ` · ${esc(d.amount)}` : ""}</div>
+        <div class="a-why muted" dir="auto">${esc(label)} ${esc(dayOf(d.due))}${d.amount ? ` · ${esc(d.amount)}` : ""}${d.why ? `. ${esc(d.why)}` : ""}</div>
         ${d.doc_id ? `<div class="a-src"><a href="#" data-doc="${d.doc_id}" title="${esc(d.quote || "Open")}">${ic(KIND_ICON[d.doc_kind] || "file")}<span>${esc(d.doc_title)}</span></a></div>` : ""}
       </div>
       <div class="a-actions">

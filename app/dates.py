@@ -16,14 +16,14 @@ from .config import settings
 from .db import conn
 
 log = logging.getLogger("dates")
-VERSION = 1
+VERSION = 2   # 2: needs_action and who pays; old results are read again
 KINDS = ("renewal", "contract_end", "notice", "payment", "deadline", "promise")
 # How many days before the date it starts showing on Tasks
 LEAD_DAYS = {"renewal": 45, "contract_end": 45, "notice": 21, "payment": 10, "deadline": 10, "promise": 5}
 # How long after the date it still shows (as overdue), if nobody marked it done
-OVERDUE_DAYS = {"renewal": 3, "contract_end": 3, "notice": 3, "payment": 14, "deadline": 7, "promise": 7}
+OVERDUE_DAYS = {"renewal": 0, "contract_end": 0, "notice": 0, "payment": 21, "deadline": 3, "promise": 3}
 CHECK_KINDS = ("email", "file", "documents", "slack", "whatsapp", "interview")
-EMAIL_BACK_DAYS = 90    # older emails are not read for dates (their promises are long gone)
+EMAIL_BACK_DAYS = 45    # older emails are not read for dates (their promises are long gone)
 
 # Worth a closer look only if it talks about time limits or commitments
 HINT = re.compile(
@@ -105,20 +105,23 @@ def check(doc_id: int) -> int:
             found = llm.extract_dates(head + "\n" + text)
     rows = []
     for f in found or []:
+        if f.get("needs_action") is False or f.get("direction") == "we_pay_automatically":
+            continue
         try:
             due = date.fromisoformat(str(f.get("due", ""))[:10])
         except ValueError:
             continue
         if f.get("kind") not in KINDS or not str(f.get("title", "")).strip():
             continue
-        if not (date(2000, 1, 1) < due < date.today() + timedelta(days=3650)):
-            continue
+        if not (date(2000, 1, 1) < due < date.today() + timedelta(days=3650)) or due < ref:
+            continue   # a date before the item itself was written is history, not a commitment
         rows.append((doc_id, f["kind"], str(f["title"])[:300], due, str(f.get("person") or "")[:200] or None,
-                     str(f.get("amount") or "")[:100] or None, str(f.get("quote") or "")[:400] or None))
+                     str(f.get("amount") or "")[:100] or None, str(f.get("quote") or "")[:400] or None, f.get("direction") or None))
     with conn() as c:
         c.execute("DELETE FROM commitments WHERE document_id=%s", (doc_id,))
         for r in rows[:8]:
-            c.execute("INSERT INTO commitments(document_id, kind, title, due, person, amount, quote) VALUES (%s,%s,%s,%s,%s,%s,%s)", r)
+            c.execute("INSERT INTO commitments(document_id, kind, title, due, person, amount, quote, direction) "
+                      "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", r)
         c.execute("UPDATE documents SET dates_checked=%s WHERE id=%s", (VERSION, doc_id))
     return len(rows)
 
@@ -127,9 +130,9 @@ def _next() -> int | None:
     """New and changed documents first; emails only from the last few months."""
     with conn() as c:
         row = c.execute(
-            "SELECT id FROM documents WHERE dates_checked IS NULL AND status='ready' AND kind = ANY(%s) "
+            "SELECT id FROM documents WHERE (dates_checked IS NULL OR dates_checked < %s) AND status='ready' AND kind = ANY(%s) "
             "AND (kind <> 'email' OR coalesce(doc_date, updated_at) > now() - make_interval(days => %s)) "
-            "ORDER BY (kind = 'email'), coalesce(doc_date, updated_at) DESC LIMIT 1", (list(CHECK_KINDS), EMAIL_BACK_DAYS)).fetchone()
+            "ORDER BY (kind = 'email'), coalesce(doc_date, updated_at) DESC LIMIT 1", (VERSION, list(CHECK_KINDS), EMAIL_BACK_DAYS)).fetchone()
     return row["id"] if row else None
 
 
@@ -153,21 +156,41 @@ def loop() -> None:
 
 
 # ---------------------------------------------------------------- what Tasks shows
-def upcoming(user: dict, today: date) -> list[dict]:
-    """Dates this person may see that are inside their reminder window now."""
+def llm_ready() -> bool:
+    try:
+        llm.api_key()
+        return True
+    except llm.LLMNotConfigured:
+        return False
+
+
+
+def upcoming(user: dict, today: date, judged: dict | None | bool = None) -> list[dict]:
+    """Dates this person may see that are inside their reminder window now.
+    judged: the AI's verdict ({id: why}): only those are kept, with their why. None: not judged yet, show nothing new
+    unless there's no AI at all. False: everything (for the AI to judge)."""
     from .main import VISIBLE, _visible_params
 
     with conn() as c:
         rows = c.execute(
-            "SELECT k.id, k.kind, k.title, k.due, k.person, k.amount, k.quote, d.id AS doc_id, d.title AS doc_title, d.kind AS doc_kind "
+            "SELECT k.id, k.kind, k.title, k.due, k.person, k.amount, k.quote, k.direction, d.id AS doc_id, d.title AS doc_title, d.kind AS doc_kind, "
+            "coalesce(d.doc_date, d.updated_at) AS doc_at "
             f"FROM commitments k JOIN documents d ON d.id = k.document_id WHERE {VISIBLE} "
             "AND k.due BETWEEN %(from)s AND %(to)s ORDER BY k.due, k.id",
             {**_visible_params(user), "from": today - timedelta(days=14), "to": today + timedelta(days=max(LEAD_DAYS.values()))}).fetchall()
     out, seen = [], set()
     for r in rows:
         days = (r["due"] - today).days
-        if days > LEAD_DAYS[r["kind"]] or -days > OVERDUE_DAYS[r["kind"]]:
+        late = OVERDUE_DAYS[r["kind"]] if not (r["kind"] == "payment" and r["direction"] != "we_get_paid") else 0
+        if days > LEAD_DAYS[r["kind"]] or -days > late:
             continue
+        if judged is not False and not settings.fake_llm:
+            if isinstance(judged, dict):
+                if str(r["id"]) not in judged:
+                    continue
+                r["why"] = judged[str(r["id"])]
+            elif llm_ready():
+                continue   # waiting for the AI to check it
         same = (r["kind"], r["due"], r["title"].lower())
         if same in seen:   # the same date found in two copies of a document
             continue

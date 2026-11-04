@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.12.1"
 
 
 def _ensure_secret_key() -> None:
@@ -105,6 +105,9 @@ def startup() -> None:
     init_schema(embeddings.dimension())
     auth.ensure_first_admin()
     _privacy_upgrade()
+    from . import briefing as _briefing
+
+    _briefing.upgrade()
     merged = oauth.merge_duplicate_accounts()
     if merged:
         log.info("Merged %d duplicate connected account(s)", merged)
