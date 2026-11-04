@@ -56,7 +56,7 @@ recent_problems = _RecentProblems()
 logging.getLogger().addHandler(recent_problems)
 
 STATIC = Path(__file__).parent / "static"
-APP_VERSION = "0.11.0"
+APP_VERSION = "0.11.1"
 
 
 def _ensure_secret_key() -> None:
@@ -1651,18 +1651,36 @@ def install_license(file: UploadFile = File(...), _: dict = Depends(auth.admin_u
 # ---------------------------------------------------------------- web interface
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+# Pages are never kept by the browser, and they load the code with the version in its address, so after an
+# update everyone gets the new page and the new code together (never a new page with old cached code).
+NO_STORE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
+
+@app.middleware("http")
+async def fresh_code(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") and request.url.path.endswith((".js", ".css", ".html")):
+        response.headers["Cache-Control"] = "no-cache"   # always check with the server before reusing
+    return response
+
+
+def _page(path: Path) -> HTMLResponse:
+    html = path.read_text(encoding="utf-8")
+    for name in ("app.js", "style.css"):
+        html = html.replace(f'"/static/{name}"', f'"/static/{name}?v={APP_VERSION}"')
+    return HTMLResponse(html, headers=NO_STORE)
 
 
 @app.get("/")
 def marketing_page():
     """The website: explains Cortex and leads to the dashboard."""
-    return FileResponse(STATIC / "site" / "index.html")
+    return _page(STATIC / "site" / "index.html")
 
 
 @app.get("/app")
 def index():
     """The dashboard."""
-    return FileResponse(STATIC / "index.html")
+    return _page(STATIC / "index.html")
 
 
 @app.get("/welcome")

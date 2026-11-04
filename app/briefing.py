@@ -19,6 +19,7 @@ log = logging.getLogger("briefing")
 REFRESH_HOURS = 4
 KINDS = ("reply", "send", "renew", "follow_up", "prepare", "deadline")
 _running: set[int] = set()
+_again: set[int] = set()            # asked to refresh while one was running: run once more right after
 _failed: dict[int, datetime] = {}   # when the last try failed, so a broken AI key isn't retried on every page load
 _lock = threading.Lock()
 
@@ -114,20 +115,30 @@ def refresh(user: dict) -> None:
     finally:
         with _lock:
             _running.discard(user["id"])
+            again = user["id"] in _again
+            _again.discard(user["id"])
+        if again:
+            refresh(user)
 
 
 def refresh_in_background(user: dict, force: bool = False) -> bool:
     """Start a refresh if the list is missing or old (or forced). True when one is running."""
     with conn() as c:
-        row = c.execute("SELECT created_at FROM briefings WHERE user_id=%s", (user["id"],)).fetchone()
+        row = c.execute("SELECT created_at, (SELECT max(created_at) FROM documents) AS newest FROM briefings WHERE user_id=%s",
+                        (user["id"],)).fetchone()
     now = datetime.now(timezone.utc)
-    stale = force or not row or row["created_at"] < now - timedelta(hours=REFRESH_HOURS)
+    stale = force or not row or row["created_at"] < now - timedelta(hours=REFRESH_HOURS) \
+        or (row["newest"] and row["newest"] > row["created_at"] and row["created_at"] < now - timedelta(minutes=15))   # new items arrived
     if not force and _failed.get(user["id"], now - timedelta(days=1)) > now - timedelta(minutes=15):
         stale = False
-    if stale and user["id"] not in _running:
+    with _lock:
+        running = user["id"] in _running
+        if stale and running and force:
+            _again.add(user["id"])
+    if stale and not running:
         threading.Thread(target=refresh, args=(user,), daemon=True).start()
         return True
-    return user["id"] in _running
+    return running
 
 
 def today(user: dict, tz_minutes: int = 0) -> dict:

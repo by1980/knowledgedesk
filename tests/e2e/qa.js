@@ -44,6 +44,8 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("login-error");
   await page.fill("input[name=password]", "admin-pass-123"); await page.click("#login-form button");
   await page.waitForSelector("#app-view:not(.hidden)");
+  check("After an update the browser always gets the new code (versioned, not cached)", (await page.$eval("script[src*='app.js']", (x) => x.getAttribute("src"))).includes("?v=")
+    && /no-store/.test((await page.request.get(APP + "/app")).headers()["cache-control"] || ""));
   check("Admin lands on Today", /#today|\/app$/.test(page.url()) && await page.isVisible("#page-today"));
   check("Today greets by first name, guessed from the email when no name is set", await until(async () => /, Admin$/.test((await text("#today-title")).trim()), 5000, 200));
   check("Today: meetings and what needs attention", /Needs your attention[\s\S]*Meetings today/.test(await text("#page-today")));
@@ -108,9 +110,12 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await go("today");
   check("Today: today's meeting from the calendar", await until(async () => /Pricing call with Levi Gardens/.test(await text("#today-meetings")), 10000, 300), await text("#today-meetings"));
   check("Today: coming up lists the next days", /Weekly team meeting/.test(await text("#today-soon")));
-  await page.click("#today-refresh");
-  check("Today: an email waiting for a reply, with its source and a Draft reply button", await until(async () => /Reply to Support[\s\S]*Ramat Aviv/.test(await text("#today-alerts"))
-    && /Draft reply/.test(await text("#today-alerts")), 20000, 500), await text("#today-alerts"));
+  let lastRefresh = 0;   // emails may still be importing: press Refresh again now and then, like a person would
+  check("Today: an email waiting for a reply, with its source and a Draft reply button", await until(async () => {
+    if (Date.now() - lastRefresh > 6000 && !(await page.isDisabled("#today-refresh"))) { lastRefresh = Date.now(); await page.click("#today-refresh"); }
+    return /Reply to Support[\s\S]*Ramat Aviv/.test(await text("#today-alerts"))
+      && /Draft reply/.test(await text("#today-alerts"));
+  }, 45000, 500), await text("#today-alerts"));
   check("Today: the sidebar shows how many things need attention", /^[1-9]/.test(await text("[data-count=today]")));
   await shot("today");
   const before = (await page.$$("#today-alerts .alert-card")).length;

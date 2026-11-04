@@ -147,3 +147,17 @@ def test_learners_have_no_today(client):
     assert client.get("/api/today", headers=learner).status_code == 403
     with conn() as c:
         c.execute("DELETE FROM users WHERE id=%s", (uid,))
+
+
+def test_refresh_while_one_is_running_runs_again_after(client, office, monkeypatch):
+    user = _user_row(office["rina_id"])
+    runs = []
+    monkeypatch.setattr(briefing, "compute", lambda u: runs.append(1) or [])
+    briefing._running.add(user["id"])
+    try:
+        assert briefing.refresh_in_background(user, force=True) is True   # a Refresh click while busy is remembered
+        assert user["id"] in briefing._again
+    finally:
+        briefing._running.discard(user["id"])
+    briefing.refresh(user)
+    assert len(runs) == 2 and user["id"] not in briefing._again        # the first run, then once more
