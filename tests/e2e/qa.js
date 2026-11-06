@@ -32,6 +32,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   const text = async (sel) => (await page.textContent(sel)) || "";
   const noOverflow = async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   const emojisOnPage = async () => page.evaluate(() => (document.body.innerText.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2705}]/gu) || []).join(""));
+  const pick = async (key) => { await page.click(`#conn-nav [data-app=${key}]`); await sleep(120); };
   const navNames = async () => (await page.$$eval("#nav a[data-page] > span", (as) => as.map((a) => a.textContent))).join(",");
   const toastSeen = async (re) => until(async () => re.test(await page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "))), 8000, 200);
 
@@ -79,6 +80,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   // ------------------------------------------------------------------ 4. Connect Google
   await go("sources");
   const g = ".provider-card[data-provider=google]";
+  await pick("gmail");
   await page.waitForSelector(`${g} [data-open-connect]`);
   check("Google: clear 'Connect Google account' button", (await text(`${g} [data-open-connect]`)).trim() === "Connect Google account");
   await shot("sources-empty");
@@ -130,7 +132,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#today-meetings [data-prep] >> nth=0");
   check("Tasks: Prepare me opens the chat with the request", await until(async () => /Prepare me for my meeting "Pricing call with Levi Gardens"/.test(await text("#messages")), 5000, 200));
   await page.waitForSelector(".msg.bot .msg-actions", { timeout: 30000 });
-  await go("sources");
+  await go("sources"); await pick("overview");
   check("Sources: no 'Ask a question' button on this page", !/Ask a question/.test(await text("#page-sources")));
   check("Sources: no explainer cards, one short line", !(await page.$(".circles-guide")) && /Each tile shows who can find it/.test(await text("#page-sources .page-head")));
   check("Sources: each connected tile shows who can find it", /Only you|Everyone/.test(await text("[data-tile=gmail] .tile-circle")));
@@ -158,6 +160,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("google-connected");
 
   // reconnecting the same account must not duplicate it
+  await pick("gmail");
   await page.click(`${g} [data-open-connect]`); await page.check(`${g} .panel .vis-everyone`); await page.click(`${g} [data-go]`);
   await page.waitForURL(/accounts\.google\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
   await page.waitForSelector(`${g} .account`);
@@ -178,6 +181,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
 
   // ------------------------------------------------------------------ 6. Connect Microsoft
   const m = ".provider-card[data-provider=microsoft]";
+  await pick("ms_mail");
   await page.click(`${m} [data-open-connect]`); await page.check(`${m} .panel .vis-everyone`); await page.click(`${m} [data-go]`);
   await page.waitForURL(/login\.microsoftonline\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
   const msReady = await until(async () => /2 emails searchable/.test(await text(`${m} .account`)) && /1 file searchable/.test(await text(`${m} .account`)), 120000, 2000);
@@ -189,10 +193,12 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Cancelling sign-in explains what happened", /cancelled/.test(await page.textContent("body")));
   await page.goto(APP + "/app#sources");
   await page.waitForSelector(`${m} .account`);
+  await pick("whatsapp");
   check("WhatsApp: has its own card with an import button", await page.isVisible("#wa-upload"));
 
   // ------------------------------------------------------------------ 6b. Slack
   const sl = ".provider-card[data-provider=slack]";
+  await pick("slack");
   check("Slack: clear 'Connect Slack workspace' button", (await text(`${sl} [data-open-connect]`)).trim() === "Connect Slack workspace");
   await page.click(`${sl} [data-open-connect]`); await page.check(`${sl} .panel .vis-everyone`); await page.click(`${sl} [data-go]`);
   await page.waitForURL(/slack\.com/); await page.click("#allow"); await page.waitForURL(/#sources/);
@@ -204,7 +210,9 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("sources-overview", false);
   // ------------------------------------------------------------------ 6c. Social media
   const fb = ".provider-card[data-provider=meta]";
+  await pick("meta_social");
   check("Social media: Facebook and Instagram card with a clear button", (await text(`${fb} [data-open-connect]`)).trim() === "Connect Facebook account");
+  await pick("overview");
   check("Connection hub: Facebook & Instagram, YouTube and LinkedIn tiles", await page.isVisible("[data-tile=meta_social] [data-connect-tile]")
     && await page.isVisible("[data-tile=youtube] [data-connect-tile]") && /Import/.test(await text("[data-tile=linkedin]")));
   await page.click("[data-tile=meta_social] [data-connect-tile]");
@@ -227,6 +235,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("Facebook: shows followers, last post and likes this week", /1,840 followers/.test(await text(`${fb} .pc-accounts`))
     && /3,120 followers/.test(await text(`${fb} .pc-accounts`)) && /last post/.test(await text(`${fb} .pc-accounts`)) && /212/.test(await text(`${fb} .pc-accounts`)), await text(`${fb} .pc-accounts`));
   const yt = ".provider-card[data-provider=youtube]";
+  await pick("youtube");
   check("YouTube: clear 'Connect YouTube channel' button", (await text(`${yt} [data-open-connect]`)).trim() === "Connect YouTube channel");
   await page.click(`${yt} [data-open-connect]`); await page.check(`${yt} .panel .vis-everyone`);
   check("YouTube: signs in with Google", /Continue to Google/.test(await text(`${yt} [data-go]`)));
@@ -235,8 +244,9 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("YouTube: channel connected with its numbers", await until(async () => /@acmeplumbing[\s\S]*860 subscribers/.test(await text(`${yt} .pc-accounts`)), 60000, 1500), await text(`${yt} .pc-accounts`));
   check("YouTube: Gmail on the same Google account is still fine", await until(async () => !/Needs attention/.test(await text(`${g} .account`)), 5000, 500));
   check("Connection hub: Facebook & Instagram tile now Connected", await until(async () => /Connected|Importing/.test(await text("[data-tile=meta_social]")), 10000, 500));
-  await page.locator(fb).scrollIntoViewIfNeeded(); await sleep(300);
+  await pick("meta_social"); await sleep(300);
   await shot("social-media", false);
+  await pick("linkedin");
   await page.click("#li-upload");
   check("LinkedIn: import opens a small window with the steps", await until(async () => /Import from LinkedIn/.test(await text("#dialog[open] h2")), 3000, 200));
   await page.setInputFiles("#dialog[open] input[type=file]", { name: "acme_content.csv", mimeType: "text/csv",
@@ -245,10 +255,11 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("LinkedIn: file imported", await toastSeen(/Uploaded 1 file/));
   check("Connection hub: LinkedIn tile says Imported", await until(async () => /Imported/.test(await text("[data-tile=linkedin]")), 10000, 500));
 
-  await page.locator(".provider-card[data-provider=slack]").scrollIntoViewIfNeeded(); await sleep(300);
+  await pick("slack"); await sleep(300);
   await shot("slack-and-whatsapp", false);
 
   // ------------------------------------------------------------------ 6c. Find an item
+  await pick("overview");
   await page.fill("#find-form input", "Levi Gardens"); await page.press("#find-form input", "Enter");
   await page.waitForSelector("#dialog[open] [data-list]");
   check("Find an item: shows whether an email was imported", await until(async () => /Price agreement – Levi Gardens/.test(await text("#dialog[open] [data-list]")), 8000, 300));
@@ -257,6 +268,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await page.click("#dialog[open] [data-close]");
 
   // ------------------------------------------------------------------ 7. Website
+  await pick("website");
   await page.fill("#web-form input[name=url]", "hello"); await page.click("#web-form button");
   check("Website: a wrong address gets a clear message", await until(async () => /doesn't look like a website address/.test(await text("#web-error")), 15000, 300));
   await page.fill("#web-form input[name=url]", `${SIM}/site/`); await page.click("#web-form button");
@@ -286,7 +298,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("people");
 
   // ------------------------------------------------------------------ 9. Uploads: document (HR only), interview, WhatsApp
-  await go("sources");
+  await go("sources"); await pick("uploads");
   await page.waitForSelector("#upload-visibility .vis-block");
   const tmp = path.join(OUT, "_files"); fs.mkdirSync(tmp, { recursive: true });
   fs.writeFileSync(path.join(tmp, "Salaries 2026.txt"), "Confidential salary table: senior technician salary is 14,000 NIS per month.");
@@ -325,7 +337,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   check("WhatsApp card: shows the imported chat", await until(async () => /1 chat imported/.test(await text("#wa-status")), 15000, 500));
 
   // WhatsApp Business: official connection
-  await page.locator("#whatsapp-card").scrollIntoViewIfNeeded();
+  await pick("whatsapp");
   await page.click("#wa-connect");
   check("WhatsApp: connect panel with the steps", /Phone number ID/.test(await text("#wa-panel")));
   check("WhatsApp: warns clearly that Meta needs a public https address", /public[\s\S]*https/.test(await text("#wa-panel")));
@@ -346,6 +358,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("sources-full");
 
   // limit the Google account to Sales
+  await pick("gmail");
   await page.click(`${g} [data-edit-vis]`);
   await page.uncheck(`${g} .panel .vis-everyone`); await page.check(`${g} .panel label:has-text('Sales') input`);
   await page.click(`${g} [data-save-vis]`);
@@ -547,7 +560,7 @@ async function until(fn, ms = 60000, every = 1000) { const end = Date.now() + ms
   await shot("settings");
 
   // ------------------------------------------------------------------ 13. Disconnect
-  await go("sources");
+  await go("sources"); await pick("ms_mail");
   await page.waitForSelector(`${m} [data-disconnect]`);
   await page.click(`${m} [data-disconnect]`);
   check("Disconnect asks for confirmation and explains the effect", /removed from Cortex/.test(await text("#dialog[open]")));

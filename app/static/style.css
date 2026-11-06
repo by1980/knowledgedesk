@@ -721,3 +721,35 @@ a.round-btn { text-decoration: none; }
 .a-icon.kind-promise { background: var(--accent-soft); color: var(--accent); }
 .pill-soon { background: var(--busy-soft); color: var(--busy); border-color: var(--busy-line); }
 .pill-late { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-line); }
+
+/* v0.13 Sources: categories on the left, the chosen app on the right */
+.page-conn { max-width: 1240px; }
+.conn-layout { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 20px; align-items: start; }
+.conn-side { position: sticky; top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px;
+  max-height: calc(100vh - 32px); overflow-y: auto; }
+.conn-side .search-box { margin: 2px 2px 8px; }
+.conn-side .search-box input { width: 100%; }
+.conn-group + .conn-group { margin-top: 6px; }
+.conn-cat { font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 8px 4px; }
+.conn-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; background: none;
+  font: inherit; font-size: 13.5px; color: var(--text-2); text-align: left; cursor: pointer; }
+.conn-item:hover { background: var(--surface-2); color: var(--text); }
+.conn-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.conn-item.soon { color: var(--muted); }
+.conn-item.soon .icon-tile { opacity: .75; }
+.conn-item .icon-tile.sm { width: 24px; height: 24px; border-radius: 7px; flex: none; }
+.conn-item .icon-tile.sm svg { width: 15px; height: 15px; }
+.conn-item .icon-tile.sm.duo svg { width: 11px; height: 11px; }
+.conn-item .icon-tile.sm .ic { width: 14px; height: 14px; }
+.soon-tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; line-height: 18px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot-ok { background: var(--ok); } .dot-busy { background: var(--busy); } .dot-bad { background: var(--bad); }
+.conn-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.conn-main > .card { margin: 0; }
+.conn-hidden { display: none !important; }
+#soon-card .pc-head h3 { margin: 0; }
+@media (max-width: 900px) {
+  .conn-layout { grid-template-columns: 1fr; }
+  .conn-side { position: static; max-height: 300px; }
+}
+@media (max-width: 640px) { .conn-main .pc-head { flex-wrap: wrap; } .conn-main .pc-head .pc-connect { width: 100%; } }

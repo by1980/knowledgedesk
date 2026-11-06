@@ -944,6 +944,102 @@ function brandTile(type, fallbackIcon, size = "") {
   return `<span class="icon-tile brand ${size} ${marks.length > 1 ? "duo" : ""}">${marks.map((m) => `<svg viewBox="0 0 24 24" aria-hidden="true">${BRAND_SVG[m]}</svg>`).join("")}</span>`;
 }
 
+// ================================================================== Sources: every app by category, the chosen one on the right
+const SOON = true;
+const CATALOG = [
+  ["", [["overview", "All sources", "sources"]]],
+  ["Email and calendar", [["gmail", "Gmail"], ["gcal", "Google Calendar"], ["ms_mail", "Outlook mail"], ["ms_cal", "Outlook calendar"],
+    ["imap", "Other mailbox", "mail"], ["ics", "Calendar link", "calendar"]]],
+  ["Files and documents", [["gdrive", "Google Drive"], ["ms_drive", "OneDrive"], ["uploads", "Uploaded files", "upload"], ["website", "Websites", "globe"],
+    ["notion", "Notion", "", SOON, "Pages and databases"], ["dropbox", "Dropbox", "", SOON, "Files and folders"], ["sharepoint", "SharePoint", "", SOON, "Sites and documents"]]],
+  ["Team chat", [["slack", "Slack"], ["whatsapp", "WhatsApp"], ["teams", "Microsoft Teams", "", SOON, "Chats and channels"]]],
+  ["Social media", [["meta_social", "Facebook & Instagram"], ["youtube", "YouTube"], ["linkedin", "LinkedIn"], ["tiktok", "TikTok", "", SOON, "Videos and their numbers"]]],
+  ["CRM and sales", [["hubspot", "HubSpot", "", SOON, "Contacts, companies and deals"], ["pipedrive", "Pipedrive", "", SOON, "Deals and contacts"],
+    ["salesforce", "Salesforce", "", SOON, "Accounts, contacts and opportunities"], ["monday", "monday.com", "", SOON, "Boards and items"]]],
+  ["Accounting and finance", [["quickbooks", "QuickBooks", "", SOON, "Invoices, bills and customers"], ["stripe", "Stripe", "", SOON, "Payments and customers"],
+    ["morning", "Morning (Green Invoice)", "", SOON, "Invoices and receipts"]]],
+  ["Meetings and people", [["interview", "Employee interviews", "mic"], ["zoom", "Zoom", "", SOON, "Meeting recordings and transcripts"]]],
+];
+const APP_PANEL = {
+  overview: "#overview-card", gmail: ".provider-card[data-provider=google]", gcal: ".provider-card[data-provider=google]", gdrive: ".provider-card[data-provider=google]",
+  ms_mail: ".provider-card[data-provider=microsoft]", ms_cal: ".provider-card[data-provider=microsoft]", ms_drive: ".provider-card[data-provider=microsoft]",
+  slack: ".provider-card[data-provider=slack]", meta_social: ".provider-card[data-provider=meta]", youtube: ".provider-card[data-provider=youtube]",
+  linkedin: "#linkedin-card", website: "#web-card", whatsapp: "#whatsapp-card", uploads: "#files-card", interview: "#files-card", imap: "#more-sources", ics: "#more-sources",
+};
+const CATALOG_SVG = {
+  notion: '<rect x="3.5" y="3" width="17" height="18" rx="3" fill="#fff" stroke="#111" stroke-width="1.6"/><path d="M8.6 16.5v-9l6.8 9v-9" stroke="#111" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  dropbox: '<path fill="#0061FF" d="M7 3 2 6.3l5 3.3 5-3.3zm10 0-5 3.3 5 3.3 5-3.3zM2 12.9l5 3.3 5-3.3-5-3.3zm15-3.3-5 3.3 5 3.3 5-3.3zM7 17.3l5 3.3 5-3.3-5-3.3z"/>',
+  sharepoint: '<circle cx="12.5" cy="8" r="6" fill="#036C70"/><circle cx="16.5" cy="14" r="4.8" fill="#1A9BA1"/><circle cx="12.5" cy="18.5" r="3.8" fill="#37C6D0"/><rect x="2" y="7" width="10" height="10" rx="2" fill="#03787C"/><path d="M9.2 10c-.5-.5-1.3-.8-2-.8-1.2 0-1.9.6-1.9 1.4 0 1.9 3.7 1.2 3.7 3.1 0 .9-.8 1.5-2 1.5-.9 0-1.7-.3-2.2-.8" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
+  teams: '<circle cx="18.5" cy="7" r="2.5" fill="#7B83EB"/><rect x="14.5" y="10" width="7.5" height="7.5" rx="2.5" fill="#7B83EB"/><rect x="2" y="5.5" width="13" height="13" rx="2.2" fill="#5059C9"/><path d="M5.2 9.2h6.6M8.5 9.2v6.3" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/>',
+  tiktok: '<rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#111"/><path d="M13.2 5.5v8.9a2.6 2.6 0 1 1-2.3-2.6" stroke="#25F4EE" stroke-width="1.9" fill="none" stroke-linecap="round" transform="translate(-.7 .5)"/><path d="M13.2 5.5v8.9a2.6 2.6 0 1 1-2.3-2.6M13.2 5.5c.4 1.9 1.8 3.2 3.8 3.4" stroke="#fff" stroke-width="1.9" fill="none" stroke-linecap="round"/>',
+  hubspot: '<circle cx="15" cy="14.2" r="3.8" fill="none" stroke="#FF7A59" stroke-width="2.3"/><path d="M15 10.4V6.2" stroke="#FF7A59" stroke-width="2.3" stroke-linecap="round"/><circle cx="15" cy="4.6" r="1.8" fill="#FF7A59"/><path d="M12 11.8 6.2 7.5M12.2 16.6l-4 3" stroke="#FF7A59" stroke-width="2" stroke-linecap="round"/><circle cx="5.3" cy="6.8" r="1.7" fill="#FF7A59"/>',
+  pipedrive: '<circle cx="12" cy="12" r="10" fill="#017737"/><path d="M10.2 18.5V8.2h2.6a3.1 3.1 0 0 1 0 6.2h-2.6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  salesforce: '<path fill="#00A1E0" d="M10 6.2a4.2 4.2 0 0 1 6.6 1.1 5 5 0 0 1 6.4 4.8 5 5 0 0 1-6 4.8 3.7 3.7 0 0 1-5 1.6 4.2 4.2 0 0 1-7.5-.9A3.9 3.9 0 0 1 1 13.8 3.9 3.9 0 0 1 2.4 8a3.9 3.9 0 0 1 4.6-2.2 3.8 3.8 0 0 1 3 .4z"/>',
+  monday: '<path d="M4 16.5 7.6 8.5" stroke="#FF3D57" stroke-width="3.6" stroke-linecap="round"/><path d="M10.6 16.5l3.6-8" stroke="#FFCB00" stroke-width="3.6" stroke-linecap="round"/><circle cx="19" cy="15.5" r="2.3" fill="#00CA72"/>',
+  quickbooks: '<circle cx="12" cy="12" r="10" fill="#2CA01C"/><path d="M10 8H9a4 4 0 0 0 0 8h1V6.5M14 16h1a4 4 0 0 0 0-8h-1v9.5" stroke="#fff" stroke-width="1.7" fill="none"/>',
+  stripe: '<rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#635BFF"/><path d="M15.3 8.6c-.9-.5-1.9-.8-3-.8-1.6 0-2.7.8-2.7 2 0 2.8 5.4 1.9 5.4 4.7 0 1.4-1.2 2.3-2.9 2.3-1.3 0-2.6-.4-3.5-1" stroke="#fff" stroke-width="1.9" fill="none" stroke-linecap="round"/>',
+  morning: '<circle cx="12" cy="12" r="10" fill="#1FB85C"/><path d="M7.5 13c1.3 2.6 3 3.6 4.5 3.6s3.2-1 4.5-3.6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="8.3" r="1.7" fill="#fff"/>',
+  zoom: '<rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#0B5CFF"/><rect x="5" y="8.4" width="9.6" height="7.2" rx="1.8" fill="#fff"/><path d="m15.6 11 3.5-2.4v6.8L15.6 13z" fill="#fff"/>'
+};
+Object.assign(BRAND_SVG, CATALOG_SVG);
+const appInfo = (key) => CATALOG.flatMap(([, items]) => items).find((x) => x[0] === key);
+let connApp = (() => { try { return localStorage.getItem("kd_conn_app") || "overview"; } catch { return "overview"; } })();
+function appState(key) {
+  if (!overviewNow?.ready) return "";   // not loaded yet
+  if (TILES.some(([t]) => t === key)) return tileState(key)[0];
+  if (key === "imap" || key === "ics") {
+    const ks = conns.filter((k) => k.type === key);
+    return !ks.length ? "" : ks.some((k) => k.last_error) ? "bad" : ks.some((k) => k.syncing || !k.last_sync) ? "busy" : "ok";
+  }
+  return "";
+}
+function drawConnNav() {
+  const q = ($("#conn-search")?.value || "").trim().toLowerCase();
+  $("#conn-nav").innerHTML = CATALOG.map(([cat, items]) => {
+    const shown = items.filter(([key, name]) => !q || name.toLowerCase().includes(q) || cat.toLowerCase().includes(q));
+    if (!shown.length) return "";
+    return `<div class="conn-group">${cat ? `<div class="conn-cat">${esc(cat)}</div>` : ""}${shown.map(([key, name, icon, soon]) => {
+      const state = soon ? "" : appState(key);
+      return `<button type="button" class="conn-item ${connApp === key ? "active" : ""} ${soon ? "soon" : ""}" data-app="${key}">
+        ${brandTile(key === "meta_social" ? "facebook" : key, icon || "sources", "sm")}<span class="grow">${esc(name)}</span>
+        ${soon ? '<span class="soon-tag">Soon</span>' : state ? `<span class="dot dot-${state}" title="${state === "ok" ? "Connected" : state === "busy" ? "Importing" : "Needs attention"}"></span>` : ""}</button>`;
+    }).join("")}</div>`;
+  }).join("") || '<p class="muted small" style="padding:8px">No app by that name yet.</p>';
+  $$("#conn-nav [data-app]").forEach((b) => b.onclick = () => {
+    selectApp(b.dataset.app);
+    const top = $("#conn-main").getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight) $("#conn-main").scrollIntoView({ block: "start" });
+  });
+}
+function selectApp(key) {
+  const info = appInfo(key);
+  if (!info) key = "overview";
+  connApp = key;
+  try { localStorage.setItem("kd_conn_app", key); } catch {}
+  $$("#conn-nav [data-app]").forEach((b) => b.classList.toggle("active", b.dataset.app === key));
+  const panel = APP_PANEL[key];
+  $$("#conn-main > *").forEach((el) => el.classList.add("conn-hidden"));
+  if (panel) $(panel).classList.remove("conn-hidden");
+  else {
+    const [, name, , , desc] = appInfo(key);
+    $("#soon-card").innerHTML = `<div class="pc-head">${brandTile(key, "sources")}<div class="grow"><h3>${esc(name)}</h3><p class="muted small">${esc(desc || "")}</p></div>${badge("", "Coming soon")}</div>
+      <p class="muted" style="margin:14px 0 0">Connecting ${esc(name)} is on the way. Until then, export what you need from ${esc(name)} and add it under <a href="#" data-goto-app="uploads">Uploaded files</a>.</p>`;
+    $("#soon-card").classList.remove("hidden", "conn-hidden");
+    $("[data-goto-app]", $("#soon-card")).onclick = (e) => { e.preventDefault(); selectApp("uploads"); };
+  }
+  if (key === "interview" || key === "uploads") {
+    const radio = $(`#upload-form input[name=kind][value=${key === "interview" ? "interview" : "file"}]`);
+    if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event("change", { bubbles: true })); }
+  }
+  if (key === "imap" || key === "ics") {
+    $("#more-sources").open = true;
+    const radio = $(`#conn-types input[value=${key}]`);
+    if (radio && !radio.checked && !$("#conn-form [name=id]").value) { radio.checked = true; radio.dispatchEvent(new Event("change", { bubbles: true })); }
+  }
+  $(".conn-main").scrollTop = 0;
+}
+$("#conn-search").addEventListener("input", () => drawConnNav());
+
 // ================================================================== Sources
 const PROVIDER_TYPES = { google: { mail: "gmail", calendar: "gcal", files: "gdrive" }, microsoft: { mail: "ms_mail", calendar: "ms_cal", files: "ms_drive" },
   slack: { messages: "slack" }, meta: { social: "meta_social" }, youtube: { youtube: "youtube" } };
@@ -1017,6 +1113,8 @@ LOADERS.sources = async function loadSources() {
   $("#web-visibility").innerHTML = visibilityPicker([], true, "Who can find its pages?");
   $("#upload-visibility").innerHTML = visibilityPicker([], false);
   resetConnForm();
+  drawConnNav();
+  selectApp(connApp);
   await refreshSources(true);
 };
 
@@ -1072,6 +1170,7 @@ function tileConns(type) {
 }
 const CIRCLE_ICON = { "Only you": "lock", Everyone: "globe" };
 function drawTiles(uploads) {
+  setTimeout(drawConnNav, 0);
   $("#overview-tiles").innerHTML = TILES.map(([type, label, icon, target]) => {
     let [state, text, count] = tileState(type);
     if (type === "uploads") [state, text, count] = uploads ? ["ok", "Added", plural(uploads, "file", "files")] : ["", "None yet", ""];
@@ -1090,8 +1189,7 @@ function drawTiles(uploads) {
       return circleDialog(tileConns(c.dataset.circleTile), `Who can find ${label}?`, () => refreshSources());
     }
     if (e.target.closest("[data-connect-tile]") || t.classList.contains("off")) return connectFromTile(t.dataset.tile);
-    const el = document.getElementById(t.dataset.target) || $(`.provider-card[data-provider=${t.dataset.target}]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    selectApp(t.dataset.tile);
   });
 }
 const TILE_SERVICE = { gmail: ["google", "mail"], gcal: ["google", "calendar"], gdrive: ["google", "files"],
